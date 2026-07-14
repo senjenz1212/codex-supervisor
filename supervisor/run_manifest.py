@@ -545,13 +545,19 @@ def build_workspace_overlay(
             excluded_paths.append(relative.as_posix())
             continue
         entries.append(_workspace_overlay_entry(path, root=root))
+    omitted_paths = sorted(
+        str(entry["path"])
+        for entry in entries
+        if entry.get("content_omitted")
+    )
     payload = {
         "schema_version": "dual-agent-workspace-overlay/v1",
-        "status": "captured",
+        "status": "captured" if not omitted_paths else "incomplete",
         "base_commit": base_commit,
         "scope": "replay_public_workspace",
         "entries": sorted(entries, key=lambda item: str(item["path"])),
         "excluded_paths": sorted(excluded_paths),
+        "omitted_paths": omitted_paths,
     }
     return {**payload, "sha256": _canonical_sha256(payload)}
 
@@ -954,7 +960,7 @@ def _canonical_json_bytes(payload: Any) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
-        default=str,
+        allow_nan=False,
     ).encode("ascii")
 
 

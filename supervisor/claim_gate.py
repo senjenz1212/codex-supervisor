@@ -44,6 +44,9 @@ EXPERIMENT_EVIDENCE_MANIFEST_SCHEMA_VERSION = (
     "supervisor-experiment-evidence-manifest/v1"
 )
 B_VS_C_ASSIGNMENTS_SCHEMA_VERSION = "supervisor-experiment-assignments/v1"
+TASK_STRATA_MANIFEST_SCHEMA_VERSION = (
+    "supervisor-task-strata-manifest/v1"
+)
 B_VS_C_GRADE_SET_SCHEMA_VERSION = "supervisor-grade-revision-set/v1"
 GRADE_REVISION_SCHEMA_VERSION = "supervisor-grade-revision/v1"
 TRACE_GRAPH_SCHEMA_VERSION = "supervisor-trace-graph/v1"
@@ -94,6 +97,16 @@ MANAGED_CLAIM_FIELDS = (
     "improvement_claim_allowed",
     "powered_improvement_claim_allowed",
 )
+STRUCTURED_CLAIM_FIELD_NAMES = frozenset({
+    "claim",
+    "claim_text",
+    "assertion",
+    "asserted_claim",
+    "conclusion_claim",
+    "outcome_claim",
+    "roi_claim",
+    "auto_improvement_claim",
+})
 EvidenceResolver = Callable[[str], bytes | bytearray | memoryview | None]
 LedgerVerificationResolver = Callable[
     [str, str],
@@ -130,6 +143,11 @@ _ASSIGNMENT_DERIVED_BLOCK_KEYS = frozenset({
     "permuted_block_position",
 })
 _FROZEN_ROSTER_ASSIGNMENT_METHOD = "frozen-roster-six-order/v1"
+_POWERED_DESIGN_ARM_KEYS = (
+    "production_baseline",
+    "supervisor",
+    "compute_matched_direct",
+)
 
 
 class ClaimLevel(str, Enum):
@@ -446,6 +464,20 @@ DEFAULT_CLAIM_RULES = (
                 r"|compute[- ]matched\s+direct|arm\s+c|c)\s+"
                 r"(?:on|for)\s+(?:benchmark\s+)?"
                 r"(?:outcomes?|results?|pass\s+rate|success\s+rate)\b"
+            ),
+            (
+                r"\b(?:the\s+|our\s+)?"
+                r"(?:supervisor|harness|arm\s+b|b)\s+"
+                r"(?:is|was|performs?|performed|does|did)\s+"
+                r"(?:(?:statistically|significantly)\s+)?"
+                r"(?:better|superior|more\s+effective)\s+than\s+"
+                r"(?:the\s+)?(?:baseline|control|direct(?:\s+execution)?"
+                r"|compute[- ]matched\s+direct|arm\s+c|c)\b"
+            ),
+            (
+                r"\b(?:arm\s+)?b\s+"
+                r"(?:beats?|beat|wins?\s+against)\s+"
+                r"(?:arm\s+)?c\b"
             ),
         ),
     ),
@@ -1282,7 +1314,7 @@ def _validate_b_vs_c_analysis(
         assignments = _parse_assignment_evidence(
             documents["assignments"],
             experiment_id=experiment_id,
-            powered_design_sha256=_sha256_canonical_json(design),
+            powered_design=design,
         )
         if (
             set(assignments) != set(manifest_evidence.roster)
@@ -2182,7 +2214,7 @@ def _causal_first_execution_started_at_ms(
     assignments = _parse_assignment_evidence(
         document,
         experiment_id=experiment_id,
-        powered_design_sha256=_sha256_canonical_json(design),
+        powered_design=design,
     )
     return min(
         assignment.first_execution_started_at_ms
@@ -2808,7 +2840,7 @@ def _parse_assignment_evidence(
     document: Mapping[str, Any],
     *,
     experiment_id: str,
-    powered_design_sha256: str,
+    powered_design: Mapping[str, Any],
 ) -> dict[str, _AssignmentEvidence]:
     if (
         document.get("schema_version")
@@ -2824,10 +2856,48 @@ def _parse_assignment_evidence(
         document.get("assignment_version"),
         field="assignment_version",
     )
+    if assignment_version != _required_text(
+        powered_design.get("assignment_version"),
+        field="powered design assignment_version",
+    ):
+        raise ValueError(
+            "assignment version does not match preregistered design"
+        )
     if _normalized_sha256(
         document.get("powered_design_sha256")
-    ) != powered_design_sha256:
+    ) != _sha256_canonical_json(powered_design):
         raise ValueError("powered design is not pinned by assignments")
+    design_key_commitment = _required_sha256(
+        powered_design.get("assignment_key_commitment_sha256"),
+        field="powered design assignment key commitment",
+    )
+    design_treatments = _required_mapping(
+        powered_design.get("treatment_hashes"),
+        field="powered design treatment_hashes",
+    )
+    expected_treatment_hashes = {
+        arm: _required_sha256(
+            design_treatments.get(arm),
+            field=f"powered design treatment hash {arm}",
+        )
+        for arm in _POWERED_DESIGN_ARM_KEYS
+    }
+    if (
+        len(design_treatments) != len(expected_treatment_hashes)
+        or len(set(expected_treatment_hashes.values()))
+        != len(expected_treatment_hashes)
+    ):
+        raise ValueError(
+            "powered design must bind one distinct treatment hash per arm"
+        )
+    expected_experiment_spec_hash = _required_sha256(
+        powered_design.get("experiment_spec_hash"),
+        field="powered design experiment_spec_hash",
+    )
+    expected_task_strata_manifest_sha256 = _required_sha256(
+        powered_design.get("task_strata_manifest_sha256"),
+        field="powered design task_strata_manifest_sha256",
+    )
     randomization = _required_mapping(
         document.get("randomization"),
         field="assignment randomization",
@@ -2838,8 +2908,15 @@ def _parse_assignment_evidence(
         randomization.get("assignment_unit")
     ) != "task":
         raise ValueError("assignment unit must be task")
-    if not _is_sha256(randomization.get("key_commitment_sha256")):
-        raise ValueError("assignment key commitment is missing")
+    if (
+        _normalized_sha256(
+            randomization.get("key_commitment_sha256")
+        )
+        != design_key_commitment
+    ):
+        raise ValueError(
+            "assignment key commitment does not match preregistered design"
+        )
     raw_hmac_key = _required_text(
         randomization.get("hmac_key_hex"),
         field="assignment HMAC key reveal",
@@ -2851,17 +2928,37 @@ def _parse_assignment_evidence(
     if (
         not hmac_key
         or sha256(hmac_key).hexdigest()
-        != _normalized_sha256(
-            randomization.get("key_commitment_sha256")
-        )
+        != design_key_commitment
     ):
         raise ValueError("assignment HMAC key does not match commitment")
+
+    assignment_roster: tuple[str, ...] | None = None
+    raw_roster = document.get("assignment_roster")
+    if raw_roster is not None:
+        roster_values = _required_sequence(
+            raw_roster,
+            field="assignment_roster",
+        )
+        assignment_roster = tuple(
+            _required_text(value, field="assignment_roster item")
+            for value in roster_values
+        )
+        if (
+            not assignment_roster
+            or len(assignment_roster) != len(set(assignment_roster))
+        ):
+            raise ValueError(
+                "assignment_roster must contain unique identities"
+            )
 
     records = _required_sequence(
         document.get("assignments"),
         field="assignments",
     )
     assignments: dict[str, _AssignmentEvidence] = {}
+    assignment_methods: set[str] = set()
+    stratum_positions: set[int] = set()
+    task_strata: list[dict[str, Any]] = []
     for raw_record in records:
         record = _required_mapping(raw_record, field="assignment")
         task_id = _required_text(
@@ -2909,15 +3006,40 @@ def _parse_assignment_evidence(
             assignment_version=assignment_version,
             hmac_key=hmac_key,
             task_identity=task_identity,
+            assignment_roster=assignment_roster,
+            expected_treatment_hashes=expected_treatment_hashes,
+            expected_experiment_spec_hash=(
+                expected_experiment_spec_hash
+            ),
         )
         block = _required_mapping(
             record.get("block"),
             field="assignment.block",
         )
+        assignment_method = _required_text(
+            block.get("assignment_method"),
+            field="assignment.block.assignment_method",
+        )
+        assignment_methods.add(assignment_method)
+        stratum_positions.add(
+            int(
+                _required_text(
+                    block.get("stratum_position"),
+                    field="assignment.block.stratum_position",
+                )
+            )
+        )
         if dict(block) != expected_block:
             raise ValueError(
                 "assignment block does not match kernel derivation"
             )
+        task_strata.append(
+            {
+                "task_id": task_id,
+                "canonical_task_id": canonical_task_id,
+                "stratum": _assignment_stratum_from_block(block),
+            }
+        )
         if not hmac.compare_digest(assignment_id, expected_digest):
             raise ValueError(
                 "assignment id does not match deterministic HMAC"
@@ -2962,7 +3084,107 @@ def _parse_assignment_evidence(
         )
     if not assignments:
         raise ValueError("assignment evidence is empty")
+    if len(assignment_methods) != 1:
+        raise ValueError("assignment methods must be consistent")
+    frozen_roster = assignment_methods == {
+        _FROZEN_ROSTER_ASSIGNMENT_METHOD
+    }
+    if frozen_roster:
+        if (
+            assignment_roster is None
+            or len(assignment_roster) != len(assignments)
+            or stratum_positions != set(range(len(assignment_roster)))
+        ):
+            raise ValueError(
+                "frozen-roster assignments must cover one contiguous "
+                "position per roster identity"
+            )
+    elif assignment_roster is not None:
+        raise ValueError(
+            "assignment_roster is only valid for frozen-roster assignments"
+        )
+    if (
+        _task_strata_manifest_sha256(task_strata)
+        != expected_task_strata_manifest_sha256
+    ):
+        raise ValueError(
+            "task-to-stratum manifest does not match preregistered design"
+        )
     return assignments
+
+
+def _assignment_stratum_from_block(
+    block: Mapping[str, Any],
+) -> dict[str, str]:
+    stratum = {
+        key: value
+        for key, value in block.items()
+        if key not in _ASSIGNMENT_DERIVED_BLOCK_KEYS
+    }
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in stratum.items()
+    ):
+        raise ValueError("assignment stratum must map text to text")
+    return dict(stratum)
+
+
+def _task_strata_manifest_sha256(
+    task_strata: Sequence[Mapping[str, Any]],
+) -> str:
+    normalized: list[dict[str, Any]] = []
+    for raw_entry in task_strata:
+        entry = _required_mapping(
+            raw_entry,
+            field="task-to-stratum entry",
+        )
+        stratum = _required_mapping(
+            entry.get("stratum"),
+            field="task-to-stratum stratum",
+        )
+        if any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in stratum.items()
+        ):
+            raise ValueError(
+                "task-to-stratum manifest must map text to text"
+            )
+        normalized.append(
+            {
+                "task_id": _required_text(
+                    entry.get("task_id"),
+                    field="task-to-stratum task_id",
+                ),
+                "canonical_task_id": _required_sha256(
+                    entry.get("canonical_task_id"),
+                    field="task-to-stratum canonical_task_id",
+                ),
+                "stratum": dict(stratum),
+            }
+        )
+    normalized.sort(
+        key=lambda item: (
+            item["canonical_task_id"],
+            item["task_id"],
+        )
+    )
+    if (
+        not normalized
+        or len({
+            (item["task_id"], item["canonical_task_id"])
+            for item in normalized
+        })
+        != len(normalized)
+    ):
+        raise ValueError(
+            "task-to-stratum manifest must contain unique tasks"
+        )
+    return _sha256_canonical_json(
+        {
+            "schema_version": TASK_STRATA_MANIFEST_SCHEMA_VERSION,
+            "tasks": normalized,
+        }
+    )
 
 
 def _expected_kernel_assignment(
@@ -2972,6 +3194,9 @@ def _expected_kernel_assignment(
     assignment_version: str,
     hmac_key: bytes,
     task_identity: Mapping[str, Any],
+    assignment_roster: tuple[str, ...] | None,
+    expected_treatment_hashes: Mapping[str, str],
+    expected_experiment_spec_hash: str,
 ) -> tuple[dict[str, str], str, tuple[str, ...]]:
     from . import experiment_kernel
 
@@ -2981,17 +3206,20 @@ def _expected_kernel_assignment(
         for key, value in block.items()
     ):
         raise ValueError("assignment block must map strings to strings")
-    stratum = {
-        key: value
-        for key, value in block.items()
-        if key not in _ASSIGNMENT_DERIVED_BLOCK_KEYS
-    }
+    stratum = _assignment_stratum_from_block(block)
     if stratum.get("stratum_id") != experiment_kernel._sha256_json({
         key: value
         for key, value in stratum.items()
         if key != "stratum_id"
     }):
         raise ValueError("assignment stratum identity mismatch")
+    if (
+        _normalized_sha256(block.get("experiment_spec_hash"))
+        != expected_experiment_spec_hash
+    ):
+        raise ValueError(
+            "experiment spec hash does not match preregistered design"
+        )
     raw_position = block.get("stratum_position")
     if not isinstance(raw_position, str) or not re.fullmatch(
         r"0|[1-9][0-9]*",
@@ -3006,9 +3234,12 @@ def _expected_kernel_assignment(
     treatment_hashes: dict[Any, str] = {}
     for arm in experiment_kernel.Arm:
         digest = _normalized_sha256(raw_treatments.get(arm.value))
-        if digest is None:
+        if (
+            digest is None
+            or digest != expected_treatment_hashes.get(arm.value)
+        ):
             raise ValueError(
-                "assignment treatment hashes must be sha256 digests"
+                "assignment treatment hashes do not match powered design"
             )
         treatment_hashes[arm] = digest
     if len(raw_treatments) != len(treatment_hashes) or len(
@@ -3020,22 +3251,67 @@ def _expected_kernel_assignment(
     frozen_roster = (
         block.get("assignment_method") == _FROZEN_ROSTER_ASSIGNMENT_METHOD
     )
+    if frozen_roster != (assignment_roster is not None):
+        raise ValueError(
+            "assignment method does not match assignment_roster"
+        )
+    roster_hash = stratum.get("assignment_roster_hash")
+    if assignment_roster is None:
+        if roster_hash is not None:
+            raise ValueError(
+                "non-frozen assignment cannot declare assignment roster hash"
+            )
+    elif roster_hash != experiment_kernel._sha256_json({
+        "assignment_roster": list(assignment_roster),
+    }):
+        raise ValueError(
+            "assignment roster hash does not match frozen roster"
+        )
     experiment = SimpleNamespace(
         experiment_id=experiment_id,
         assignment_version=assignment_version,
         hmac_key=hmac_key,
-        spec_hash=str(block.get("experiment_spec_hash") or ""),
+        spec_hash=expected_experiment_spec_hash,
         treatment_hashes=treatment_hashes,
-        metadata={"assignment_roster": ()} if frozen_roster else {},
+        metadata=(
+            {"assignment_roster": assignment_roster}
+            if assignment_roster is not None
+            else {}
+        ),
     )
-    if not frozen_roster and (
-        stratum_position
-        != experiment_kernel._deterministic_stratum_position(
-            experiment,
-            task_identity,
-            stratum=stratum,
+    if assignment_roster is None:
+        expected_stratum_position = (
+            experiment_kernel._deterministic_stratum_position(
+                experiment,
+                task_identity,
+                stratum=stratum,
+            )
         )
-    ):
+    else:
+        task_id = _required_text(
+            record.get("task_id"),
+            field="assignment.task_id",
+        )
+        canonical_task_key = _required_text(
+            task_identity.get("canonical_task_key"),
+            field="assignment.task_identity.canonical_task_key",
+        )
+        candidates = {
+            canonical_task_identity(task_identity),
+            canonical_task_key,
+            task_id,
+        }
+        positions = [
+            index
+            for index, value in enumerate(assignment_roster)
+            if value in candidates
+        ]
+        if len(positions) != 1:
+            raise ValueError(
+                "assignment task must appear exactly once in frozen roster"
+            )
+        expected_stratum_position = positions[0]
+    if stratum_position != expected_stratum_position:
         raise ValueError(
             "assignment stratum position does not match deterministic rank"
         )
@@ -4491,6 +4767,37 @@ def _validate_powered_design(
         != "hmac_sha256"
     ):
         return False
+    key_commitment = _normalized_sha256(
+        design.get("assignment_key_commitment_sha256")
+    )
+    treatment_hashes = design.get("treatment_hashes")
+    if (
+        not isinstance(design.get("assignment_version"), str)
+        or not str(design.get("assignment_version")).strip()
+        or key_commitment is None
+        or _normalized_sha256(
+            design.get("experiment_spec_hash")
+        )
+        is None
+        or _normalized_sha256(
+            design.get("task_strata_manifest_sha256")
+        )
+        is None
+        or not isinstance(treatment_hashes, Mapping)
+        or set(treatment_hashes) != set(_POWERED_DESIGN_ARM_KEYS)
+        or any(
+            _normalized_sha256(treatment_hashes.get(arm)) is None
+            for arm in _POWERED_DESIGN_ARM_KEYS
+        )
+        or len(
+            {
+                _normalized_sha256(treatment_hashes.get(arm))
+                for arm in _POWERED_DESIGN_ARM_KEYS
+            }
+        )
+        != 3
+    ):
+        return False
     power = design.get("power")
     if not isinstance(power, Mapping):
         return False
@@ -4762,6 +5069,13 @@ def _validate_report_for_level(
                 f"{display} requires {rule.required_level.value}; "
                 f"evidence supports {_level_text(actual_level)}"
             )
+    for path, claim in _iter_structured_claim_fields(report):
+        rule, display = _claim_rule(claim)
+        if not _level_at_least(actual_level, rule.required_level):
+            raise UnsupportedClaimError(
+                f"{path} {display} requires {rule.required_level.value}; "
+                f"evidence supports {_level_text(actual_level)}"
+            )
     for text in _iter_text_values(report):
         matched = _registered_claim_in_text(text)
         if matched is None:
@@ -5012,25 +5326,80 @@ def _claim_rule(claim: Any) -> tuple[ClaimRule, str]:
     if isinstance(claim, Mapping):
         claim_id = str(claim.get("claim_id") or claim.get("id") or "").strip()
         claim_text = str(claim.get("text") or claim.get("claim") or "").strip()
+        if claim_text:
+            raise UnsupportedClaimError(
+                "governed report claims must use registered claim IDs; "
+                "render canonical text from the registry"
+            )
     else:
-        claim_id = ""
-        claim_text = str(claim or "").strip()
+        claim_id = str(claim or "").strip()
+        claim_text = ""
 
-    matched_rules: dict[str, ClaimRule] = {}
-    normalized = claim_text.casefold()
     for rule in DEFAULT_CLAIM_RULES:
-        if claim_id == rule.claim_id or claim_text == rule.claim_id:
-            matched_rules[rule.claim_id] = rule
-        if any(re.search(pattern, normalized) for pattern in rule.patterns):
-            matched_rules[rule.claim_id] = rule
-    if matched_rules:
-        rule = max(
-            matched_rules.values(),
-            key=lambda item: tuple(ClaimLevel).index(item.required_level),
-        )
-        return rule, claim_text or claim_id
+        if claim_id == rule.claim_id:
+            return rule, claim_id
     display = claim_text or claim_id or "<empty claim>"
     raise UnsupportedClaimError(f"unregistered report claim: {display}")
+
+
+def _iter_structured_claim_fields(
+    value: Any,
+    *,
+    path: str = "",
+    seen: set[int] | None = None,
+):
+    """Yield explicit claim-bearing fields that must contain registry IDs."""
+    if seen is None:
+        seen = set()
+    if isinstance(value, Mapping):
+        identity = id(value)
+        if identity in seen:
+            return
+        seen.add(identity)
+        for raw_key, nested in value.items():
+            key = str(raw_key)
+            nested_path = f"{path}.{key}" if path else key
+            normalized = _normalized_token(key)
+            is_claim_field = (
+                normalized in STRUCTURED_CLAIM_FIELD_NAMES
+                or (
+                    normalized.endswith("_claim")
+                    and normalized
+                    not in {
+                        "improvement_claim",
+                        "powered_improvement_claim",
+                    }
+                )
+            )
+            if is_claim_field and (
+                isinstance(nested, str)
+                or (
+                    isinstance(nested, Mapping)
+                    and any(
+                        field in nested
+                        for field in ("claim_id", "id", "text", "claim")
+                    )
+                )
+            ):
+                yield nested_path, nested
+            yield from _iter_structured_claim_fields(
+                nested,
+                path=nested_path,
+                seen=seen,
+            )
+        return
+    if _is_sequence(value):
+        identity = id(value)
+        if identity in seen:
+            return
+        seen.add(identity)
+        for index, nested in enumerate(value):
+            nested_path = f"{path}[{index}]" if path else f"[{index}]"
+            yield from _iter_structured_claim_fields(
+                nested,
+                path=nested_path,
+                seen=seen,
+            )
 
 
 def _iter_text_values(
@@ -5084,5 +5453,3 @@ def _registered_claim_in_text(
 
 def _level_text(level: ClaimLevel | None) -> str:
     return level.value if level is not None else "no claim level"
-
-

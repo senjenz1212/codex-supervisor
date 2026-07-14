@@ -39,6 +39,7 @@ from .experiment_kernel import (
     ArmOutcome,
     ExperimentKernel,
     ExperimentSpec,
+    GradeRevisionRef,
     SqliteExperimentStore,
     TreatmentDescriptor,
 )
@@ -47,6 +48,7 @@ from .grade_revisions import (
     GradeBook,
     GradeInvalidation,
     GradeRevision,
+    GradeTerminalCommit,
     RunEnvelopeRef,
 )
 from .arm_executor import RepositoryArmExecutor, RuntimeArmPlan
@@ -144,6 +146,10 @@ class HermeticGradeHistory:
     run: RunEnvelopeRef
     revisions: tuple[GradeRevision, ...]
     invalidations: tuple[GradeInvalidation, ...]
+    terminal_state: str
+    terminal_state_hash: str
+    terminal_commits: tuple[GradeTerminalCommit, ...]
+    source_terminal_commits: tuple[GradeTerminalCommit, ...]
 
 
 @dataclass(frozen=True)
@@ -1043,6 +1049,27 @@ async def run_hermetic_harness_tracer(
                         supersedes_grade_id=first_revision.grade_id,
                     )
                     revisions = gradebook.list_revisions(run_ref)
+                    terminal_event = _persisted_terminal_event_for_outcome(
+                        store=experiment_store,
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        outcome=outcome,
+                    )
+                    source_terminal_commit = (
+                        _source_terminal_commit_for_outcome(
+                            experiment_db_path=experiment_db_path,
+                            outcome=outcome,
+                            terminal_event=terminal_event,
+                        )
+                    )
+                    terminal_commits = _commit_grade_terminal_authority(
+                        gradebook=gradebook,
+                        revisions=revisions,
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        arm=outcome.arm,
+                        terminal_event=terminal_event,
+                    )
                     invalidations = gradebook.list_invalidations(
                         first_revision.grade_id
                     )
@@ -1050,6 +1077,14 @@ async def run_hermetic_harness_tracer(
                         run=run_ref,
                         revisions=revisions,
                         invalidations=invalidations,
+                        terminal_state=str(terminal_event["state"]),
+                        terminal_state_hash=str(
+                            terminal_event["state_hash"]
+                        ),
+                        terminal_commits=terminal_commits,
+                        source_terminal_commits=(
+                            source_terminal_commit,
+                        ),
                     )
                     execution = HermeticTracerExecution(
                         execution_id=execution_id,
@@ -1163,6 +1198,14 @@ async def run_hermetic_harness_tracer(
                                 invalidation.invalidation_hash
                                 for invalidation in invalidations
                             ],
+                            "terminal_state": grade_history.terminal_state,
+                            "terminal_state_hash": (
+                                grade_history.terminal_state_hash
+                            ),
+                            "grade_terminal_commit_hashes": [
+                                commit.commit_hash
+                                for commit in terminal_commits
+                            ],
                         },
                     )
                     emit(
@@ -1197,6 +1240,14 @@ async def run_hermetic_harness_tracer(
                             "grade_invalidation_hashes": [
                                 invalidation.invalidation_hash
                                 for invalidation in invalidations
+                            ],
+                            "terminal_state": grade_history.terminal_state,
+                            "terminal_state_hash": (
+                                grade_history.terminal_state_hash
+                            ),
+                            "grade_terminal_commit_hashes": [
+                                commit.commit_hash
+                                for commit in terminal_commits
                             ],
                         },
                     )
@@ -1346,6 +1397,10 @@ async def run_hermetic_harness_tracer(
             run=execution.grade_history.run,
             revisions=execution.grade_history.revisions,
             invalidations=execution.grade_history.invalidations,
+            terminal_commits=execution.grade_history.terminal_commits,
+            source_terminal_commits=(
+                execution.grade_history.source_terminal_commits
+            ),
         )
         for execution in executions
     )
@@ -1717,6 +1772,133 @@ def _runtime_arm_plan(
     )
 
 
+def _persisted_terminal_event_for_outcome(
+    *,
+    store: SqliteExperimentStore,
+    experiment_id: str,
+    task_id: str,
+    outcome: ArmOutcome,
+) -> Mapping[str, Any]:
+    if outcome.status not in {"completed", "failed"}:
+        raise RuntimeError(
+            "hermetic tracer outcome has no grade-authority terminal state: "
+            f"{outcome.status}"
+        )
+    expected_payload = canonical_json_bytes(outcome.to_dict())
+    matches: list[Mapping[str, Any]] = []
+    for event in store.get_arm_state_events(
+        experiment_id,
+        task_id,
+        arm=outcome.arm,
+    ):
+        if str(event.get("state") or "") != outcome.status:
+            continue
+        payload = event.get("payload")
+        persisted_outcome = (
+            payload.get("outcome")
+            if isinstance(payload, Mapping)
+            else None
+        )
+        if not isinstance(persisted_outcome, Mapping):
+            continue
+        if canonical_json_bytes(persisted_outcome) != expected_payload:
+            continue
+        matches.append(event)
+    if len(matches) != 1:
+        raise RuntimeError(
+            "hermetic tracer requires exactly one exact persisted terminal "
+            f"arm state, observed {len(matches)} for "
+            f"{experiment_id}:{task_id}:{outcome.arm.value}"
+        )
+    return matches[0]
+
+
+def _commit_grade_terminal_authority(
+    *,
+    gradebook: GradeBook,
+    revisions: tuple[GradeRevision, ...],
+    experiment_id: str,
+    task_id: str,
+    arm: Arm,
+    terminal_event: Mapping[str, Any],
+) -> tuple[GradeTerminalCommit, ...]:
+    if not revisions:
+        raise RuntimeError(
+            "hermetic tracer cannot authorize an empty grade history"
+        )
+    terminal_state = str(terminal_event.get("state") or "")
+    terminal_state_hash = str(terminal_event.get("state_hash") or "")
+    commits: list[GradeTerminalCommit] = []
+    for revision in revisions:
+        gradebook.commit_terminal_grade(
+            grade_id=revision.grade_id,
+            revision_hash=revision.revision_hash,
+            experiment_id=experiment_id,
+            task_id=task_id,
+            arm=arm.value,
+            terminal_state=terminal_state,
+            terminal_state_hash=terminal_state_hash,
+        )
+        persisted = gradebook.get_terminal_commit(revision.grade_id)
+        if persisted is None:
+            raise RuntimeError(
+                "hermetic tracer grade terminal authority is incomplete: "
+                f"{revision.grade_id}"
+            )
+        if (
+            persisted.grade_revision_hash != revision.revision_hash
+            or persisted.experiment_id != experiment_id
+            or persisted.task_id != task_id
+            or persisted.arm != arm.value
+            or persisted.terminal_state != terminal_state
+            or persisted.terminal_state_hash != terminal_state_hash
+        ):
+            raise RuntimeError(
+                "hermetic tracer grade terminal authority discrepancy: "
+                f"{revision.grade_id}"
+            )
+        commits.append(persisted)
+    return tuple(commits)
+
+
+def _source_terminal_commit_for_outcome(
+    *,
+    experiment_db_path: Path,
+    outcome: ArmOutcome,
+    terminal_event: Mapping[str, Any],
+) -> GradeTerminalCommit:
+    reference = outcome.grade_revision
+    if reference is None:
+        raise RuntimeError(
+            "hermetic tracer terminal outcome lacks source grade reference"
+        )
+    with GradeBook(experiment_db_path) as gradebook:
+        revision = gradebook.get_revision(reference.grade_id)
+        commit = gradebook.get_terminal_commit(reference.grade_id)
+    if GradeRevisionRef.from_revision(revision) != reference:
+        raise RuntimeError(
+            "hermetic tracer source grade reference differs from experiment "
+            f"authority: {reference.grade_id}"
+        )
+    if (
+        commit is None
+        or commit.grade_revision_hash != reference.revision_hash
+        or commit.experiment_id
+        != str(terminal_event.get("experiment_id") or "")
+        or commit.task_id != str(terminal_event.get("task_id") or "")
+        or commit.arm != str(terminal_event.get("arm") or "")
+        or commit.terminal_state
+        != str(terminal_event.get("state") or "")
+        or commit.terminal_state_hash
+        != str(terminal_event.get("state_hash") or "")
+    ):
+        raise RuntimeError(
+            "hermetic tracer source terminal commit differs from terminal "
+            f"event authority: {reference.grade_id}"
+        )
+    return commit
+
+
 def _build_trace_graph(
     executions: list[HermeticTracerExecution],
 ) -> tuple[TraceGraph, TraceIdentity]:
@@ -2060,6 +2242,24 @@ def _build_claim_evidence(
                     "grade_revision_hash": (
                         execution.grade_history.revisions[-1].revision_hash
                     ),
+                    "terminal_state": (
+                        execution.grade_history.terminal_state
+                    ),
+                    "terminal_state_hash": (
+                        execution.grade_history.terminal_state_hash
+                    ),
+                    "grade_terminal_commits": [
+                        commit.to_dict()
+                        for commit in (
+                            execution.grade_history.terminal_commits
+                        )
+                    ],
+                    "source_grade_terminal_commits": [
+                        commit.to_dict()
+                        for commit in (
+                            execution.grade_history.source_terminal_commits
+                        )
+                    ],
                     "workspace_removed": execution.workspace_removed,
                     "hidden_read_blocked": (
                         execution.transport.hidden_read_blocked

@@ -23,6 +23,9 @@ from typing import Any, Callable, Awaitable
 from watchfiles import awatch, Change
 
 from .run_registry import (
+    REUSABLE_SESSION_COMPLETION_POLICY,
+    SINGLE_TURN_COMPLETION_POLICY,
+    WORKFLOW_AGGREGATE_COMPLETION_POLICY,
     load_session_registration,
 )
 from .state import Decision, State
@@ -321,12 +324,39 @@ class RolloutWatcher:
         *,
         captured_cwd: str | None,
     ) -> tuple[dict[str, Any] | None, str | None]:
-        registration = load_session_registration(self.registry_dir, session_id)
+        registration_path = self.registry_dir / f"{session_id}.json"
+        try:
+            registration = load_session_registration(
+                self.registry_dir,
+                session_id,
+            )
+        except (OSError, ValueError) as e:
+            log.warning(
+                "rollout session %s has a rejected registration sidecar: %s",
+                session_id,
+                e,
+            )
+            registration = None
+        if (
+            registration is None
+            and (
+                registration_path.is_file()
+                or registration_path.is_symlink()
+            )
+        ):
+            log.warning(
+                "rollout session %s registration sidecar failed strict load",
+                session_id,
+            )
+            return None, None
         if (
             registration is not None
             and not _registration_cwd_matches(
                 registration,
                 captured_cwd=captured_cwd,
+                require_runtime_cwd=(
+                    self.state.get_tail_offset(str(rollout_path)) == 0
+                ),
             )
         ):
             log.warning(
@@ -336,7 +366,12 @@ class RolloutWatcher:
             )
             return registration, None
         if registration is not None:
-            run_row = self.state.get_run(registration["workflow_run_id"])
+            registered_run_id = str(
+                registration.get("target_run_id")
+                or registration.get("run_id")
+                or registration["workflow_run_id"]
+            )
+            run_row = self.state.get_run(registered_run_id)
         else:
             run_row = self.state.get_run_by_session(session_id)
         if run_row is not None:
@@ -456,22 +491,39 @@ class RolloutWatcher:
                     event_payload["normalized_from_shared_entry"] = True
                     event_payload["normalized_kind"] = kind
                 if registration is not None:
-                    event_payload.setdefault("workflow_run_id", run_id)
-                    event_payload.setdefault("target_session_id", session_id)
+                    event_payload["workflow_run_id"] = str(
+                        registration["workflow_run_id"]
+                    )
+                    event_payload["run_id"] = run_id
+                    if registration.get("target_run_id"):
+                        event_payload["target_run_id"] = str(
+                            registration["target_run_id"]
+                        )
+                    else:
+                        event_payload.pop("target_run_id", None)
+                    event_payload["target_session_id"] = session_id
                     task_id = registration.get("task_id")
                     if task_id:
-                        event_payload.setdefault("task_id", str(task_id))
+                        event_payload["task_id"] = str(task_id)
+                    else:
+                        event_payload.pop("task_id", None)
                 normalized_events.append((kind, event_payload))
             terminal_kind = next(
                 (
                     kind
                     for kind, _payload in reversed(normalized_events)
-                    if kind in _TERMINAL_STATUSES
+                    if self._terminal_status(
+                        kind,
+                        registration=registration,
+                    ) is not None
                 ),
                 None,
             )
             terminal_status = (
-                _TERMINAL_STATUSES[terminal_kind]
+                self._terminal_status(
+                    terminal_kind,
+                    registration=registration,
+                )
                 if terminal_kind is not None
                 else None
             )
@@ -543,6 +595,28 @@ class RolloutWatcher:
                             },
                         )
 
+    @staticmethod
+    def _terminal_status(
+        kind: str,
+        *,
+        registration: dict[str, Any] | None,
+    ) -> str | None:
+        if registration is None:
+            return _TERMINAL_STATUSES.get(kind)
+        completion_policy = registration.get("completion_policy")
+        if completion_policy == SINGLE_TURN_COMPLETION_POLICY:
+            if kind == "turn.completed":
+                return "completed"
+            return _TERMINAL_STATUSES.get(kind)
+        if completion_policy in {
+            REUSABLE_SESSION_COMPLETION_POLICY,
+            WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+        }:
+            return None
+        # Legacy sidecars without an explicit policy retain their historical
+        # run-terminal behavior; new registrations are always policy-bearing.
+        return _TERMINAL_STATUSES.get(kind)
+
     async def _replay_quarantines_once(self) -> None:
         root = self._quarantine_root()
         if not root.is_dir():
@@ -578,6 +652,16 @@ class RolloutWatcher:
             return False
         quarantine = self._load_quarantine(quarantine_path)
         if quarantine is None:
+            span = self._quarantine_spans.get(quarantine_path)
+            if span is not None:
+                self._drop_quarantine(
+                    quarantine_path,
+                    rollout_path=path,
+                    session_id=session_id,
+                    reason="quarantine_payload_corrupt",
+                    start_offset=span[0],
+                    end_offset=span[1],
+                )
             return False
         start_offset = int(quarantine["start_offset"])
         end_offset = int(quarantine["end_offset"])
@@ -821,7 +905,12 @@ class RolloutWatcher:
             resolved_root = self._quarantine_root().resolve()
             resolved_path = quarantine_path.resolve(strict=True)
             resolved_path.relative_to(resolved_root)
-            lines = resolved_path.read_text(encoding="utf-8").splitlines()
+            contents = resolved_path.read_bytes()
+            complete_end = contents.rfind(b"\n") + 1
+            if complete_end <= 0:
+                return None
+            torn_suffix_bytes = len(contents) - complete_end
+            lines = contents[:complete_end].decode("utf-8").splitlines()
             if not lines:
                 return None
             first = json.loads(lines[0])
@@ -887,8 +976,25 @@ class RolloutWatcher:
             != quarantine_path.resolve(strict=False)
         ):
             return None
+        if torn_suffix_bytes:
+            self._truncate_quarantine_suffix(
+                resolved_path,
+                complete_end=complete_end,
+            )
         self._quarantine_spans[quarantine_path] = (start_offset, previous_end)
         return header, chunks
+
+    @staticmethod
+    def _truncate_quarantine_suffix(
+        quarantine_path: Path,
+        *,
+        complete_end: int,
+    ) -> None:
+        """Remove an append that never reached its newline commit boundary."""
+        with quarantine_path.open("r+b") as handle:
+            handle.truncate(complete_end)
+            handle.flush()
+            os.fsync(handle.fileno())
 
     def _load_quarantine_header(
         self,
@@ -993,10 +1099,15 @@ class RolloutWatcher:
                 "dropped_end_offset": int(end_offset),
             },
         )
-        if int(end_offset) > self.state.get_tail_offset(str(rollout_path)):
-            self.state.set_tail_offset(str(rollout_path), int(end_offset))
-        if self.offsets.get(rollout_path, 0) < int(end_offset):
-            self.offsets[rollout_path] = int(end_offset)
+        durable_offset = self.state.get_tail_offset(str(rollout_path))
+        reconciled_offset = max(
+            durable_offset,
+            self.offsets.get(rollout_path, 0),
+            int(end_offset),
+        )
+        if reconciled_offset > durable_offset:
+            self.state.set_tail_offset(str(rollout_path), reconciled_offset)
+        self.offsets[rollout_path] = reconciled_offset
         self._delete_quarantine(quarantine_path)
 
     def _delete_quarantine(self, quarantine_path: Path) -> None:
@@ -1025,17 +1136,10 @@ class RolloutWatcher:
         registration: dict[str, Any] | None = None,
     ) -> str | None:
         """Register a known workflow/legacy sidecar without inventing a bare run."""
-        reg = self.registry_dir / f"{session_id}.json"
         task = None
         scope = ScopeContract()
         config_snapshot: dict[str, Any] = {"source": "rollout_watcher"}
         meta = registration
-        if meta is None and reg.exists():
-            try:
-                meta = json.loads(reg.read_text())
-            except Exception as e:
-                log.warning("bad registry file %s: %s", reg, e)
-                meta = None
         if not isinstance(meta, dict):
             return None
         task = meta.get("task") or meta.get("intent")
@@ -1047,7 +1151,11 @@ class RolloutWatcher:
             )
         if isinstance(meta.get("config_snapshot"), dict):
             config_snapshot = meta["config_snapshot"]
-        registered_run_id = meta.get("workflow_run_id") or meta.get("run_id")
+        registered_run_id = (
+            meta.get("target_run_id")
+            or meta.get("run_id")
+            or meta.get("workflow_run_id")
+        )
         if not registered_run_id:
             return None
         run_id = str(registered_run_id)
@@ -1274,16 +1382,29 @@ def _registration_cwd_matches(
     registration: dict[str, Any],
     *,
     captured_cwd: str | None,
+    require_runtime_cwd: bool = False,
 ) -> bool:
     """Validate cwd only after a session/receipt join already selected the run."""
-    if not captured_cwd:
-        return True
     snapshot = registration.get("config_snapshot")
     registered_cwd = str(
         snapshot.get("cwd")
         if isinstance(snapshot, dict)
         else ""
     ).strip()
+    runtime_owned = bool(
+        registration.get("runtime_run_id")
+        or registration.get("runtime_result_hash")
+        or (
+            isinstance(snapshot, dict)
+            and snapshot.get("source") == "workflow_runtime_session"
+        )
+    )
+    if runtime_owned and not registered_cwd:
+        return False
+    if runtime_owned and require_runtime_cwd and not captured_cwd:
+        return False
+    if not captured_cwd:
+        return True
     if not registered_cwd:
         return True
     try:

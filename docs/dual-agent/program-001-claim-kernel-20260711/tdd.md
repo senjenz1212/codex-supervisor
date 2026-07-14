@@ -34,6 +34,10 @@ Test: `test_l3_requires_a_positive_randomized_powered_b_vs_c_result`
 - GREEN: required B-vs-C, randomized, powered, positive improvement, and a
   pinned analysis.
 - Negative assertion: A-vs-B returns L2.
+- Adversarial follow-up: changing the assignment version, experiment-spec
+  hash, treatment hashes, or task-to-stratum mapping and then rederiving every
+  assignment still fails because those values are committed by the powered
+  design.
 
 ### 4. Replication, ROI, and Auto-Improvement Gate L4–L6
 

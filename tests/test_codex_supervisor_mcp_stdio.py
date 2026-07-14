@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 import threading
+from dataclasses import replace
 from hashlib import sha256
 try:
     import tomllib
@@ -18,6 +19,9 @@ import pytest
 from supervisor.config import Config
 from supervisor.agent_runtime import AgentRunHandle, AgentRunResult, AgentTask
 from supervisor.autoresearch.policy_evolution import PolicyClaimAuthority
+from supervisor.dual_agent import ProbeResult
+from supervisor.dual_agent_lead import LeadInvocationResult, PlanningArtifact
+from supervisor.dual_agent_runner import DualAgentGateResult, DualAgentGateSpec
 from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
@@ -175,6 +179,687 @@ def test_harness_v1_workflow_rejects_explicit_trace_closure_downgrade(
         )
 
     assert state.list_dual_agent_workflow_jobs(active_only=True) == []
+
+
+def test_required_gate_records_complete_post_execution_trace(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    plan = tmp_path / "implementation-plan.md"
+    plan.write_text("# Implementation Plan\n\nExecute the pinned plan.\n")
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    probe = ProbeResult(
+        "P2",
+        "green",
+        "worker_orchestration_invocation_ok",
+    )
+    result = DualAgentGateResult(
+        task_id="runtime-001-seams-20260711",
+        gate="execution",
+        status="accepted",
+        probes={"P2": probe},
+        handoff_packet_path=tmp_path / ".handoff" / "task.json",
+        lead_result=LeadInvocationResult(
+            probe=probe,
+            outcome=None,
+            command=["codex"],
+            stdout="accepted",
+            stderr="",
+            stdout_bytes=8,
+            stderr_bytes=0,
+            transcript="accepted",
+            model="provider/model",
+            runtime="codex",
+            runtime_run_id="runtime-run-1",
+            runtime_session_id="runtime-session-1",
+            runtime_result_hash="a" * 64,
+        ),
+        attempts=1,
+    )
+    spec = DualAgentGateSpec(
+        task_id=result.task_id,
+        run_id="workflow-run-1",
+        gate="execution",
+        instruction="Execute the pinned Harness v1 task.",
+        cwd=tmp_path,
+        planning_artifacts=(
+            PlanningArtifact(
+                path=plan,
+                kind="implementation_plan",
+            ),
+        ),
+        trace_closure_required=True,
+    )
+    payload = {
+        "task_id": result.task_id,
+        "gate": "execution",
+        "status": "accepted",
+        "attempts": 1,
+        "outcome": None,
+        "tool_calls": [{
+            "name": "invoke_runtime_lead",
+            "runtime": "codex",
+            "runtime_run_id": "runtime-run-1",
+            "runtime_session_id": "runtime-session-1",
+            "runtime_result_hash": "a" * 64,
+            "model": "provider/model",
+        }],
+        "target_run_registrations": [{
+            "target_run_id": "target-run-1",
+            "target_session_id": "runtime-session-1",
+            "runtime_run_id": "runtime-run-1",
+            "runtime_result_hash": "a" * 64,
+        }],
+        "trace_closure_binding": {
+            "schema_version": "supervisor-trace-closure-binding/v1",
+            "task_id": result.task_id,
+            "run_id": "workflow-run-1",
+            "gate": "execution",
+            "planning_artifacts": [{
+                "kind": "implementation_plan",
+                "path": str(plan.resolve()),
+                "sha256": sha256(plan.read_bytes()).hexdigest(),
+            }],
+        },
+        "production_trace_workspace_root": str(tmp_path.resolve()),
+    }
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=payload,
+    )
+
+    receipt = api._record_gate_production_trace(
+        spec=spec,
+        source_event_id=source_event_id,
+    )
+
+    assert receipt is not None
+    assert receipt["claim_cap"] == "L1"
+    assert receipt["closure"]["status"] == "accepted"
+    assert receipt["evidence"]["runtime_provenance"]["assignment_id"] == (
+        "target-run-1"
+    )
+    assert Path(receipt["trace_store_path"]).is_file()
+    assert Path(receipt["gradebook_path"]).is_file()
+    events = state.read_dual_agent_gate_events(spec.run_id)
+    trace_events = [
+        event
+        for event in events
+        if event["kind"] == "dual_agent_production_trace_recorded"
+    ]
+    assert len(trace_events) == 1
+    trace_payload = json.loads(trace_events[0]["payload_json"])
+    assert trace_payload["receipt"]["trace_graph"] == receipt["trace_graph"]
+
+
+def _production_trace_gate_fixture(
+    tmp_path: Path,
+) -> tuple[
+    object,
+    State,
+    DualAgentGateSpec,
+    DualAgentGateResult,
+    dict,
+]:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    plan = tmp_path / "fixture-implementation-plan.md"
+    plan.write_text("# Implementation Plan\n\nExecute the pinned plan.\n")
+    state = State(str(tmp_path / "fixture-state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    probe = ProbeResult(
+        "P2",
+        "green",
+        "worker_orchestration_invocation_ok",
+    )
+    result = DualAgentGateResult(
+        task_id="runtime-001-seams-20260711",
+        gate="execution",
+        status="accepted",
+        probes={"P2": probe},
+        handoff_packet_path=tmp_path / ".handoff" / "fixture.json",
+        lead_result=LeadInvocationResult(
+            probe=probe,
+            outcome=None,
+            command=["codex"],
+            stdout="accepted",
+            stderr="",
+            stdout_bytes=8,
+            stderr_bytes=0,
+            transcript="accepted",
+            model="provider/model",
+            runtime="codex",
+            runtime_run_id="fixture-runtime-run",
+            runtime_session_id="fixture-runtime-session",
+            runtime_result_hash="b" * 64,
+        ),
+        attempts=1,
+    )
+    spec = DualAgentGateSpec(
+        task_id=result.task_id,
+        run_id="fixture-workflow-run",
+        gate="execution",
+        instruction="Execute the pinned Harness v1 fixture.",
+        cwd=tmp_path,
+        planning_artifacts=(
+            PlanningArtifact(
+                path=plan,
+                kind="implementation_plan",
+            ),
+        ),
+        trace_closure_required=True,
+    )
+    payload = {
+        "task_id": result.task_id,
+        "gate": "execution",
+        "status": "accepted",
+        "attempts": 1,
+        "outcome": None,
+        "tool_calls": [{
+            "name": "invoke_runtime_lead",
+            "runtime": "codex",
+            "runtime_run_id": "fixture-runtime-run",
+            "runtime_session_id": "fixture-runtime-session",
+            "runtime_result_hash": "b" * 64,
+            "model": "provider/model",
+        }],
+        "target_run_registrations": [{
+            "target_run_id": "fixture-target-run",
+            "target_session_id": "fixture-runtime-session",
+            "runtime_run_id": "fixture-runtime-run",
+            "runtime_result_hash": "b" * 64,
+        }],
+        "trace_closure_binding": {
+            "schema_version": "supervisor-trace-closure-binding/v1",
+            "task_id": result.task_id,
+            "run_id": spec.run_id,
+            "gate": "execution",
+            "planning_artifacts": [{
+                "kind": "implementation_plan",
+                "path": str(plan.resolve()),
+                "sha256": sha256(plan.read_bytes()).hexdigest(),
+            }],
+        },
+        "production_trace_workspace_root": str(tmp_path.resolve()),
+    }
+    return api, state, spec, result, payload
+
+
+def test_production_trace_uses_the_persisted_event_as_dynamic_authority(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, result, accepted_payload = (
+        _production_trace_gate_fixture(tmp_path)
+    )
+    persisted_payload = {
+        **accepted_payload,
+        "status": "rejected",
+    }
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=persisted_payload,
+    )
+
+    parameters = inspect.signature(
+        api._record_gate_production_trace
+    ).parameters
+    receipt = api._record_gate_production_trace(
+        spec=spec,
+        source_event_id=source_event_id,
+    )
+
+    assert "result" not in parameters
+    assert "payload" not in parameters
+    assert result.status == "accepted"
+    assert accepted_payload["status"] == "accepted"
+    assert receipt is not None
+    assert receipt["evidence"]["source_event_state"] == "completed"
+    assert receipt["grade_revision"]["passed"] is True
+    assert (
+        receipt["evidence"]["final_gate_result"]["status"]
+        == "rejected"
+    )
+
+
+def test_persisted_trace_binding_cannot_be_suppressed_by_caller_spec(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, _result, payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=payload,
+    )
+
+    receipt = api._record_gate_production_trace(
+        spec=replace(spec, trace_closure_required=False),
+        source_event_id=source_event_id,
+    )
+
+    assert receipt is not None
+    assert receipt["evidence"]["source_event_hash"]
+
+
+def test_production_trace_storage_and_event_are_replay_idempotent(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, _result, payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+    caller_workspace = tmp_path / "different-caller-workspace"
+    caller_workspace.mkdir()
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=payload,
+    )
+    replay_spec = replace(spec, cwd=caller_workspace)
+
+    first = api._record_gate_production_trace(
+        spec=replay_spec,
+        source_event_id=source_event_id,
+    )
+    second = api._record_gate_production_trace(
+        spec=replay_spec,
+        source_event_id=source_event_id,
+    )
+    trace_events = [
+        event
+        for event in state.read_dual_agent_gate_events(spec.run_id)
+        if event["kind"] == "dual_agent_production_trace_recorded"
+    ]
+
+    assert first == second
+    assert first is not None
+    assert Path(first["trace_store_path"]).is_relative_to(tmp_path.resolve())
+    assert not Path(first["trace_store_path"]).is_relative_to(
+        caller_workspace.resolve()
+    )
+    assert len(trace_events) == 1
+
+
+def test_production_trace_concurrent_retry_emits_one_recorded_event(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, _result, payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=payload,
+    )
+    barrier = threading.Barrier(2)
+    receipts: list[dict] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def record() -> None:
+        try:
+            barrier.wait(timeout=5)
+            receipt = api._record_gate_production_trace(
+                spec=spec,
+                source_event_id=source_event_id,
+            )
+            assert receipt is not None
+            with lock:
+                receipts.append(receipt)
+        except BaseException as exc:  # pragma: no cover - asserted below.
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=record) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+
+    assert errors == []
+    assert len(receipts) == 2
+    assert receipts[0] == receipts[1]
+    trace_events = [
+        event
+        for event in state.read_dual_agent_gate_events(spec.run_id)
+        if event["kind"] == "dual_agent_production_trace_recorded"
+    ]
+    assert len(trace_events) == 1
+
+
+def test_production_trace_rejects_wrong_source_event_kind(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, result, payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_interaction_message",
+        payload=payload,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="persisted dual-agent gate-result event",
+    ):
+        api._record_gate_production_trace(
+            spec=spec,
+            source_event_id=source_event_id,
+        )
+
+
+def test_production_trace_rejects_broken_source_event_chain(
+    tmp_path: Path,
+) -> None:
+    api, state, spec, result, payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+    source_event_id = state.write_event(
+        run_id=spec.run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=payload,
+    )
+    state._conn.execute("DROP TRIGGER IF EXISTS events_no_update")
+    state._conn.execute(
+        "UPDATE events SET event_hash=? WHERE event_id=?",
+        ("0" * 64, source_event_id),
+    )
+    state._conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="source event ledger is invalid",
+    ):
+        api._record_gate_production_trace(
+            spec=spec,
+            source_event_id=source_event_id,
+        )
+
+
+def test_gate_runtime_registration_fails_closed_without_parent_run(
+    tmp_path: Path,
+) -> None:
+    api, _state, spec, result, _payload = _production_trace_gate_fixture(
+        tmp_path
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="workflow run is not registered",
+    ):
+        api._register_gate_runtime_sessions(
+            run_id=spec.run_id,
+            task_id=spec.task_id,
+            task=spec.instruction,
+            gate=str(spec.gate),
+            cwd=str(spec.cwd),
+            result=result,
+        )
+
+
+def test_gate_runtime_registration_rejects_conflicting_same_session_attempts(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-run",
+        target_session_id="",
+        task_id="task-1",
+        task="Execute the task.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    probe = ProbeResult("P2", "green", "runtime completed")
+    result = DualAgentGateResult(
+        task_id="task-1",
+        gate="execution",
+        status="accepted",
+        probes={"P2": probe},
+        handoff_packet_path=tmp_path / ".handoff" / "task.json",
+        tool_calls=(
+            {
+                "runtime": "codex",
+                "runtime_run_id": "runtime-run-1",
+                "runtime_session_id": "runtime-session-1",
+                "runtime_result_hash": "a" * 64,
+            },
+            {
+                "runtime": "codex",
+                "runtime_run_id": "runtime-run-2",
+                "runtime_session_id": "runtime-session-1",
+                "runtime_result_hash": "b" * 64,
+            },
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="conflicting run/result provenance",
+    ):
+        api._register_gate_runtime_sessions(
+            run_id="workflow-run",
+            task_id="task-1",
+            task="Execute the task.",
+            gate="execution",
+            cwd=str(tmp_path),
+            result=result,
+        )
+
+
+def test_runtime_evidence_records_bind_agentic_and_reviewer_sessions(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-runtime-evidence",
+        target_session_id="",
+        task_id="task-runtime-evidence",
+        task="Bind every controlled runtime result.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    registrations = api._register_runtime_evidence_records(
+        run_id="workflow-runtime-evidence",
+        task_id="task-runtime-evidence",
+        task="Bind every controlled runtime result.",
+        gate="workflow_start",
+        cwd=str(tmp_path),
+        source="controlled_runtime_result",
+        records=(
+            {
+                "runtime": "codex",
+                "runtime_run_id": "planner-runtime-run",
+                "session_id": "planner-runtime-session",
+                "result_hash": "c" * 64,
+            },
+            {
+                "diagnostics": {
+                    "agent_runtime": {
+                        "runtime": "claude_code",
+                        "run_id": "reviewer-runtime-run",
+                        "session_id": "reviewer-runtime-session",
+                        "result_hash": "d" * 64,
+                    },
+                },
+            },
+        ),
+    )
+
+    assert {
+        registration["target_session_id"]
+        for registration in registrations
+    } == {
+        "planner-runtime-session",
+        "reviewer-runtime-session",
+    }
+    for registration in registrations:
+        snapshot = state.get_run_snapshot(registration["target_run_id"])
+        assert snapshot is not None
+        config = json.loads(snapshot["config_json"])
+        assert config["workflow_run_id"] == "workflow-runtime-evidence"
+        assert config["runtime_run_id"]
+        assert len(config["runtime_result_hash"]) == 64
+
+
+def test_runtime_evidence_records_fail_closed_on_partial_provenance(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-partial-runtime",
+        target_session_id="",
+        task_id="task-partial-runtime",
+        task="Reject incomplete runtime provenance.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires exact runtime, run, session, and result-hash provenance",
+    ):
+        api._register_runtime_evidence_records(
+            run_id="workflow-partial-runtime",
+            task_id="task-partial-runtime",
+            task="Reject incomplete runtime provenance.",
+            gate="workflow_start",
+            cwd=str(tmp_path),
+            source="controlled_runtime_result",
+            records=({
+                "runtime": "codex",
+                "runtime_run_id": "runtime-run",
+                "session_id": "runtime-session",
+                "result_hash": "not-a-sha256",
+            },),
+        )
+
+    assert state.get_run_by_session("runtime-session") is None
+
+
+def test_runtime_evidence_records_do_not_register_local_fallback_session(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-fallback-runtime",
+        target_session_id="",
+        task_id="task-fallback-runtime",
+        task="Do not invent a provider session.",
+        target_kind="claude_code",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    registrations = api._register_runtime_evidence_records(
+        run_id="workflow-fallback-runtime",
+        task_id="task-fallback-runtime",
+        task="Do not invent a provider session.",
+        gate="workflow_start",
+        cwd=str(tmp_path),
+        source="controlled_runtime_result",
+        records=({
+            "runtime": "claude_code",
+            "runtime_run_id": "local-runtime-id",
+            "session_id": "local-runtime-id",
+            "result_hash": "e" * 64,
+        },),
+    )
+
+    assert registrations == []
+    assert state.get_run_by_session("local-runtime-id") is None
+
+
+def test_runtime_evidence_records_ignore_non_runtime_receipts(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-non-runtime-receipt",
+        target_session_id="",
+        task_id="task-non-runtime-receipt",
+        task="Ignore policy receipts at the runtime-session boundary.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    registrations = api._register_runtime_evidence_records(
+        run_id="workflow-non-runtime-receipt",
+        task_id="task-non-runtime-receipt",
+        task="Ignore policy receipts at the runtime-session boundary.",
+        gate="workflow_start",
+        cwd=str(tmp_path),
+        source="controlled_runtime_result",
+        records=({
+            "receipt_id": "policy-only",
+            "kind": "dynamic_subagent_result",
+            "status": "passed",
+        },),
+    )
+
+    assert registrations == []
 
 
 def test_trace_graph_store_requires_sha256_pin(tmp_path):
@@ -519,14 +1204,6 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     from supervisor.dual_agent_runner import build_lead_replay_stdout
 
     state = State(str(tmp_path / "state.db"))
-    state.register_run(
-        run_id="run-1",
-        session_id="session-1",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
-        task="Dual agent gate",
-        scope=ScopeContract(allowed_paths=(".",)),
-        target_kind="codex",
-    )
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(
@@ -594,14 +1271,6 @@ async def test_mcp_gate_uses_runtime_lead_and_persists_runtime_provenance(
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 
     state = State(str(tmp_path / "state.db"))
-    state.register_run(
-        run_id="run-runtime-lead",
-        session_id="session-runtime-lead",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
-        task="Runtime-backed gate",
-        scope=ScopeContract(allowed_paths=(".",)),
-        target_kind="codex",
-    )
     runtime_tasks: list[AgentTask] = []
 
     def legacy_runner_must_not_run(*args, **kwargs):
@@ -693,14 +1362,6 @@ async def test_mcp_gate_persists_each_runtime_retry_and_aggregate_usage(
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 
     state = State(str(tmp_path / "state.db"))
-    state.register_run(
-        run_id="run-runtime-retry",
-        session_id="session-runtime-retry",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
-        task="Runtime retry provenance",
-        scope=ScopeContract(allowed_paths=(".",)),
-        target_kind="codex",
-    )
     runtime_tasks: list[AgentTask] = []
 
     def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
@@ -805,14 +1466,6 @@ async def test_async_mcp_gate_does_not_block_the_event_loop(
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 
     state = State(str(tmp_path / "state.db"))
-    state.register_run(
-        run_id="run-responsive-gate",
-        session_id="session-responsive-gate",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
-        task="Responsive runtime gate",
-        scope=ScopeContract(allowed_paths=(".",)),
-        target_kind="codex",
-    )
     started = threading.Event()
     release = threading.Event()
 
@@ -1313,8 +1966,18 @@ async def test_codex_supervisor_mcp_blocks_strict_outcome_gate_without_required_
         "issues",
         "implementation_plan",
     ]
-    assert result["artifact_export"]["status"] == "ok"
-    assert (tmp_path / "docs" / "dual-agent" / "gate-1" / "outcome-review.md").exists()
+    assert result["artifact_export"]["status"] == "incomplete"
+    assert result["artifact_export"]["ledger_authoritative"] is False
+    assert len(result["artifact_export"]["export_root_sha256"]) == 64
+    assert len(result["artifact_export"]["ledger_head_hash"]) == 64
+    assert (
+        tmp_path
+        / "docs"
+        / "dual-agent"
+        / "gate-1"
+        / "release"
+        / "outcome-review.md"
+    ).exists()
 
     outcome = await _maybe_await(server.tools["read_outcome"](
         run_id="run-1",
@@ -1628,7 +2291,10 @@ async def test_codex_supervisor_mcp_accepts_strict_outcome_gate_with_required_ar
         "issues",
         "implementation_plan",
     ]
-    assert "docs/dual-agent/gate-1/index.md" in result["artifact_export"]["files"]
+    assert (
+        "docs/dual-agent/gate-1/release/index.md"
+        in result["artifact_export"]["files"]
+    )
 
     outcome = await _maybe_await(server.tools["read_outcome"](
         run_id="run-1",
@@ -1730,8 +2396,14 @@ async def test_codex_supervisor_mcp_accepts_user_facing_gate_with_screenshots(tm
     assert result["status"] == "accepted"
     assert result["artifact_rigor"]["status"] == "ok"
     assert result["artifact_rigor"]["visual_validation"]["status"] == "ok"
-    assert "docs/dual-agent/gate-1/screenshots.md" in result["artifact_export"]["files"]
-    assert "docs/dual-agent/gate-1/screenshots/01-final-state.png" in result["artifact_export"]["files"]
+    assert (
+        "docs/dual-agent/gate-1/release/screenshots.md"
+        in result["artifact_export"]["files"]
+    )
+    assert (
+        "docs/dual-agent/gate-1/release/screenshots/01-final-state.png"
+        in result["artifact_export"]["files"]
+    )
 
 
 @pytest.mark.asyncio
@@ -2154,6 +2826,10 @@ async def test_codex_supervisor_mcp_records_rounds_checks_budget_and_polls_resum
 
 def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_runner(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
 
     calls: list[AgentTask] = []
 
@@ -2178,7 +2854,7 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
             ended_at_ms=120,
             cost_usd=0.0,
             resolved_model="gpt-5.5",
-            result_hash="codex-result-hash",
+            result_hash=sha256(b"codex-result").hexdigest(),
             token_usage={"tokens_in": 3, "tokens_out": 1},
             model_provenance="fake.model",
             token_provenance="fake.usage",
@@ -2186,9 +2862,10 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
         )
         return RuntimeExecution(handle=handle, events=(), result=result)
 
+    state = State(str(tmp_path / "state.db"))
     api = CodexSupervisorMcpAPI(
         _cfg(tmp_path),
-        State(str(tmp_path / "state.db")),
+        state,
         codex_runtime_runner=fake_codex_runtime_runner,
     )
 
@@ -2197,11 +2874,34 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
         cwd=str(tmp_path),
         execute=False,
     )
+    with pytest.raises(
+        ValueError,
+        match="require workflow_run_id and task_id",
+    ):
+        api.start_codex_session(
+            prompt="Implement the slice.",
+            cwd=str(tmp_path),
+            execute=True,
+            timeout_s=30,
+        )
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-run",
+        target_session_id="",
+        task_id="task-1",
+        task="Implement the slice.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
     executed = api.start_codex_session(
         prompt="Implement the slice.",
         cwd=str(tmp_path),
         execute=True,
         timeout_s=30,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
     )
 
     assert dry_run["status"] == "dry_run"
@@ -2212,7 +2912,12 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
     assert calls[0].metadata["reasoning_effort"] == "xhigh"
     assert executed["status"] == "completed"
     assert executed["runtime"] == "codex"
-    assert executed["result_hash"] == "codex-result-hash"
+    assert executed["result_hash"] == sha256(b"codex-result").hexdigest()
+    registration = json.loads(
+        Path(executed["session_registration_ref"]).read_text()
+    )
+    assert registration["runtime_run_id"] == "codex-runtime-run"
+    assert registration["runtime_result_hash"] == executed["result_hash"]
 
 
 def test_codex_supervisor_mcp_console_script_is_registered():

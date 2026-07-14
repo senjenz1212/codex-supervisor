@@ -1,27 +1,44 @@
 # TDD Plan and Observed RED/GREEN
 
-## Tracer 1: Captured nested Codex terminal
+## Tracer 1: Captured nested Codex turn completion
 
 Test:
-`test_captured_nested_codex_rollout_normalizes_and_reaches_terminal`
+`test_captured_nested_codex_rollout_reaches_turn_terminal_only`
 
 RED:
 the captured `event_msg.payload.type=task_complete` left the run `running`.
 
 GREEN:
-nested event kinds normalize to the shared taxonomy; `turn.completed` changes
-the run to `completed` and enqueues `evaluate_run`.
+nested event kinds normalize to the shared taxonomy. A reusable target session
+records `turn.completed` but deliberately remains `running`.
 
-## Tracer 2: Captured nested Claude terminal
+## Tracer 2: Captured nested Claude turn completion
 
 Test:
-`test_captured_nested_claude_rollout_normalizes_and_reaches_terminal`
+`test_captured_nested_claude_rollout_reaches_turn_terminal_only`
 
 Result:
 the general normalizer from tracer 1 immediately handled nested
-`assistant.message.stop_reason=end_turn` plus tool-use/tool-result entries.
+`assistant.message.stop_reason=end_turn` plus tool-use/tool-result entries,
+without incorrectly closing a reusable session.
 
-## Tracer 3: Submission registration and joins
+## Tracer 3: Workflow-owned single-turn terminalization
+
+Test:
+`test_workflow_owned_single_turn_terminalizes_once_across_restart`
+
+RED:
+the workflow-owned target emitted `turn.completed`, but the run stayed
+`running` and no evaluation was enqueued.
+
+GREEN:
+the run-registration sidecar carries an explicit `single_turn` completion
+policy. Its final `turn.completed` atomically closes the run and enqueues one
+`evaluate_run` decision. A second terminal marker and daemon restart produce
+no second terminal transition or decision. Registrations without that policy
+remain reusable and nonterminal.
+
+## Tracer 4: Submission registration and joins
 
 Test:
 `test_submission_registers_target_session_and_joins_rollout_to_workflow`
@@ -33,7 +50,7 @@ GREEN:
 submission co-registers the workflow/target session, writes the sidecar, and
 routes every captured rollout row to the workflow run and task.
 
-## Tracer 4: Explicit and retry-stable target identity
+## Tracer 5: Explicit and retry-stable target identity
 
 Tests:
 - `test_submission_explicit_target_session_overrides_environment`
@@ -47,7 +64,7 @@ GREEN:
 MCP/API and AXI accept explicit identity, and reattach reads the original
 reserved request before writing registration metadata.
 
-## Tracer 5: Path-independent semantic drift
+## Tracer 6: Path-independent semantic drift
 
 Test:
 `test_goal_abandonment_inside_allowed_files_opens_semantic_adjudication`
@@ -59,7 +76,7 @@ GREEN:
 L2 and triggered L3 execute independently of L1; low similarity and abandoned
 plan signals enqueue adjudication with `scope_violations=0`.
 
-## Tracer 6: OpenCode normalization
+## Tracer 7: OpenCode normalization
 
 Test:
 `test_opencode_events_normalize_to_shared_taxonomy`

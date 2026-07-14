@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 
+from supervisor import claim_gate as claim_gate_module
 from supervisor import experiment_kernel
 from supervisor.claim_gate import (
     ClaimGate as _ClaimGate,
@@ -756,6 +757,8 @@ def _causal_bundle(
     task_prefix: str = "causal-task",
     replication_context: dict[str, object] | None = None,
     gradebook: GradeBook | None = None,
+    commit_passing_grades: bool = True,
+    commit_failing_grades: bool = True,
 ) -> dict[str, object]:
     bundle = _outcome_bundle(evidence_root)
     grade_authority = gradebook or GradeBook(":memory:")
@@ -784,22 +787,6 @@ def _causal_bundle(
     )
     if task_count is None:
         task_count = required_task_count
-    powered_design = {
-        "paired": True,
-        "assignment_unit": "task",
-        "analysis_unit": "task",
-        "randomization_method": "hmac-sha256",
-        "power": {
-            "method": "exact_mcnemar",
-            "alpha": 0.05,
-            "target_power": target_power,
-            "alternative_b_win_rate": 0.75,
-            "expected_discordance_rate": conservative_discordance_rate,
-            "required_discordant_pairs": required_discordant_pairs,
-            "required_task_count": required_task_count,
-        },
-    }
-    powered_design_sha256 = _sha256_json(powered_design)
     treatment_hashes = {
         arm: _sha256_text(f"treatment:{arm.value}")
         for arm in experiment_kernel.Arm
@@ -814,11 +801,66 @@ def _causal_bundle(
         **stratum_fields,
         "stratum_id": experiment_kernel._sha256_json(stratum_fields),
     }
+    experiment_spec_hash = _sha256_text("fixture-experiment-spec")
+    planned_tasks = [
+        (
+            f"{task_prefix}-{index:02d}",
+            _task_identity(f"{task_prefix}-{index:02d}"),
+        )
+        for index in range(task_count)
+    ]
+    task_strata_manifest = {
+        "schema_version": "supervisor-task-strata-manifest/v1",
+        "tasks": sorted(
+            (
+                {
+                    "task_id": task_id,
+                    "canonical_task_id": canonical_task_identity(
+                        task_identity
+                    ),
+                    "stratum": stratum,
+                }
+                for task_id, task_identity in planned_tasks
+            ),
+            key=lambda item: (
+                item["canonical_task_id"],
+                item["task_id"],
+            ),
+        ),
+    }
+    powered_design = {
+        "paired": True,
+        "assignment_unit": "task",
+        "analysis_unit": "task",
+        "randomization_method": "hmac-sha256",
+        "assignment_version": assignment_version,
+        "assignment_key_commitment_sha256": sha256(
+            assignment_hmac_key
+        ).hexdigest(),
+        "experiment_spec_hash": experiment_spec_hash,
+        "task_strata_manifest_sha256": _sha256_json(
+            task_strata_manifest
+        ),
+        "treatment_hashes": {
+            arm.value: digest
+            for arm, digest in treatment_hashes.items()
+        },
+        "power": {
+            "method": "exact_mcnemar",
+            "alpha": 0.05,
+            "target_power": target_power,
+            "alternative_b_win_rate": 0.75,
+            "expected_discordance_rate": conservative_discordance_rate,
+            "required_discordant_pairs": required_discordant_pairs,
+            "required_task_count": required_task_count,
+        },
+    }
+    powered_design_sha256 = _sha256_json(powered_design)
     experiment_spec = SimpleNamespace(
         experiment_id=experiment_id,
         assignment_version=assignment_version,
         hmac_key=assignment_hmac_key,
-        spec_hash=_sha256_text("fixture-experiment-spec"),
+        spec_hash=experiment_spec_hash,
         treatment_hashes=treatment_hashes,
         metadata={},
     )
@@ -829,9 +871,7 @@ def _causal_bundle(
     trace_nodes: list[dict[str, object]] = []
     ledger_runs: list[dict[str, object]] = []
     ledger_event_payloads: list[dict[str, object]] = []
-    for index in range(task_count):
-        task_id = f"{task_prefix}-{index:02d}"
-        task_identity = _task_identity(task_id)
+    for index, (task_id, task_identity) in enumerate(planned_tasks):
         canonical_task_id = canonical_task_identity(task_identity)
         stratum_position = (
             experiment_kernel._deterministic_stratum_position(
@@ -933,6 +973,26 @@ def _causal_bundle(
                     verifier_implementation_hash
                 ),
             )
+            if (
+                (passed and commit_passing_grades)
+                or (not passed and commit_failing_grades)
+            ):
+                grade_authority.commit_terminal_grade(
+                    grade_id=grade_revision.grade_id,
+                    revision_hash=grade_revision.revision_hash,
+                    experiment_id=experiment_id,
+                    task_id=task_id,
+                    arm=arm,
+                    terminal_state="completed",
+                    terminal_state_hash=_sha256_json({
+                        "experiment_id": experiment_id,
+                        "task_id": task_id,
+                        "arm": arm,
+                        "state": "completed",
+                        "grade_id": grade_revision.grade_id,
+                        "revision_hash": grade_revision.revision_hash,
+                    }),
+                )
             grade = grade_revision.to_dict()
             grade_id = grade_revision.grade_id
             grades.append(
@@ -1262,6 +1322,8 @@ def _authoritative_causal_bundle(
     artifact_namespace: str = "",
     task_prefix: str = "causal-task",
     replication_context: dict[str, object] | None = None,
+    commit_passing_grades: bool = True,
+    commit_failing_grades: bool = True,
 ) -> tuple[
     dict[str, object],
     _FixtureAuthority,
@@ -1283,11 +1345,130 @@ def _authoritative_causal_bundle(
         task_prefix=task_prefix,
         replication_context=replication_context,
         gradebook=grade_authority,
+        commit_passing_grades=commit_passing_grades,
+        commit_failing_grades=commit_failing_grades,
     )
     return bundle, _FixtureAuthority(
         ledger_verifications=authoritative_verifications,
         gradebook=grade_authority,
     )
+
+
+def _assignment_parser_fixture(
+    evidence_root: Path,
+) -> tuple[dict[str, object], dict[str, object]]:
+    bundle = _causal_bundle(
+        evidence_root,
+        target_power=0.90,
+    )
+    causal_evidence = bundle["randomized_powered_b_vs_c"]
+    assert isinstance(causal_evidence, dict)
+    analysis_path = evidence_root / str(
+        causal_evidence["analysis_ref"]
+    )
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    assignment_descriptor = analysis["lineage"]["assignments"]
+    assignment_path = evidence_root / assignment_descriptor["ref"]
+    assignments = json.loads(
+        assignment_path.read_text(encoding="utf-8")
+    )
+    return analysis["design"], assignments
+
+
+def _rederive_assignment_document(
+    document: dict[str, object],
+    *,
+    hmac_key: bytes,
+    treatment_hashes: dict[str, str],
+    assignment_roster: list[str] | None = None,
+    assignment_roster_hash: str | None = None,
+) -> None:
+    randomization = document["randomization"]
+    assert isinstance(randomization, dict)
+    randomization["key_commitment_sha256"] = sha256(
+        hmac_key
+    ).hexdigest()
+    randomization["hmac_key_hex"] = hmac_key.hex()
+    if assignment_roster is None:
+        document.pop("assignment_roster", None)
+    else:
+        document["assignment_roster"] = list(assignment_roster)
+
+    records = document["assignments"]
+    assert isinstance(records, list)
+    for raw_record in records:
+        assert isinstance(raw_record, dict)
+        task_identity = raw_record["task_identity"]
+        assert isinstance(task_identity, dict)
+        previous_block = raw_record["block"]
+        assert isinstance(previous_block, dict)
+        stratum = {
+            str(key): str(value)
+            for key, value in previous_block.items()
+            if key
+            not in (
+                claim_gate_module._ASSIGNMENT_DERIVED_BLOCK_KEYS
+                | {"stratum_id", "assignment_roster_hash"}
+            )
+        }
+        if assignment_roster is not None:
+            stratum["assignment_roster_hash"] = (
+                assignment_roster_hash
+                or experiment_kernel._sha256_json({
+                    "assignment_roster": assignment_roster,
+                })
+            )
+        stratum["stratum_id"] = experiment_kernel._sha256_json(
+            stratum
+        )
+        experiment = SimpleNamespace(
+            experiment_id=document["experiment_id"],
+            assignment_version=document["assignment_version"],
+            hmac_key=hmac_key,
+            spec_hash=previous_block["experiment_spec_hash"],
+            treatment_hashes={
+                arm: treatment_hashes[arm.value]
+                for arm in experiment_kernel.Arm
+            },
+            metadata=(
+                {"assignment_roster": tuple(assignment_roster)}
+                if assignment_roster is not None
+                else {}
+            ),
+        )
+        if assignment_roster is None:
+            stratum_position = (
+                experiment_kernel._deterministic_stratum_position(
+                    experiment,
+                    task_identity,
+                    stratum=stratum,
+                )
+            )
+        else:
+            candidates = {
+                canonical_task_identity(task_identity),
+                str(task_identity["canonical_task_key"]),
+                str(raw_record["task_id"]),
+            }
+            positions = [
+                index
+                for index, value in enumerate(assignment_roster)
+                if value in candidates
+            ]
+            assert len(positions) == 1
+            stratum_position = positions[0]
+        block, assignment_id, order = (
+            experiment_kernel._derive_assignment(
+                experiment,
+                task_identity,
+                stratum=stratum,
+                stratum_position=stratum_position,
+            )
+        )
+        raw_record["block"] = block
+        raw_record["assignment_id"] = assignment_id
+        raw_record["order"] = [arm.value for arm in order]
+        raw_record["treatment_hashes"] = dict(treatment_hashes)
 
 
 def _portable_authoritative_bundle(
@@ -2517,6 +2698,42 @@ def test_closed_trace_and_90_percent_design_can_reach_l3(
     )
 
 
+def test_production_claim_gate_rejects_uncommitted_passing_grade(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _authoritative_causal_bundle(
+        tmp_path,
+        commit_passing_grades=False,
+    )
+
+    assert (
+        _ClaimGate.max_claim_level(
+            bundle,
+            evidence_root=tmp_path,
+            **_claim_gate_kwargs(ledger_resolver),
+        )
+        == ClaimLevel.L2
+    )
+
+
+def test_production_claim_gate_rejects_uncommitted_failing_grade(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _authoritative_causal_bundle(
+        tmp_path,
+        commit_failing_grades=False,
+    )
+
+    assert (
+        _ClaimGate.max_claim_level(
+            bundle,
+            evidence_root=tmp_path,
+            **_claim_gate_kwargs(ledger_resolver),
+        )
+        == ClaimLevel.L2
+    )
+
+
 def test_self_attested_ledger_records_cannot_raise_l3(
     tmp_path: Path,
 ) -> None:
@@ -2762,6 +2979,258 @@ def test_l3_recomputes_randomized_assignment_hmac(
         )
         == ClaimLevel.L2
     )
+
+
+def test_assignment_parser_rejects_post_hoc_key_with_self_commitment(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    post_hoc_key = sha256(b"post-hoc-assignment-key").digest()
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=post_hoc_key,
+        treatment_hashes=treatment_hashes,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="does not match preregistered design",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_binds_treatments_to_powered_design(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    changed_treatments = dict(powered_design["treatment_hashes"])
+    changed_treatments["supervisor"] = _sha256_text(
+        "post-hoc-supervisor-treatment"
+    )
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=changed_treatments,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="do not match powered design",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_binds_assignment_version_to_powered_design(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    assignments["assignment_version"] = "post-hoc-v2"
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    for record in records:
+        assert isinstance(record, dict)
+        record["assignment_version"] = "post-hoc-v2"
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="assignment version does not match preregistered design",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_binds_experiment_spec_hash_to_powered_design(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    for record in records:
+        assert isinstance(record, dict)
+        block = record["block"]
+        assert isinstance(block, dict)
+        block["experiment_spec_hash"] = _sha256_text(
+            "post-hoc-experiment-spec"
+        )
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="experiment spec hash does not match preregistered design",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_binds_task_strata_to_powered_design(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    for record in records:
+        assert isinstance(record, dict)
+        block = record["block"]
+        assert isinstance(block, dict)
+        block["task_family"] = "post-hoc-task-family"
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="task-to-stratum manifest does not match preregistered design",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_accepts_bound_frozen_roster(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    roster = [str(record["task_id"]) for record in records]
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+        assignment_roster=roster,
+    )
+    powered_design["task_strata_manifest_sha256"] = (
+        claim_gate_module._task_strata_manifest_sha256([
+            {
+                "task_id": str(record["task_id"]),
+                "canonical_task_id": str(record["canonical_task_id"]),
+                "stratum": (
+                    claim_gate_module._assignment_stratum_from_block(
+                        record["block"]
+                    )
+                ),
+            }
+            for record in records
+        ])
+    )
+    assignments["powered_design_sha256"] = _sha256_json(
+        powered_design
+    )
+
+    parsed = claim_gate_module._parse_assignment_evidence(
+        assignments,
+        experiment_id=str(assignments["experiment_id"]),
+        powered_design=powered_design,
+    )
+
+    assert set(parsed) == set(roster)
+
+
+def test_assignment_parser_requires_complete_unique_frozen_positions(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    roster = [str(record["task_id"]) for record in records]
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+        assignment_roster=roster,
+    )
+    records.pop()
+
+    with pytest.raises(
+        ValueError,
+        match="one contiguous position per roster identity",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
+
+
+def test_assignment_parser_binds_frozen_roster_hash(
+    tmp_path: Path,
+) -> None:
+    powered_design, assignments = _assignment_parser_fixture(tmp_path)
+    randomization = assignments["randomization"]
+    assert isinstance(randomization, dict)
+    records = assignments["assignments"]
+    assert isinstance(records, list)
+    roster = [str(record["task_id"]) for record in records]
+    treatment_hashes = powered_design["treatment_hashes"]
+    assert isinstance(treatment_hashes, dict)
+    _rederive_assignment_document(
+        assignments,
+        hmac_key=bytes.fromhex(str(randomization["hmac_key_hex"])),
+        treatment_hashes=treatment_hashes,
+        assignment_roster=roster,
+        assignment_roster_hash="f" * 64,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="does not match frozen roster",
+    ):
+        claim_gate_module._parse_assignment_evidence(
+            assignments,
+            experiment_id=str(assignments["experiment_id"]),
+            powered_design=powered_design,
+        )
 
 
 @pytest.mark.parametrize(
@@ -3201,7 +3670,10 @@ def test_low_level_claim_id_cannot_override_improvement_text(
 ) -> None:
     with pytest.raises(
         UnsupportedClaimError,
-        match="Supervisor improves outcomes requires L3; evidence supports L2",
+        match=(
+            "governed report claims must use registered claim IDs; "
+            "render canonical text from the registry"
+        ),
     ):
         ClaimGate.validate_report(
             {
@@ -3214,6 +3686,24 @@ def test_low_level_claim_id_cannot_override_improvement_text(
             },
             _outcome_bundle(tmp_path),
             evidence_root=tmp_path,
+        )
+
+
+def test_freeform_arm_b_better_than_c_claim_requires_l3() -> None:
+    with pytest.raises(
+        UnsupportedClaimError,
+        match=(
+            "Arm B is better than arm C requires L3; "
+            "evidence supports no claim level"
+        ),
+    ):
+        ClaimGate.validate_report(
+            {
+                "summary": (
+                    "Arm B is better than arm C on coding tasks."
+                )
+            },
+            {},
         )
 
 

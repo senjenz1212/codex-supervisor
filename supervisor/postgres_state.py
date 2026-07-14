@@ -11,6 +11,7 @@ from .evidence_ledger import (
     NATIVE_GENESIS,
     LedgerVerification,
     build_ledger_fields,
+    canonical_payload_hash,
     prepare_event_payload,
     verify_event_chain,
     verify_event_chain_structure,
@@ -44,7 +45,7 @@ if TYPE_CHECKING:
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
-POSTGRES_ALEMBIC_HEAD = "20260712_0003"
+POSTGRES_ALEMBIC_HEAD = "20260712_0004"
 
 POSTGRES_CLAIM_AVAILABLE_JOBS_SQL = f"""
 WITH c AS MATERIALIZED (
@@ -141,6 +142,55 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_run_event ON events(run_id, event_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_ts ON events(run_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_global_id ON events(global_id);
+
+CREATE TABLE IF NOT EXISTS event_idempotency_claims (
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  event_id BIGINT,
+  source TEXT NOT NULL,
+  payload_sha256 TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY(run_id, kind, idempotency_key),
+  UNIQUE(run_id, event_id)
+);
+CREATE OR REPLACE FUNCTION enforce_event_idempotency_claim_immutability()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.event_id IS NULL AND NEW.event_id IS NOT NULL
+       AND NEW.run_id IS NOT DISTINCT FROM OLD.run_id
+       AND NEW.kind IS NOT DISTINCT FROM OLD.kind
+       AND NEW.idempotency_key IS NOT DISTINCT FROM OLD.idempotency_key
+       AND NEW.source IS NOT DISTINCT FROM OLD.source
+       AND NEW.payload_sha256 IS NOT DISTINCT FROM OLD.payload_sha256
+       AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at
+       AND EXISTS (
+         SELECT 1
+         FROM events AS event
+         WHERE event.run_id = NEW.run_id
+           AND event.event_id = NEW.event_id
+           AND event.kind = NEW.kind
+           AND event.source = NEW.source
+           AND event.canonical_payload_hash = NEW.payload_sha256
+       ) THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+  RAISE EXCEPTION 'event idempotency claims are immutable';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS event_idempotency_claims_immutable
+  ON event_idempotency_claims;
+CREATE TRIGGER event_idempotency_claims_immutable
+BEFORE UPDATE OR DELETE ON event_idempotency_claims
+FOR EACH ROW EXECUTE FUNCTION enforce_event_idempotency_claim_immutability();
+DROP TRIGGER IF EXISTS event_idempotency_claims_no_truncate
+  ON event_idempotency_claims;
+CREATE TRIGGER event_idempotency_claims_no_truncate
+BEFORE TRUNCATE ON event_idempotency_claims
+FOR EACH STATEMENT EXECUTE FUNCTION
+  enforce_event_idempotency_claim_immutability();
 
 CREATE TABLE IF NOT EXISTS tail_offsets (
   path TEXT PRIMARY KEY,
@@ -1072,6 +1122,123 @@ class PostgresState:
             ts=ts,
         )
 
+    def write_event_once(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        ts: int | None = None,
+    ) -> int:
+        """Append one exact logical event across concurrent writers."""
+        assert_generic_event_kind_allowed(kind)
+        assert_public_event_kind_allowed(kind)
+        normalized_key = str(idempotency_key).strip()
+        if not normalized_key:
+            raise ValueError("event idempotency_key must be non-empty")
+        if len(normalized_key.encode("utf-8")) > 512:
+            raise ValueError("event idempotency_key exceeds 512 bytes")
+        prepared_payload = _event_payload(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=payload,
+        )
+        payload_sha256 = canonical_payload_hash(prepared_payload)
+        with self._write_lock:
+            with self._conn.transaction():
+                claimed = self._conn.execute(
+                    """INSERT INTO event_idempotency_claims(
+                         run_id, kind, idempotency_key, event_id, source,
+                         payload_sha256, created_at)
+                       VALUES(%s, %s, %s, NULL, %s, %s, %s)
+                       ON CONFLICT(run_id, kind, idempotency_key)
+                       DO NOTHING
+                       RETURNING idempotency_key""",
+                    (
+                        str(run_id),
+                        str(kind),
+                        normalized_key,
+                        str(source),
+                        payload_sha256,
+                        int(time.time()),
+                    ),
+                ).fetchone()
+                if claimed is not None:
+                    event_id = self._insert_event_unlocked(
+                        run_id=run_id,
+                        source=source,
+                        kind=kind,
+                        payload=payload,
+                        ts=ts,
+                    )
+                    finalized = self._conn.execute(
+                        """UPDATE event_idempotency_claims
+                              SET event_id=%s
+                            WHERE run_id=%s AND kind=%s
+                              AND idempotency_key=%s
+                              AND event_id IS NULL
+                          RETURNING event_id""",
+                        (
+                            event_id,
+                            str(run_id),
+                            str(kind),
+                            normalized_key,
+                        ),
+                    ).fetchone()
+                    if finalized is None:
+                        raise RuntimeError(
+                            "event idempotency claim finalization failed"
+                        )
+                else:
+                    existing = self._conn.execute(
+                        """SELECT event_id, source, payload_sha256
+                             FROM event_idempotency_claims
+                            WHERE run_id=%s AND kind=%s
+                              AND idempotency_key=%s""",
+                        (str(run_id), str(kind), normalized_key),
+                    ).fetchone()
+                    if existing is None or existing["event_id"] is None:
+                        raise RuntimeError(
+                            "event idempotency claim is incomplete"
+                        )
+                    if (
+                        str(existing["source"]) != str(source)
+                        or str(existing["payload_sha256"]) != payload_sha256
+                    ):
+                        raise RuntimeError(
+                            "event idempotency key was reused with changed "
+                            "source or payload"
+                        )
+                    event_id = int(existing["event_id"])
+                    event = self._conn.execute(
+                        """SELECT source, canonical_payload_hash
+                             FROM events
+                            WHERE run_id=%s AND event_id=%s AND kind=%s""",
+                        (str(run_id), event_id, str(kind)),
+                    ).fetchone()
+                    if event is None:
+                        raise RuntimeError(
+                            "event idempotency claim references a missing event"
+                        )
+                    if (
+                        str(event["source"]) != str(existing["source"])
+                        or str(event["canonical_payload_hash"])
+                        != str(existing["payload_sha256"])
+                    ):
+                        raise RuntimeError(
+                            "event idempotency claim does not match its "
+                            "immutable event"
+                        )
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=kind,
+            )
+            return event_id
+
     def write_historical_operation_event(
         self,
         *,
@@ -1344,6 +1511,8 @@ class PostgresState:
                    'dual_agent_gate_round',
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
+                   'dual_agent_production_trace_failed',
+                   'dual_agent_production_trace_recorded',
                    'dual_agent_skill_receipt_validation',
                    'dual_agent_agentic_worker_production',
                    'dual_agent_agentic_worker_progress',

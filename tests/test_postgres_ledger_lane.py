@@ -24,6 +24,7 @@ from supervisor.postgres_state import (
 from supervisor.dual_agent_workflow import workflow_resume_prompt
 from supervisor.evidence_committer import HmacCheckpointAuthority
 from supervisor.ledger_checkpoints import (
+    CheckpointPersistenceError,
     FilesystemTrustedCheckpointPinStore,
     LedgerCheckpointStore,
     checkpoint_identity,
@@ -259,6 +260,32 @@ def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "event_sequence BIGINT NOT NULL" in POSTGRES_SCHEMA_SQL
     assert "previous_event_id BIGINT" in POSTGRES_SCHEMA_SQL
     assert "event_hash TEXT NOT NULL" in POSTGRES_SCHEMA_SQL
+    assert "event_idempotency_claims" in POSTGRES_SCHEMA_SQL
+    assert "PRIMARY KEY(run_id, kind, idempotency_key)" in POSTGRES_SCHEMA_SQL
+    assert (
+        "enforce_event_idempotency_claim_immutability"
+        in POSTGRES_SCHEMA_SQL
+    )
+    assert (
+        "BEFORE UPDATE OR DELETE ON event_idempotency_claims"
+        in POSTGRES_SCHEMA_SQL
+    )
+    assert (
+        "OLD.event_id IS NULL AND NEW.event_id IS NOT NULL"
+        in POSTGRES_SCHEMA_SQL
+    )
+    assert "event.run_id = NEW.run_id" in POSTGRES_SCHEMA_SQL
+    assert "event.event_id = NEW.event_id" in POSTGRES_SCHEMA_SQL
+    assert "event.kind = NEW.kind" in POSTGRES_SCHEMA_SQL
+    assert "event.source = NEW.source" in POSTGRES_SCHEMA_SQL
+    assert (
+        "event.canonical_payload_hash = NEW.payload_sha256"
+        in POSTGRES_SCHEMA_SQL
+    )
+    assert (
+        "BEFORE TRUNCATE ON event_idempotency_claims"
+        in POSTGRES_SCHEMA_SQL
+    )
     assert "CONSTRAINT events_run_event_unique UNIQUE(run_id, event_id)" in POSTGRES_SCHEMA_SQL
     assert "CONSTRAINT events_run_sequence_unique UNIQUE(run_id, event_sequence)" in POSTGRES_SCHEMA_SQL
     assert "quality_trend_audits_counts_valid" in POSTGRES_SCHEMA_SQL
@@ -565,7 +592,7 @@ def test_postgres_startup_refuses_to_rewrite_existing_unmigrated_schema():
     with pytest.raises(RuntimeError, match="make migrate"):
         state.apply_schema()
 
-    assert POSTGRES_ALEMBIC_HEAD == "20260712_0003"
+    assert POSTGRES_ALEMBIC_HEAD == "20260712_0004"
     assert not any("UPDATE events" in sql for sql in connection.statements)
     assert not any("DROP TRIGGER" in sql for sql in connection.statements)
 
@@ -932,6 +959,242 @@ def test_postgres_partitioned_per_run_catch_up(postgres_state):
         event["event_id"]
         for event in postgres_state.read_events_since("run-b", after_event_id=0, limit=10)
     ] == [1]
+
+
+def test_postgres_write_event_once_is_exact(postgres_state):
+    kwargs = {
+        "run_id": "run-once",
+        "source": "dual_agent",
+        "kind": "dual_agent_production_trace_recorded",
+        "payload": {
+            "source_event_hash": "a" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        "idempotency_key": "production-trace:" + ("a" * 64),
+    }
+
+    first = postgres_state.write_event_once(**kwargs)
+    second = postgres_state.write_event_once(**kwargs)
+
+    assert second == first
+    assert len(
+        postgres_state.read_events_since(
+            "run-once",
+            after_event_id=0,
+            limit=10,
+        )
+    ) == 1
+    with pytest.raises(
+        RuntimeError,
+        match="changed source or payload",
+    ):
+        postgres_state.write_event_once(
+            **{
+                **kwargs,
+                "payload": {
+                    "source_event_hash": "a" * 64,
+                    "receipt": {"status": "different"},
+                },
+            }
+        )
+
+
+def test_postgres_event_idempotency_claims_are_immutable(postgres_state):
+    postgres_state.write_event_once(
+        run_id="postgres-immutable-claim",
+        source="dual_agent",
+        kind="dual_agent_production_trace_recorded",
+        payload={
+            "source_event_hash": "d" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        idempotency_key="production-trace:" + ("d" * 64),
+    )
+
+    for statement in (
+        """UPDATE event_idempotency_claims
+              SET source='attacker'
+            WHERE run_id='postgres-immutable-claim'""",
+        """DELETE FROM event_idempotency_claims
+            WHERE run_id='postgres-immutable-claim'""",
+        "TRUNCATE event_idempotency_claims",
+    ):
+        with pytest.raises(
+            postgres_state._errors.RaiseException,
+            match="event idempotency claims are immutable",
+        ):
+            with postgres_state._conn.transaction():
+                postgres_state._conn.execute(statement)
+
+
+def test_postgres_write_event_once_retry_coordinates_existing_event_after_failure():
+    class _Result:
+        def __init__(self, row=None):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _Transaction:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            return False
+
+    class _Connection:
+        def __init__(self):
+            self.claim = None
+            self.event = None
+
+        def transaction(self):
+            return _Transaction()
+
+        def execute(self, statement, params=None):
+            sql = re.sub(r"\s+", " ", str(statement).strip())
+            params = tuple(params or ())
+            if sql.startswith("INSERT INTO event_idempotency_claims"):
+                if self.claim is not None:
+                    return _Result()
+                self.claim = {
+                    "run_id": params[0],
+                    "kind": params[1],
+                    "idempotency_key": params[2],
+                    "event_id": None,
+                    "source": params[3],
+                    "payload_sha256": params[4],
+                }
+                return _Result({"idempotency_key": params[2]})
+            if sql.startswith("UPDATE event_idempotency_claims"):
+                assert self.claim is not None
+                self.claim["event_id"] = params[0]
+                return _Result({"event_id": params[0]})
+            if sql.startswith(
+                "SELECT event_id, source, payload_sha256 "
+                "FROM event_idempotency_claims"
+            ):
+                return _Result(dict(self.claim))
+            if sql.startswith(
+                "SELECT source, canonical_payload_hash FROM events"
+            ):
+                if (
+                    self.event is not None
+                    and params
+                    == (
+                        self.event["run_id"],
+                        self.event["event_id"],
+                        self.event["kind"],
+                    )
+                ):
+                    return _Result({
+                        "source": self.event["source"],
+                        "canonical_payload_hash": self.event[
+                            "canonical_payload_hash"
+                        ],
+                    })
+                return _Result()
+            if sql.startswith("SELECT event_id, event_sequence FROM events"):
+                if (
+                    self.event is not None
+                    and params
+                    == (
+                        self.event["run_id"],
+                        self.event["event_id"],
+                    )
+                ):
+                    return _Result(dict(self.event))
+                return _Result()
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    class _FailingCheckpointCoordinator:
+        assurance = "authoritative"
+
+        def __init__(self):
+            self.attempts = 0
+            self.published_event_ids = []
+
+        def coordinate_event(
+            self,
+            *,
+            run_id,
+            event_id,
+            event_count,
+            event_kind,
+            events_loader,
+        ):
+            del run_id, event_kind, events_loader
+            self.attempts += 1
+            assert event_count == 1
+            if self.attempts == 1:
+                raise CheckpointPersistenceError(
+                    "trusted_pin_persistence"
+                )
+            self.published_event_ids.append(event_id)
+
+    connection = _Connection()
+    coordinator = _FailingCheckpointCoordinator()
+    state = PostgresState.__new__(PostgresState)
+    state._conn = connection
+    state._write_lock = threading.RLock()
+    state._ledger_checkpoint_coordinator = coordinator
+    insert_calls = 0
+
+    def insert_event_unlocked(*, run_id, source, kind, payload, ts):
+        nonlocal insert_calls
+        del payload, ts
+        insert_calls += 1
+        assert connection.event is None
+        assert connection.claim is not None
+        connection.event = {
+            "run_id": run_id,
+            "event_id": 1,
+            "event_sequence": 1,
+            "kind": kind,
+            "source": source,
+            "canonical_payload_hash": connection.claim["payload_sha256"],
+        }
+        return 1
+
+    state._insert_event_unlocked = insert_event_unlocked
+    kwargs = {
+        "run_id": "postgres-idempotent-checkpoint-retry",
+        "source": "dual_agent",
+        "kind": "dual_agent_production_trace_recorded",
+        "payload": {
+            "source_event_hash": "b" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        "idempotency_key": "production-trace:" + ("b" * 64),
+    }
+
+    with pytest.raises(
+        CheckpointPersistenceError,
+        match="trusted_pin_persistence",
+    ):
+        state.write_event_once(**kwargs)
+
+    assert state.write_event_once(**kwargs) == 1
+    assert insert_calls == 1
+    assert coordinator.attempts == 2
+    assert coordinator.published_event_ids == [1]
+    connection.event["source"] = "attacker"
+    with pytest.raises(
+        RuntimeError,
+        match="does not match its immutable event",
+    ):
+        state.write_event_once(**kwargs)
+    connection.event["source"] = "dual_agent"
+    with pytest.raises(RuntimeError, match="changed source or payload"):
+        state.write_event_once(
+            **{
+                **kwargs,
+                "payload": {
+                    "source_event_hash": "b" * 64,
+                    "receipt": {"status": "different"},
+                },
+            }
+        )
+    assert coordinator.attempts == 2
 
 
 def test_postgres_event_stream_rejects_truncate(postgres_state):

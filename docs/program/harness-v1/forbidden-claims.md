@@ -6,7 +6,7 @@ the same way.
 
 | Claim | Minimum level | Why it is currently forbidden for report-only artifacts |
 |---|---:|---|
-| "Supervisor improves outcomes." | L3 | Fixture, replay, calibration, and shared-candidate mergeability reports are not randomized powered B-vs-C task-efficacy experiments. |
+| "Supervisor improves outcomes.", "Arm B is better than Arm C.", or equivalent B-vs-C superiority prose | L3 | Fixture, replay, calibration, and shared-candidate mergeability reports are not randomized powered B-vs-C task-efficacy experiments. |
 | "The improvement generalizes across strata." | L4 | One task family, one pooled result, or fewer than three pinned model families (including one optimizer-unseen family) does not establish portability. |
 | "The supervisor has positive ROI" or "pays for itself." | L5 | Outcome evidence without measured operating cost cannot establish ROI. |
 | "The system safely auto-improves." | L6 | Auto-improvement additionally requires frozen control, sealed holdout, and a passing canary. |
@@ -21,7 +21,9 @@ claim.
 
 - rejects a registered claim whose minimum level exceeds the derived level;
 - rejects an `asserted_claim_level` above the derived level;
-- rejects unregistered claims in the governed `claims` field;
+- accepts registered claim IDs only in the governed `claims` field and
+  explicit claim-bearing fields; canonical display text comes from the
+  registry;
 - never trusts a report-provided `required_level`;
 - reports both the required and available levels in the error.
 

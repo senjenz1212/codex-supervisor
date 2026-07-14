@@ -431,6 +431,20 @@ class RepositoryArmExecutor:
                         int((time.monotonic() - attempt_started) * 1000),
                     ),
                 }
+                raw_environment_attestation = run_result.metadata.get(
+                    "execution_environment_attestation"
+                )
+                if isinstance(raw_environment_attestation, Mapping):
+                    attempt_record[
+                        "execution_environment_attestation"
+                    ] = json.loads(
+                        json.dumps(
+                            dict(raw_environment_attestation),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            allow_nan=False,
+                        )
+                    )
                 attempt_records.append(attempt_record)
                 _validate_run_result_provenance(
                     run_result,
@@ -1196,6 +1210,59 @@ def _execution_environment_attestation(
         if not isinstance(raw, Mapping):
             raise ValueError(
                 "operational backend did not attest execution environment pins"
+            )
+        transport = getattr(runtime, "_transport", None)
+        if (
+            transport is not None
+            and str(raw.get("attestation_source") or "")
+            != "runtime_transport"
+        ):
+            raise ValueError(
+                "concrete command runtime attestation was not transport-derived"
+            )
+        raw_unmet_pins = raw.get("unmet_pins")
+        if str(raw.get("attestation_source") or "") == "runtime_transport":
+            if (
+                not isinstance(raw_unmet_pins, (list, tuple))
+                or any(
+                    not isinstance(value, str) or not value.strip()
+                    for value in raw_unmet_pins
+                )
+            ):
+                raise ValueError(
+                    "runtime transport attestation lacks explicit pin checks"
+                )
+            attestation_id = str(raw.get("attestation_id") or "")
+            attestation_body = {
+                str(key): value
+                for key, value in raw.items()
+                if key != "attestation_id"
+            }
+            if (
+                len(attestation_id) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in attestation_id
+                )
+                or _canonical_hash(attestation_body) != attestation_id
+            ):
+                raise ValueError(
+                    "runtime transport attestation hash is invalid"
+                )
+        unmet_pins = [
+            str(value).strip()
+            for value in (
+                raw_unmet_pins
+                if isinstance(raw_unmet_pins, (list, tuple))
+                else ()
+            )
+            if str(value).strip()
+        ]
+        if unmet_pins:
+            raise ValueError(
+                "operational backend did not enforce execution environment "
+                "pins: "
+                + ", ".join(unmet_pins)
             )
         attestation = ExecutionEnvironmentAttestation.from_mapping(raw)
     else:

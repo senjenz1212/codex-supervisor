@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+from hashlib import sha256
 import os
 import re
 import shlex
@@ -12,7 +13,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Callable
 
 from .dual_agent import ProbeResult
@@ -126,6 +127,7 @@ def collect_runtime_evidence(
 
     diff_result = _current_changed_files(
         cwd_path,
+        task_id=task_id,
         baseline_head=baseline_head if baseline_ok else None,
         runner=runner,
     )
@@ -161,6 +163,10 @@ def collect_runtime_evidence(
             "derived_changed_files_from_runtime": bool(committed_changed_files)
             and _text_list(outcome_payload.get("changed_files")) == committed_changed_files,
             "name_status": diff_result.get("name_status", []),
+            "excluded_supervisor_files": diff_result.get(
+                "excluded_supervisor_files",
+                [],
+            ),
             "reason": diff_result.get("reason"),
         },
     ))
@@ -278,6 +284,7 @@ def _receipt(
 def _current_changed_files(
     cwd: Path,
     *,
+    task_id: str,
     baseline_head: str | None = None,
     runner: Runner,
 ) -> dict[str, Any]:
@@ -292,11 +299,15 @@ def _current_changed_files(
         }
     entries: list[dict[str, str]] = []
     files: list[str] = []
+    excluded_supervisor_files: list[str] = []
     for line in status.stdout.splitlines():
         parsed = _parse_git_name_status_line(line, status_width=2)
         if parsed is None:
             continue
         code, path_text = parsed
+        if _is_supervisor_owned_runtime_path(path_text, task_id=task_id):
+            excluded_supervisor_files.append(path_text)
+            continue
         entries.append({"status": code, "path": path_text, "source": "worktree"})
         files.append(path_text)
 
@@ -316,6 +327,12 @@ def _current_changed_files(
                     if parsed is None:
                         continue
                     code, path_text = parsed
+                    if _is_supervisor_owned_runtime_path(
+                        path_text,
+                        task_id=task_id,
+                    ):
+                        excluded_supervisor_files.append(path_text)
+                        continue
                     committed_entries.append({
                         "status": code,
                         "path": path_text,
@@ -344,6 +361,9 @@ def _current_changed_files(
         )),
         "committed_changed_files": sorted(dict.fromkeys(committed_files)),
         "name_status": entries,
+        "excluded_supervisor_files": sorted(
+            dict.fromkeys(excluded_supervisor_files)
+        ),
     }
 
 
@@ -366,6 +386,34 @@ def _parse_git_name_status_line(line: str, *, status_width: int | None) -> tuple
     return code, path_text
 
 
+def _is_supervisor_owned_runtime_path(path_text: str, *, task_id: str) -> bool:
+    normalized = PurePath(path_text).as_posix()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized:
+        return False
+    if normalized == ".handoff" or normalized.startswith(".handoff/"):
+        return True
+    if normalized == "runs" or normalized.startswith("runs/"):
+        return True
+    if normalized in {
+        "state.db",
+        "state.db-journal",
+        "state.db-shm",
+        "state.db-wal",
+    }:
+        return True
+    task_prefix = f"docs/dual-agent/{task_id}/"
+    if not normalized.startswith(task_prefix):
+        return False
+    relative = normalized[len(task_prefix):]
+    return (
+        relative == "runtime-baseline-execution.json"
+        or relative == "release"
+        or relative.startswith("release/")
+    )
+
+
 def _deliverable_checks(cwd: Path, changed_files: list[str]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     for relative in changed_files:
@@ -380,7 +428,13 @@ def _deliverable_checks(cwd: Path, changed_files: list[str]) -> list[dict[str, A
         if size <= 0:
             checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_empty", "size": size})
             continue
-        checks.append({"path": relative, "status": "passed", "reason": "runtime_deliverable_present", "size": size})
+        checks.append({
+            "path": relative,
+            "status": "passed",
+            "reason": "runtime_deliverable_present",
+            "size": size,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        })
     return checks
 
 

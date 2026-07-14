@@ -1095,10 +1095,7 @@ class TraceGraph:
                         node=node.identity,
                         message="decision has no supporting ANL node",
                     ))
-                if (
-                    validation_binding is not None
-                    and node.identity in authoritative_decisions
-                ):
+                if validation_binding is not None:
                     hard_findings.extend(
                         self._decision_binding_findings(
                             node,

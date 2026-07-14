@@ -7,25 +7,41 @@ run so active-run monitoring and drift use the same id as the workflow ledger.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import hmac
 import json
 import os
 from pathlib import Path
+import re
 import secrets
+import stat
 import time
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 import uuid
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - launch receipts are POSIX-only
+    fcntl = None  # type: ignore[assignment]
 
 from .state import State
 from .target.types import ScopeContract
 
 
-RUN_REGISTRATION_SCHEMA = "supervisor-run-registration/v1"
+RUN_REGISTRATION_SCHEMA = "supervisor-run-registration/v2"
 LAUNCH_RECEIPT_SCHEMA = "supervisor-launch-receipt/v1"
 PENDING_SESSION_SOURCE = "pending_runtime_receipt"
 LAUNCH_RECEIPT_SOURCE = "launch_receipt"
+REUSABLE_SESSION_COMPLETION_POLICY = "reusable_session"
+SINGLE_TURN_COMPLETION_POLICY = "single_turn"
+WORKFLOW_AGGREGATE_COMPLETION_POLICY = "workflow_aggregate"
+_COMPLETION_POLICIES = frozenset({
+    REUSABLE_SESSION_COMPLETION_POLICY,
+    SINGLE_TURN_COMPLETION_POLICY,
+    WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+})
 DEFAULT_LAUNCH_RECEIPT_TTL_S = 3_600
 _LAUNCH_RECEIPT_DIRNAME = ".launch-receipts"
 
@@ -43,6 +59,7 @@ class WorkflowRunRegistration:
     target_kind: str
     registry_path: Path
     session_id_source: str
+    completion_policy: str
 
     def event_payload(self, *, job_id: str | None = None) -> dict[str, Any]:
         pending = self.session_id_source == PENDING_SESSION_SOURCE
@@ -55,6 +72,7 @@ class WorkflowRunRegistration:
             "target_kind": self.target_kind,
             "join_key": self.target_session_id or None,
             "session_id_source": self.session_id_source,
+            "completion_policy": self.completion_policy,
             "registry_path": str(self.registry_path),
             "pending": pending,
         }
@@ -84,6 +102,153 @@ class LaunchReceipt:
             "SUPERVISOR_WORKFLOW_TASK_ID": self.task_id,
             "SUPERVISOR_TARGET_KIND": self.target_kind,
         }
+
+
+@dataclass(frozen=True)
+class _LaunchReceiptStore:
+    registry_root: Path
+    registry_root_fd: int
+    receipt_root_fd: int
+    pending_fd: int
+    consumed_fd: int
+    locks_fd: int
+
+    def path(self, bucket: str, name: str) -> Path:
+        return (
+            self.registry_root
+            / _LAUNCH_RECEIPT_DIRNAME
+            / bucket
+            / name
+        )
+
+    def directory_fd(self, bucket: str) -> int:
+        if bucket == "pending":
+            return self.pending_fd
+        if bucket == "consumed":
+            return self.consumed_fd
+        if bucket == "locks":
+            return self.locks_fd
+        raise ValueError(f"unknown launch receipt bucket: {bucket}")
+
+    def exists(self, bucket: str, name: str) -> bool:
+        try:
+            os.stat(
+                name,
+                dir_fd=self.directory_fd(bucket),
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return False
+        return True
+
+    def read_json(
+        self,
+        bucket: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        descriptor = -1
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDONLY
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=self.directory_fd(bucket),
+            )
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                return None
+            with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+                descriptor = -1
+                payload = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        return payload if isinstance(payload, dict) else None
+
+    def exclusive_write_json(
+        self,
+        bucket: str,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        _exclusive_write_json_at(
+            self.directory_fd(bucket),
+            name,
+            payload,
+        )
+
+    def atomic_exclusive_write_json(
+        self,
+        bucket: str,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        _atomic_exclusive_write_json_at(
+            self.directory_fd(bucket),
+            name,
+            payload,
+        )
+
+    def atomic_write_json(
+        self,
+        bucket: str,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> None:
+        _atomic_write_json_at(
+            self.directory_fd(bucket),
+            name,
+            payload,
+        )
+
+    def unlink(self, bucket: str, name: str) -> bool:
+        return _durable_unlink_at(
+            self.directory_fd(bucket),
+            name,
+        )
+
+    def assert_namespace_current(self) -> None:
+        checks = (
+            (
+                self.registry_root_fd,
+                _LAUNCH_RECEIPT_DIRNAME,
+                self.receipt_root_fd,
+            ),
+            (self.receipt_root_fd, "pending", self.pending_fd),
+            (self.receipt_root_fd, "consumed", self.consumed_fd),
+            (self.receipt_root_fd, "locks", self.locks_fd),
+        )
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        for parent_fd, name, expected_fd in checks:
+            try:
+                observed_fd = os.open(
+                    name,
+                    flags,
+                    dir_fd=parent_fd,
+                )
+            except OSError as exc:
+                raise LaunchReceiptError(
+                    "launch receipt namespace changed during operation"
+                ) from exc
+            try:
+                observed = os.fstat(observed_fd)
+                expected = os.fstat(expected_fd)
+                if (
+                    observed.st_dev != expected.st_dev
+                    or observed.st_ino != expected.st_ino
+                ):
+                    raise LaunchReceiptError(
+                        "launch receipt namespace changed during operation"
+                    )
+            finally:
+                os.close(observed_fd)
 
 
 def resolve_target_session_id(
@@ -119,11 +284,18 @@ def register_submitted_workflow(
     cwd: str | Path,
     session_id_source: str,
     scope_contract: ScopeContract | None = None,
+    completion_policy: str = REUSABLE_SESSION_COMPLETION_POLICY,
 ) -> WorkflowRunRegistration:
     """Co-register a workflow run and atomically write its session join."""
     registry_root = Path(registry_dir).expanduser().resolve()
-    registry_root.mkdir(parents=True, exist_ok=True)
+    _ensure_directory_durable(registry_root)
     raw_target_session_id = str(target_session_id).strip()
+    normalized_completion_policy = str(completion_policy).strip()
+    if normalized_completion_policy not in _COMPLETION_POLICIES:
+        raise ValueError(
+            "completion_policy must be one of "
+            f"{sorted(_COMPLETION_POLICIES)}"
+        )
     pending = session_id_source == PENDING_SESSION_SOURCE
     if pending:
         if raw_target_session_id:
@@ -156,6 +328,7 @@ def register_submitted_workflow(
         session_id_source=(
             PENDING_SESSION_SOURCE if pending else str(session_id_source)
         ),
+        completion_policy=normalized_completion_policy,
     )
     config_snapshot = {
         "source": "workflow_submission",
@@ -166,6 +339,7 @@ def register_submitted_workflow(
         "target_kind": registration.target_kind,
         "cwd": str(Path(cwd).expanduser().resolve()),
         "session_id_source": registration.session_id_source,
+        "completion_policy": registration.completion_policy,
     }
     state.register_run(
         run_id=registration.workflow_run_id,
@@ -195,6 +369,335 @@ def register_submitted_workflow(
     return registration
 
 
+def register_workflow_runtime_session(
+    *,
+    state: State,
+    registry_dir: str | Path,
+    workflow_run_id: str,
+    target_session_id: str,
+    task_id: str,
+    task: str,
+    target_kind: str,
+    cwd: str | Path,
+    gate: str,
+    runtime_run_id: str,
+    runtime_result_hash: str,
+    source: str = "runtime_result",
+) -> dict[str, Any]:
+    """Register one workflow-owned, one-shot target runtime session.
+
+    A detached workflow may launch multiple target sessions across gates and
+    retries. Each target session therefore receives its own child run while
+    retaining an immutable join to the parent workflow run. The child is the
+    unit terminalized by ``turn.completed``; the parent remains active until
+    the detached workflow itself publishes its terminal outcome.
+    """
+    registry_root = Path(registry_dir).expanduser().resolve()
+    _ensure_directory_durable(registry_root)
+    normalized_workflow_run_id = str(workflow_run_id).strip()
+    normalized_target_session_id = str(target_session_id).strip()
+    normalized_task_id = str(task_id).strip()
+    normalized_task = str(task).strip()
+    normalized_target_kind = str(target_kind).strip()
+    normalized_gate = str(gate).strip()
+    normalized_runtime_run_id = str(runtime_run_id).strip()
+    normalized_runtime_result_hash = str(runtime_result_hash).strip()
+    normalized_source = str(source).strip()
+    if not normalized_workflow_run_id:
+        raise ValueError("workflow_run_id is required")
+    if not normalized_target_session_id:
+        raise ValueError("target_session_id is required")
+    if not normalized_task_id:
+        raise ValueError("task_id is required")
+    if not normalized_task:
+        raise ValueError("task is required")
+    if not normalized_target_kind:
+        raise ValueError("target_kind is required")
+    if not normalized_gate:
+        raise ValueError("gate is required")
+    if not normalized_runtime_run_id:
+        raise ValueError("runtime_run_id is required")
+    if not re.fullmatch(r"[0-9a-f]{64}", normalized_runtime_result_hash):
+        raise ValueError("runtime_result_hash must be a canonical sha256")
+    if not normalized_source:
+        raise ValueError("source is required")
+    normalized_cwd = _resolved_cwd(cwd)
+
+    parent_run = state.get_run(normalized_workflow_run_id)
+    parent_snapshot = state.get_run_snapshot(normalized_workflow_run_id)
+    if parent_run is None or parent_snapshot is None:
+        raise KeyError(
+            f"workflow run is not registered: {normalized_workflow_run_id}"
+        )
+    try:
+        parent_scope_payload = json.loads(
+            str(parent_snapshot["scope_contract_json"] or "{}")
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "workflow run scope snapshot is not valid JSON"
+        ) from exc
+    if not isinstance(parent_scope_payload, dict):
+        raise RuntimeError("workflow run scope snapshot is not an object")
+    scope = ScopeContract.from_dict(parent_scope_payload)
+    try:
+        parent_config_payload = json.loads(
+            str(parent_snapshot["config_json"] or "{}")
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "workflow run config snapshot is not valid JSON"
+        ) from exc
+    if not isinstance(parent_config_payload, dict):
+        raise RuntimeError("workflow run config snapshot is not an object")
+    registered_cwd = str(parent_config_payload.get("cwd") or "").strip()
+    if not registered_cwd:
+        raise RuntimeError("workflow run registration cwd is missing")
+    if _resolved_cwd(registered_cwd) != normalized_cwd:
+        raise ValueError(
+            "runtime cwd does not match workflow run registration cwd"
+        )
+
+    session_path = _session_registry_path(
+        registry_root,
+        normalized_target_session_id,
+    )
+    child_digest = hashlib.sha256(
+        (
+            f"{RUN_REGISTRATION_SCHEMA}\0target-run\0"
+            f"{normalized_workflow_run_id}\0{normalized_target_session_id}"
+        ).encode("utf-8")
+    ).hexdigest()
+    target_run_id = f"target-{child_digest[:32]}"
+    config_snapshot = {
+        "source": "workflow_runtime_session",
+        "schema_version": RUN_REGISTRATION_SCHEMA,
+        "workflow_run_id": normalized_workflow_run_id,
+        "target_run_id": target_run_id,
+        "target_session_id": normalized_target_session_id,
+        "task_id": normalized_task_id,
+        "target_kind": normalized_target_kind,
+        "cwd": normalized_cwd,
+        "gate": normalized_gate,
+        "runtime_run_id": normalized_runtime_run_id,
+        "runtime_result_hash": normalized_runtime_result_hash,
+        "session_id_source": normalized_source,
+        "completion_policy": SINGLE_TURN_COMPLETION_POLICY,
+    }
+    metadata = {
+        "schema_version": RUN_REGISTRATION_SCHEMA,
+        "workflow_run_id": normalized_workflow_run_id,
+        "run_id": target_run_id,
+        "target_run_id": target_run_id,
+        "target_session_id": normalized_target_session_id,
+        "session_id": normalized_target_session_id,
+        "task_id": normalized_task_id,
+        "task": normalized_task,
+        "target_kind": normalized_target_kind,
+        "join_key": normalized_target_session_id,
+        "session_id_source": normalized_source,
+        "completion_policy": SINGLE_TURN_COMPLETION_POLICY,
+        "registry_path": str(session_path),
+        "pending": False,
+        "scope_contract": scope.to_dict(),
+        "config_snapshot": config_snapshot,
+        "gate": normalized_gate,
+        "runtime_run_id": normalized_runtime_run_id,
+        "runtime_result_hash": normalized_runtime_result_hash,
+        "registered_at": int(time.time()),
+    }
+    existing = load_session_registration(
+        registry_root,
+        normalized_target_session_id,
+    )
+    claimed_sidecar = False
+    registration_metadata = existing
+    if registration_metadata is None:
+        try:
+            _exclusive_write_json(session_path, metadata)
+            claimed_sidecar = True
+            registration_metadata = metadata
+        except FileExistsError:
+            registration_metadata = load_session_registration(
+                registry_root,
+                normalized_target_session_id,
+            )
+            if registration_metadata is None:
+                raise RuntimeError(
+                    "target session sidecar exists but is unreadable"
+                )
+    try:
+        _validate_runtime_session_registration(
+            registration_metadata,
+            expected=metadata,
+        )
+        _ensure_runtime_session_state_binding(
+            state=state,
+            metadata=metadata,
+            scope=scope,
+        )
+    except Exception:
+        if claimed_sidecar:
+            _durable_unlink(session_path)
+        raise
+    return registration_metadata
+
+
+def _validate_runtime_session_registration(
+    observed: Mapping[str, Any],
+    *,
+    expected: Mapping[str, Any],
+) -> None:
+    """Reject same-session retries that change any provenance-bearing field."""
+    immutable_fields = (
+        "schema_version",
+        "workflow_run_id",
+        "run_id",
+        "target_run_id",
+        "target_session_id",
+        "session_id",
+        "task_id",
+        "task",
+        "target_kind",
+        "join_key",
+        "session_id_source",
+        "completion_policy",
+        "registry_path",
+        "pending",
+        "scope_contract",
+        "config_snapshot",
+        "gate",
+        "runtime_run_id",
+        "runtime_result_hash",
+    )
+    discrepancies = [
+        field
+        for field in immutable_fields
+        if observed.get(field) != expected.get(field)
+    ]
+    if discrepancies:
+        raise RuntimeError(
+            "target session sidecar provenance discrepancy: "
+            + ", ".join(discrepancies)
+        )
+
+
+def _ensure_runtime_session_state_binding(
+    *,
+    state: State,
+    metadata: Mapping[str, Any],
+    scope: ScopeContract,
+) -> None:
+    target_run_id = str(metadata["target_run_id"])
+    target_session_id = str(metadata["target_session_id"])
+    target_kind = str(metadata["target_kind"])
+    task = str(metadata["task"])
+    config_snapshot = dict(metadata["config_snapshot"])
+    run = state.get_run(target_run_id)
+    snapshot = state.get_run_snapshot(target_run_id)
+    if run is None and snapshot is None:
+        state.register_run(
+            run_id=target_run_id,
+            session_id=target_session_id,
+            rollout_path=f"pending://{target_kind}/{target_session_id}",
+            task=task,
+            scope=scope,
+            target_kind=target_kind,
+            config_snapshot=config_snapshot,
+        )
+        run = state.get_run(target_run_id)
+        snapshot = state.get_run_snapshot(target_run_id)
+    if run is None or snapshot is None:
+        raise RuntimeError(
+            "target session sidecar is not durably bound to State"
+        )
+    try:
+        observed_config = json.loads(str(snapshot["config_json"] or "{}"))
+        observed_scope = json.loads(
+            str(snapshot["scope_contract_json"] or "{}")
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "target runtime State snapshot is not valid JSON"
+        ) from exc
+    discrepancies: list[str] = []
+    if str(run["session_id"]) != target_session_id:
+        discrepancies.append("session_id")
+    if str(run["task"] or "") != task:
+        discrepancies.append("task")
+    if str(snapshot["target_kind"] or "") != target_kind:
+        discrepancies.append("target_kind")
+    if observed_config != config_snapshot:
+        discrepancies.append("config_snapshot")
+    if observed_scope != scope.to_dict():
+        discrepancies.append("scope_contract")
+    if discrepancies:
+        raise RuntimeError(
+            "target runtime State provenance discrepancy: "
+            + ", ".join(discrepancies)
+        )
+    workflow_run_id = str(metadata["workflow_run_id"])
+    if not _runtime_session_binding_event_exists(
+        state=state,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+    ):
+        state.write_event(
+            run_id=workflow_run_id,
+            source="supervisor",
+            kind="workflow_target_session_bound",
+            payload={
+                "schema_version": RUN_REGISTRATION_SCHEMA,
+                "workflow_run_id": workflow_run_id,
+                "target_run_id": target_run_id,
+                "target_session_id": target_session_id,
+                "task_id": str(metadata["task_id"]),
+                "target_kind": target_kind,
+                "gate": str(metadata["gate"]),
+                "runtime_run_id": str(metadata["runtime_run_id"]),
+                "runtime_result_hash": str(
+                    metadata["runtime_result_hash"]
+                ),
+                "session_id_source": str(
+                    metadata["session_id_source"]
+                ),
+                "completion_policy": str(
+                    metadata["completion_policy"]
+                ),
+                "registry_path": str(metadata["registry_path"]),
+            },
+        )
+
+
+def _runtime_session_binding_event_exists(
+    *,
+    state: State,
+    workflow_run_id: str,
+    target_session_id: str,
+) -> bool:
+    after_event_id = 0
+    while True:
+        events = state.read_events_since(
+            workflow_run_id,
+            after_event_id=after_event_id,
+            limit=1_000,
+        )
+        if not events:
+            return False
+        for event in events:
+            if event.get("kind") == "workflow_target_session_bound":
+                payload = event.get("payload")
+                if (
+                    isinstance(payload, Mapping)
+                    and str(payload.get("target_session_id") or "")
+                    == target_session_id
+                ):
+                    return True
+        after_event_id = max(
+            int(event["event_id"]) for event in events
+        )
+
+
 def reserve_launch_receipt(
     *,
     state: State,
@@ -213,7 +716,7 @@ def reserve_launch_receipt(
     fields; cwd is checked only as metadata for that already-selected workflow.
     """
     registry_root = Path(registry_dir).expanduser().resolve()
-    registry_root.mkdir(parents=True, exist_ok=True)
+    _ensure_directory_durable(registry_root)
     normalized_workflow_run_id = str(workflow_run_id).strip()
     normalized_task_id = str(task_id).strip()
     normalized_target_kind = str(target_kind).strip()
@@ -238,37 +741,47 @@ def reserve_launch_receipt(
     )
     issued_at = _timestamp(now)
     expires_at = issued_at + lifetime
-    for _attempt in range(16):
-        launch_id = secrets.token_hex(16)
-        nonce = secrets.token_urlsafe(32)
-        pending_path, _ = _launch_receipt_paths(registry_root, launch_id)
-        payload = {
-            "schema_version": LAUNCH_RECEIPT_SCHEMA,
-            "status": "pending",
-            "launch_id": launch_id,
-            "nonce_sha256": _launch_nonce_digest(launch_id, nonce),
-            "workflow_run_id": normalized_workflow_run_id,
-            "task_id": normalized_task_id,
-            "target_kind": normalized_target_kind,
-            "cwd": normalized_cwd,
-            "issued_at": issued_at,
-            "expires_at": expires_at,
-        }
-        try:
-            _exclusive_write_json(pending_path, payload)
-        except FileExistsError:
-            continue
-        return LaunchReceipt(
-            launch_id=launch_id,
-            nonce=nonce,
-            workflow_run_id=normalized_workflow_run_id,
-            task_id=normalized_task_id,
-            target_kind=normalized_target_kind,
-            cwd=normalized_cwd,
-            issued_at=issued_at,
-            expires_at=expires_at,
-            receipt_path=pending_path,
-        )
+    with _open_launch_receipt_store(registry_root) as receipt_store:
+        receipt_store.assert_namespace_current()
+        for _attempt in range(16):
+            launch_id = secrets.token_hex(16)
+            nonce = secrets.token_urlsafe(32)
+            pending_path, _ = _launch_receipt_paths(
+                registry_root,
+                launch_id,
+            )
+            payload = {
+                "schema_version": LAUNCH_RECEIPT_SCHEMA,
+                "status": "pending",
+                "launch_id": launch_id,
+                "nonce_sha256": _launch_nonce_digest(launch_id, nonce),
+                "workflow_run_id": normalized_workflow_run_id,
+                "task_id": normalized_task_id,
+                "target_kind": normalized_target_kind,
+                "cwd": normalized_cwd,
+                "issued_at": issued_at,
+                "expires_at": expires_at,
+            }
+            try:
+                receipt_store.exclusive_write_json(
+                    "pending",
+                    pending_path.name,
+                    payload,
+                )
+            except FileExistsError:
+                continue
+            receipt_store.assert_namespace_current()
+            return LaunchReceipt(
+                launch_id=launch_id,
+                nonce=nonce,
+                workflow_run_id=normalized_workflow_run_id,
+                task_id=normalized_task_id,
+                target_kind=normalized_target_kind,
+                cwd=normalized_cwd,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                receipt_path=pending_path,
+            )
     raise RuntimeError("unable to reserve a unique launch receipt")
 
 
@@ -282,33 +795,142 @@ def consume_launch_receipt(
     task_id: str,
     target_kind: str,
     target_session_id: str,
+    runtime_run_id: str | None = None,
+    runtime_result_hash: str | None = None,
+    cwd: str | Path | None = None,
+    rollout_path: str | None = None,
+    now: int | float | None = None,
+) -> dict[str, Any]:
+    """Consume or recover one receipt under a process-scoped receipt lock.
+
+    A complete ``consuming`` payload is atomically published as the ownership
+    claim before the pending receipt is removed. The advisory lock keeps
+    concurrent callers from treating the winner's transient claim as a crashed
+    process. If the winner actually exits, the kernel releases the lock and an
+    exact retry can reconcile the durable claim.
+    """
+    registry_root = Path(registry_dir).expanduser().resolve()
+    _ensure_directory_durable(registry_root)
+    normalized_launch_id = _safe_launch_id(launch_id)
+    with _open_launch_receipt_store(registry_root) as receipt_store:
+        with _launch_receipt_consume_lock(
+            receipt_store,
+            normalized_launch_id,
+        ):
+            return _consume_launch_receipt_locked(
+                state=state,
+                registry_dir=registry_root,
+                receipt_store=receipt_store,
+                launch_id=normalized_launch_id,
+                nonce=nonce,
+                workflow_run_id=workflow_run_id,
+                task_id=task_id,
+                target_kind=target_kind,
+                target_session_id=target_session_id,
+                runtime_run_id=runtime_run_id,
+                runtime_result_hash=runtime_result_hash,
+                cwd=cwd,
+                rollout_path=rollout_path,
+                now=now,
+            )
+
+
+def _consume_launch_receipt_locked(
+    *,
+    state: State,
+    registry_dir: str | Path,
+    receipt_store: _LaunchReceiptStore,
+    launch_id: str,
+    nonce: str,
+    workflow_run_id: str,
+    task_id: str,
+    target_kind: str,
+    target_session_id: str,
+    runtime_run_id: str | None = None,
+    runtime_result_hash: str | None = None,
     cwd: str | Path | None = None,
     rollout_path: str | None = None,
     now: int | float | None = None,
 ) -> dict[str, Any]:
     """Atomically consume one matching receipt and bind its real session once."""
+    receipt_store.assert_namespace_current()
     registry_root = Path(registry_dir).expanduser().resolve()
-    registry_root.mkdir(parents=True, exist_ok=True)
+    _ensure_directory_durable(registry_root)
     normalized_launch_id = _safe_launch_id(launch_id)
     normalized_nonce = str(nonce).strip()
     normalized_workflow_run_id = str(workflow_run_id).strip()
     normalized_task_id = str(task_id).strip()
     normalized_target_kind = str(target_kind).strip()
     normalized_target_session_id = str(target_session_id).strip()
-    normalized_cwd = _resolved_cwd(cwd) if cwd is not None else None
+    normalized_runtime_run_id = str(runtime_run_id or "").strip()
+    normalized_runtime_result_hash = str(
+        runtime_result_hash or ""
+    ).strip()
+    if bool(normalized_runtime_run_id) != bool(
+        normalized_runtime_result_hash
+    ):
+        raise LaunchReceiptError(
+            "runtime_run_id and runtime_result_hash must be provided together"
+        )
+    if normalized_runtime_result_hash and not re.fullmatch(
+        r"[0-9a-f]{64}",
+        normalized_runtime_result_hash,
+    ):
+        raise LaunchReceiptError(
+            "runtime_result_hash must be a canonical sha256"
+        )
+    normalized_cwd = _resolved_cwd(cwd)
     _session_registry_path(registry_root, normalized_target_session_id)
 
     pending_path, consumed_path = _launch_receipt_paths(
         registry_root,
         normalized_launch_id,
     )
-    if consumed_path.exists():
-        raise LaunchReceiptError(
-            f"launch receipt already consumed: {normalized_launch_id}"
+    if receipt_store.exists("consumed", consumed_path.name):
+        claimed = receipt_store.read_json(
+            "consumed",
+            consumed_path.name,
         )
-    receipt = _read_registration_file(registry_root, pending_path)
+        if claimed is None:
+            raise LaunchReceiptError(
+                "consumed launch receipt is unreadable: "
+                f"{normalized_launch_id}"
+            )
+        status = str(claimed.get("status") or "")
+        if status not in {"consuming", "consume_failed"}:
+            raise LaunchReceiptError(
+                f"launch receipt already consumed: {normalized_launch_id}"
+            )
+        _validate_recoverable_launch_receipt_payload(
+            claimed,
+            launch_id=normalized_launch_id,
+            nonce=normalized_nonce,
+            workflow_run_id=normalized_workflow_run_id,
+            task_id=normalized_task_id,
+            target_kind=normalized_target_kind,
+            target_session_id=normalized_target_session_id,
+            runtime_run_id=normalized_runtime_run_id,
+            runtime_result_hash=normalized_runtime_result_hash,
+            cwd=normalized_cwd,
+        )
+        receipt_store.unlink("pending", pending_path.name)
+        receipt_store.assert_namespace_current()
+        return _complete_claimed_launch_receipt(
+            state=state,
+            registry_root=registry_root,
+            receipt_store=receipt_store,
+            consumed_path=consumed_path,
+            claimed=claimed,
+            workflow_run_id=normalized_workflow_run_id,
+            target_session_id=normalized_target_session_id,
+            rollout_path=rollout_path,
+            launch_id=normalized_launch_id,
+            runtime_run_id=normalized_runtime_run_id,
+            runtime_result_hash=normalized_runtime_result_hash,
+        )
+    receipt = receipt_store.read_json("pending", pending_path.name)
     if receipt is None:
-        if consumed_path.exists():
+        if receipt_store.exists("consumed", consumed_path.name):
             raise LaunchReceiptError(
                 f"launch receipt already consumed: {normalized_launch_id}"
             )
@@ -334,51 +956,87 @@ def consume_launch_receipt(
         cwd=str(receipt["cwd"]),
     )
 
-    # Creating the consumed hard link is the single-winner operation. A second
-    # process or thread cannot create the same destination, even while the
-    # winner is still updating SQLite and the session sidecar.
-    consumed_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.link(pending_path, consumed_path, follow_symlinks=False)
-    except FileExistsError as exc:
-        raise LaunchReceiptError(
-            f"launch receipt already consumed: {normalized_launch_id}"
-        ) from exc
-    except FileNotFoundError as exc:
-        if consumed_path.exists():
-            raise LaunchReceiptError(
-                f"launch receipt already consumed: {normalized_launch_id}"
-            ) from exc
-        raise LaunchReceiptError(
-            f"launch receipt not found: {normalized_launch_id}"
-        ) from exc
-    try:
-        pending_path.unlink()
-    except FileNotFoundError:
-        pass
-
     consumed_at = _timestamp(now)
     claimed = {
         **receipt,
         "status": "consuming",
         "consumed_at": consumed_at,
         "target_session_id": normalized_target_session_id,
+        **(
+            {
+                "runtime_run_id": normalized_runtime_run_id,
+                "runtime_result_hash": normalized_runtime_result_hash,
+            }
+            if normalized_runtime_run_id
+            else {}
+        ),
     }
-    _atomic_write_json(consumed_path, claimed)
+    # Publish the complete recoverable claim in one exclusive namespace
+    # operation. A crash after publication can leave both files present, but
+    # the consumed file already contains every field needed for exact recovery.
+    try:
+        receipt_store.assert_namespace_current()
+        receipt_store.atomic_exclusive_write_json(
+            "consumed",
+            consumed_path.name,
+            claimed,
+        )
+    except FileExistsError as exc:
+        raise LaunchReceiptError(
+            f"launch receipt already consumed: {normalized_launch_id}"
+        ) from exc
+    receipt_store.unlink("pending", pending_path.name)
+    receipt_store.assert_namespace_current()
+
+    return _complete_claimed_launch_receipt(
+        state=state,
+        registry_root=registry_root,
+        receipt_store=receipt_store,
+        consumed_path=consumed_path,
+        claimed=claimed,
+        workflow_run_id=normalized_workflow_run_id,
+        target_session_id=normalized_target_session_id,
+        rollout_path=rollout_path,
+        launch_id=normalized_launch_id,
+        runtime_run_id=normalized_runtime_run_id,
+        runtime_result_hash=normalized_runtime_result_hash,
+    )
+
+
+def _complete_claimed_launch_receipt(
+    *,
+    state: State,
+    registry_root: Path,
+    receipt_store: _LaunchReceiptStore,
+    consumed_path: Path,
+    claimed: Mapping[str, Any],
+    workflow_run_id: str,
+    target_session_id: str,
+    rollout_path: str | None,
+    launch_id: str,
+    runtime_run_id: str,
+    runtime_result_hash: str,
+) -> dict[str, Any]:
+    """Finish a durably claimed receipt, including after a process crash."""
+    receipt_store.assert_namespace_current()
     try:
         bound = bind_workflow_target_session(
             state=state,
             registry_dir=registry_root,
-            workflow_run_id=normalized_workflow_run_id,
-            target_session_id=normalized_target_session_id,
+            workflow_run_id=workflow_run_id,
+            target_session_id=target_session_id,
             source=LAUNCH_RECEIPT_SOURCE,
             rollout_path=rollout_path,
-            launch_id=normalized_launch_id,
+            launch_id=launch_id,
             launch_receipt_path=consumed_path,
+            runtime_run_id=runtime_run_id or None,
+            runtime_result_hash=runtime_result_hash or None,
         )
     except Exception as exc:
-        _atomic_write_json(
-            consumed_path,
+        receipt_store.assert_namespace_current()
+        receipt_store.atomic_write_json(
+            "consumed",
+            consumed_path.name,
             {
                 **claimed,
                 "status": "consume_failed",
@@ -386,14 +1044,19 @@ def consume_launch_receipt(
             },
         )
         raise
-    _atomic_write_json(
-        consumed_path,
-        {
-            **claimed,
-            "status": "consumed",
-            "session_registry_path": bound["registry_path"],
-        },
+    completed = {
+        **claimed,
+        "status": "consumed",
+        "session_registry_path": bound["registry_path"],
+    }
+    completed.pop("failure_type", None)
+    receipt_store.assert_namespace_current()
+    receipt_store.atomic_write_json(
+        "consumed",
+        consumed_path.name,
+        completed,
     )
+    receipt_store.assert_namespace_current()
     return bound
 
 
@@ -407,11 +1070,28 @@ def bind_workflow_target_session(
     rollout_path: str | None = None,
     launch_id: str | None = None,
     launch_receipt_path: str | Path | None = None,
+    runtime_run_id: str | None = None,
+    runtime_result_hash: str | None = None,
 ) -> dict[str, Any]:
     """Bind one pending workflow to a real target session without splitting runs."""
     registry_root = Path(registry_dir).expanduser().resolve()
-    registry_root.mkdir(parents=True, exist_ok=True)
+    _ensure_directory_durable(registry_root)
     normalized_target_session_id = str(target_session_id).strip()
+    normalized_runtime_run_id = str(runtime_run_id or "").strip()
+    normalized_runtime_result_hash = str(
+        runtime_result_hash or ""
+    ).strip()
+    if bool(normalized_runtime_run_id) != bool(
+        normalized_runtime_result_hash
+    ):
+        raise ValueError(
+            "runtime_run_id and runtime_result_hash must be provided together"
+        )
+    if normalized_runtime_result_hash and not re.fullmatch(
+        r"[0-9a-f]{64}",
+        normalized_runtime_result_hash,
+    ):
+        raise ValueError("runtime_result_hash must be a canonical sha256")
     # Validate before reading or mutating any state.
     actual_path = _session_registry_path(
         registry_root,
@@ -424,16 +1104,68 @@ def bind_workflow_target_session(
             registry_root,
             normalized_target_session_id,
         )
-        if (
-            existing is not None
-            and existing.get("workflow_run_id") == str(workflow_run_id)
-        ):
+        if existing is not None:
+            if existing.get("workflow_run_id") != str(workflow_run_id):
+                raise RuntimeError(
+                    "target session sidecar is already bound to another workflow"
+                )
+            _validate_bound_session_registration(
+                existing,
+                workflow_run_id=str(workflow_run_id),
+                target_session_id=normalized_target_session_id,
+                source=str(source),
+                registry_path=actual_path,
+                launch_id=launch_id,
+                launch_receipt_path=launch_receipt_path,
+                runtime_run_id=normalized_runtime_run_id,
+                runtime_result_hash=normalized_runtime_result_hash,
+            )
+            current_run = state.get_run(str(workflow_run_id))
+            if current_run is None:
+                raise KeyError(f"run not found: {workflow_run_id}")
+            current_session = str(current_run["session_id"] or "")
+            if current_session not in {
+                _pending_session_id(str(workflow_run_id)),
+                normalized_target_session_id,
+            }:
+                raise RuntimeError(
+                    "workflow run is already bound to another session"
+                )
+            resolved_rollout_path = (
+                str(rollout_path)
+                if rollout_path
+                else (
+                    str(current_run["rollout_path"] or "")
+                    if current_session == normalized_target_session_id
+                    else (
+                        f"pending://{existing.get('target_kind') or 'unknown'}/"
+                        f"{normalized_target_session_id}"
+                    )
+                )
+            )
+            state.bind_run_session(
+                run_id=str(workflow_run_id),
+                session_id=normalized_target_session_id,
+                rollout_path=resolved_rollout_path,
+            )
+            _ensure_workflow_target_session_binding_event(
+                state=state,
+                metadata=existing,
+                source=str(source),
+                launch_id=launch_id,
+                runtime_run_id=normalized_runtime_run_id,
+                runtime_result_hash=normalized_runtime_result_hash,
+            )
             return existing
         raise KeyError(f"pending workflow registration not found: {workflow_run_id}")
 
     sidecar_present = actual_path.is_file() or actual_path.is_symlink()
+    existing_sidecar: dict[str, Any] | None = None
     if sidecar_present:
-        existing = _read_registration_file(registry_root, actual_path)
+        existing = load_session_registration(
+            registry_root,
+            normalized_target_session_id,
+        )
         if existing is None:
             raise RuntimeError(
                 "target session sidecar exists but is unreadable; "
@@ -443,6 +1175,18 @@ def bind_workflow_target_session(
             raise RuntimeError(
                 "target session sidecar is already bound to another workflow"
             )
+        _validate_bound_session_registration(
+            existing,
+            workflow_run_id=str(workflow_run_id),
+            target_session_id=normalized_target_session_id,
+            source=str(source),
+            registry_path=actual_path,
+            launch_id=launch_id,
+            launch_receipt_path=launch_receipt_path,
+            runtime_run_id=normalized_runtime_run_id,
+            runtime_result_hash=normalized_runtime_result_hash,
+        )
+        existing_sidecar = existing
     resolved_rollout_path = (
         str(rollout_path)
         if rollout_path
@@ -464,7 +1208,7 @@ def bind_workflow_target_session(
             "workflow run is not pending and is already bound to another session"
         )
     bound_at = int(time.time())
-    metadata = {
+    metadata = existing_sidecar or {
         **pending,
         "target_session_id": normalized_target_session_id,
         "session_id": normalized_target_session_id,
@@ -473,26 +1217,55 @@ def bind_workflow_target_session(
         "registry_path": str(actual_path),
         "pending": False,
         "bound_at": bound_at,
+        **({"launch_id": str(launch_id)} if launch_id else {}),
+        **(
+            {"launch_receipt_path": str(launch_receipt_path)}
+            if launch_receipt_path
+            else {}
+        ),
+        **(
+            {
+                "runtime_run_id": normalized_runtime_run_id,
+                "runtime_result_hash": normalized_runtime_result_hash,
+            }
+            if normalized_runtime_run_id
+            else {}
+        ),
     }
-    if launch_id:
-        metadata["launch_id"] = str(launch_id)
-    if launch_receipt_path:
-        metadata["launch_receipt_path"] = str(launch_receipt_path)
     claimed = False
     if not sidecar_present:
         try:
             _exclusive_write_json(actual_path, metadata)
         except FileExistsError as exc:
-            racing = _read_registration_file(registry_root, actual_path)
-            if (
-                racing is None
-                or str(racing.get("workflow_run_id") or "")
-                != str(workflow_run_id)
+            racing = load_session_registration(
+                registry_root,
+                normalized_target_session_id,
+            )
+            if racing is None:
+                raise RuntimeError(
+                    "target session sidecar is already bound to another "
+                    "workflow"
+                ) from exc
+            if str(racing.get("workflow_run_id") or "") != str(
+                workflow_run_id
             ):
                 raise RuntimeError(
                     "target session sidecar is already bound to another "
                     "workflow"
                 ) from exc
+            _validate_bound_session_registration(
+                racing,
+                workflow_run_id=str(workflow_run_id),
+                target_session_id=normalized_target_session_id,
+                source=str(source),
+                registry_path=actual_path,
+                launch_id=launch_id,
+                launch_receipt_path=launch_receipt_path,
+                runtime_run_id=normalized_runtime_run_id,
+                runtime_result_hash=normalized_runtime_result_hash,
+            )
+            existing_sidecar = racing
+            metadata = racing
         else:
             claimed = True
     try:
@@ -503,32 +1276,123 @@ def bind_workflow_target_session(
         )
     except Exception:
         if claimed:
-            try:
-                actual_path.unlink()
-            except FileNotFoundError:
-                pass
+            _durable_unlink(actual_path)
         raise
-    if not claimed:
-        _atomic_write_json(actual_path, metadata)
-    try:
-        pending_path.unlink()
-    except FileNotFoundError:
-        pass
+    _durable_unlink(pending_path)
+    _ensure_workflow_target_session_binding_event(
+        state=state,
+        metadata=metadata,
+        source=str(source),
+        launch_id=launch_id,
+        runtime_run_id=normalized_runtime_run_id,
+        runtime_result_hash=normalized_runtime_result_hash,
+    )
+    return metadata
+
+
+def _ensure_workflow_target_session_binding_event(
+    *,
+    state: State,
+    metadata: Mapping[str, Any],
+    source: str,
+    launch_id: str | None,
+    runtime_run_id: str,
+    runtime_result_hash: str,
+) -> None:
+    workflow_run_id = str(metadata["workflow_run_id"])
+    target_session_id = str(metadata["target_session_id"])
+    expected_payload = {
+        "workflow_run_id": workflow_run_id,
+        "target_session_id": target_session_id,
+        "session_id_source": source,
+        "registry_path": str(metadata["registry_path"]),
+        "task_id": str(metadata.get("task_id") or ""),
+        "target_kind": str(metadata.get("target_kind") or ""),
+        "launch_id": str(launch_id or ""),
+        "runtime_run_id": runtime_run_id,
+        "runtime_result_hash": runtime_result_hash,
+    }
+    after_event_id = 0
+    while True:
+        events = state.read_events_since(
+            workflow_run_id,
+            after_event_id=after_event_id,
+            limit=1_000,
+        )
+        if not events:
+            break
+        for event in events:
+            if event.get("kind") != "workflow_target_session_bound":
+                continue
+            payload = event.get("payload")
+            if (
+                not isinstance(payload, Mapping)
+                or str(payload.get("target_session_id") or "")
+                != target_session_id
+            ):
+                continue
+            discrepancies = [
+                field
+                for field, expected in expected_payload.items()
+                if str(payload.get(field) or "") != expected
+            ]
+            if discrepancies:
+                raise RuntimeError(
+                    "workflow target-session binding event provenance "
+                    "discrepancy: "
+                    + ", ".join(discrepancies)
+                )
+            return
+        after_event_id = max(int(event["event_id"]) for event in events)
     state.write_event(
-        run_id=str(workflow_run_id),
+        run_id=workflow_run_id,
         source="supervisor",
         kind="workflow_target_session_bound",
         payload={
-            "workflow_run_id": str(workflow_run_id),
-            "target_session_id": normalized_target_session_id,
-            "session_id_source": str(source),
-            "registry_path": str(actual_path),
-            "task_id": str(pending.get("task_id") or ""),
-            "target_kind": str(pending.get("target_kind") or ""),
-            **({"launch_id": str(launch_id)} if launch_id else {}),
+            field: value
+            for field, value in expected_payload.items()
+            if value
         },
     )
-    return metadata
+
+
+def _validate_bound_session_registration(
+    observed: Mapping[str, Any],
+    *,
+    workflow_run_id: str,
+    target_session_id: str,
+    source: str,
+    registry_path: Path,
+    launch_id: str | None,
+    launch_receipt_path: str | Path | None,
+    runtime_run_id: str,
+    runtime_result_hash: str,
+) -> None:
+    expected = {
+        "workflow_run_id": workflow_run_id,
+        "run_id": workflow_run_id,
+        "target_session_id": target_session_id,
+        "session_id": target_session_id,
+        "join_key": target_session_id,
+        "session_id_source": source,
+        "registry_path": str(registry_path),
+        "launch_id": str(launch_id or ""),
+        "launch_receipt_path": str(launch_receipt_path or ""),
+        "runtime_run_id": runtime_run_id,
+        "runtime_result_hash": runtime_result_hash,
+    }
+    discrepancies = [
+        field
+        for field, expected_value in expected.items()
+        if str(observed.get(field) or "") != expected_value
+    ]
+    if observed.get("pending") is not False:
+        discrepancies.append("pending")
+    if discrepancies:
+        raise RuntimeError(
+            "target session sidecar provenance discrepancy: "
+            + ", ".join(discrepancies)
+        )
 
 
 def bind_unambiguous_pending_workflow(
@@ -638,10 +1502,40 @@ def _validate_launch_receipt_payload(
     cwd: str | None,
     now: int,
 ) -> None:
-    if receipt.get("schema_version") != LAUNCH_RECEIPT_SCHEMA:
-        raise LaunchReceiptError("launch receipt schema mismatch")
+    _validate_launch_receipt_identity(
+        receipt,
+        launch_id=launch_id,
+        nonce=nonce,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        target_kind=target_kind,
+        cwd=cwd,
+    )
     if receipt.get("status") != "pending":
         raise LaunchReceiptError(f"launch receipt already consumed: {launch_id}")
+    try:
+        issued_at = int(receipt["issued_at"])
+        expires_at = int(receipt["expires_at"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LaunchReceiptError("launch receipt timestamp is invalid") from exc
+    if now < issued_at:
+        raise LaunchReceiptError("launch receipt is not yet valid")
+    if now >= expires_at:
+        raise LaunchReceiptError("launch receipt expired")
+
+
+def _validate_launch_receipt_identity(
+    receipt: Mapping[str, Any],
+    *,
+    launch_id: str,
+    nonce: str,
+    workflow_run_id: str,
+    task_id: str,
+    target_kind: str,
+    cwd: str | None,
+) -> None:
+    if receipt.get("schema_version") != LAUNCH_RECEIPT_SCHEMA:
+        raise LaunchReceiptError("launch receipt schema mismatch")
     for field, expected in (
         ("launch_id", launch_id),
         ("workflow_run_id", workflow_run_id),
@@ -658,15 +1552,6 @@ def _validate_launch_receipt_payload(
         expected_nonce_hash,
     ):
         raise LaunchReceiptError("launch receipt nonce mismatch")
-    try:
-        issued_at = int(receipt["issued_at"])
-        expires_at = int(receipt["expires_at"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise LaunchReceiptError("launch receipt timestamp is invalid") from exc
-    if now < issued_at:
-        raise LaunchReceiptError("launch receipt is not yet valid")
-    if now >= expires_at:
-        raise LaunchReceiptError("launch receipt expired")
     registered_cwd = str(receipt.get("cwd") or "").strip()
     if not registered_cwd:
         raise LaunchReceiptError("launch receipt cwd is missing")
@@ -674,16 +1559,94 @@ def _validate_launch_receipt_payload(
         raise LaunchReceiptError("launch receipt cwd mismatch")
 
 
+def _validate_recoverable_launch_receipt_payload(
+    receipt: Mapping[str, Any],
+    *,
+    launch_id: str,
+    nonce: str,
+    workflow_run_id: str,
+    task_id: str,
+    target_kind: str,
+    target_session_id: str,
+    runtime_run_id: str,
+    runtime_result_hash: str,
+    cwd: str,
+) -> None:
+    _validate_launch_receipt_identity(
+        receipt,
+        launch_id=launch_id,
+        nonce=nonce,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        target_kind=target_kind,
+        cwd=cwd,
+    )
+    for field, expected in (
+        ("target_session_id", target_session_id),
+        ("runtime_run_id", runtime_run_id),
+        ("runtime_result_hash", runtime_result_hash),
+    ):
+        observed = str(receipt.get(field) or "").strip()
+        if observed != expected:
+            raise LaunchReceiptError(f"launch receipt {field} mismatch")
+
+
 def _read_registration_file(
     registry_root: Path,
     path: Path,
 ) -> dict[str, Any] | None:
+    root_descriptor = -1
+    directory_descriptors: list[int] = []
+    file_descriptor = -1
     try:
-        resolved = path.resolve(strict=True)
-        resolved.relative_to(registry_root)
-        payload = json.loads(resolved.read_text(encoding="utf-8"))
+        candidate = path if path.is_absolute() else registry_root / path
+        relative = candidate.relative_to(registry_root)
+        if (
+            not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            return None
+        no_follow = os.O_NOFOLLOW
+        read_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        directory_flags = (
+            read_flags
+            | os.O_DIRECTORY
+            | no_follow
+        )
+        root_descriptor = os.open(registry_root, directory_flags)
+        if not stat.S_ISDIR(os.fstat(root_descriptor).st_mode):
+            return None
+        parent_descriptor = root_descriptor
+        for component in relative.parts[:-1]:
+            descriptor = os.open(
+                component,
+                directory_flags,
+                dir_fd=parent_descriptor,
+            )
+            if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                os.close(descriptor)
+                return None
+            directory_descriptors.append(descriptor)
+            parent_descriptor = descriptor
+        file_descriptor = os.open(
+            relative.parts[-1],
+            read_flags | no_follow,
+            dir_fd=parent_descriptor,
+        )
+        if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
+            return None
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            payload = json.load(handle)
     except (OSError, ValueError, json.JSONDecodeError):
         return None
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        for descriptor in reversed(directory_descriptors):
+            os.close(descriptor)
+        if root_descriptor >= 0:
+            os.close(root_descriptor)
     return payload if isinstance(payload, dict) else None
 
 
@@ -698,9 +1661,18 @@ def _session_registry_path(registry_root: Path, session_id: str) -> Path:
         or Path(raw).name != raw
     ):
         raise ValueError("target session id is not a safe registry filename")
-    candidate = (registry_root / f"{raw}.json").resolve(strict=False)
+    candidate = registry_root / f"{raw}.json"
     if candidate.parent != registry_root:
         raise ValueError("target session registry path escapes registry root")
+    if candidate.is_symlink():
+        try:
+            candidate.resolve(strict=True).relative_to(registry_root)
+        except ValueError as exc:
+            raise ValueError(
+                "target session registry path escapes registry root"
+            ) from exc
+        except OSError:
+            pass
     return candidate
 
 
@@ -731,6 +1703,165 @@ def _launch_receipt_paths(
     )
 
 
+@contextmanager
+def _launch_receipt_consume_lock(
+    receipt_store: _LaunchReceiptStore,
+    launch_id: str,
+):
+    if fcntl is None:
+        raise LaunchReceiptError(
+            "launch receipt consumption requires POSIX advisory locks"
+        )
+    normalized_launch_id = _safe_launch_id(launch_id)
+    receipt_store.assert_namespace_current()
+    digest = hashlib.sha256(
+        normalized_launch_id.encode("utf-8")
+    ).hexdigest()
+    lock_name = f"{digest}.lock"
+    read_flags = (
+        os.O_RDWR
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        descriptor = os.open(
+            lock_name,
+            read_flags,
+            dir_fd=receipt_store.locks_fd,
+        )
+    except FileNotFoundError:
+        try:
+            created = os.open(
+                lock_name,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=receipt_store.locks_fd,
+            )
+        except FileExistsError:
+            pass
+        else:
+            os.fsync(created)
+            os.close(created)
+            os.fsync(receipt_store.locks_fd)
+        descriptor = os.open(
+            lock_name,
+            read_flags,
+            dir_fd=receipt_store.locks_fd,
+        )
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise LaunchReceiptError(
+                "launch receipt lock is not a regular file"
+            )
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        receipt_store.assert_namespace_current()
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+@contextmanager
+def _open_launch_receipt_store(
+    registry_root: Path,
+) -> Iterator[_LaunchReceiptStore]:
+    """Anchor all receipt namespace operations to stable directory handles."""
+    root = registry_root.expanduser().absolute()
+    _ensure_directory_durable(root)
+    root_chain = _open_absolute_directory_chain_no_follow(root)
+    opened: list[int] = []
+    try:
+        root_fd = root_chain[-1]
+        receipt_root_fd = _open_or_create_directory_at(
+            root_fd,
+            _LAUNCH_RECEIPT_DIRNAME,
+        )
+        opened.append(receipt_root_fd)
+        pending_fd = _open_or_create_directory_at(
+            receipt_root_fd,
+            "pending",
+        )
+        opened.append(pending_fd)
+        consumed_fd = _open_or_create_directory_at(
+            receipt_root_fd,
+            "consumed",
+        )
+        opened.append(consumed_fd)
+        locks_fd = _open_or_create_directory_at(
+            receipt_root_fd,
+            "locks",
+        )
+        opened.append(locks_fd)
+        yield _LaunchReceiptStore(
+            registry_root=root,
+            registry_root_fd=root_fd,
+            receipt_root_fd=receipt_root_fd,
+            pending_fd=pending_fd,
+            consumed_fd=consumed_fd,
+            locks_fd=locks_fd,
+        )
+    finally:
+        for descriptor in reversed(opened):
+            os.close(descriptor)
+        for descriptor in reversed(root_chain):
+            os.close(descriptor)
+
+
+def _open_absolute_directory_chain_no_follow(path: Path) -> list[int]:
+    absolute = path.expanduser().absolute()
+    if not absolute.is_absolute() or not absolute.anchor:
+        raise LaunchReceiptError(
+            "launch receipt registry root must be absolute"
+        )
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptors: list[int] = []
+    try:
+        descriptor = os.open(absolute.anchor, flags)
+        descriptors.append(descriptor)
+        for part in absolute.parts[1:]:
+            descriptor = os.open(
+                part,
+                flags,
+                dir_fd=descriptor,
+            )
+            descriptors.append(descriptor)
+        return descriptors
+    except Exception:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        raise
+
+
+def _open_or_create_directory_at(parent_fd: int, name: str) -> int:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        return os.open(name, flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except FileExistsError:
+            pass
+        return os.open(name, flags, dir_fd=parent_fd)
+
+
 def _pending_registry_path(
     registry_root: Path,
     workflow_run_id: str,
@@ -746,7 +1877,9 @@ def _pending_session_id(workflow_run_id: str) -> str:
     return f"pending:{workflow_run_id}"
 
 
-def _resolved_cwd(cwd: str | Path) -> str:
+def _resolved_cwd(cwd: str | Path | None) -> str:
+    if cwd is None:
+        raise LaunchReceiptError("cwd is required")
     raw = str(cwd).strip()
     if not raw:
         raise LaunchReceiptError("cwd is required")
@@ -764,8 +1897,83 @@ def _launch_nonce_digest(launch_id: str, nonce: str) -> str:
     return hashlib.sha256(material).hexdigest()
 
 
+def _exclusive_write_json_at(
+    directory_fd: int,
+    name: str,
+    payload: Mapping[str, Any],
+) -> None:
+    descriptor = os.open(
+        name,
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+        dir_fd=directory_fd,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(dict(payload), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.fsync(directory_fd)
+    except Exception:
+        _durable_unlink_at(directory_fd, name)
+        raise
+
+
+def _atomic_exclusive_write_json_at(
+    directory_fd: int,
+    name: str,
+    payload: Mapping[str, Any],
+) -> None:
+    temp_name = f".{name}.{uuid.uuid4().hex}.claim"
+    try:
+        _exclusive_write_json_at(directory_fd, temp_name, payload)
+        os.link(
+            temp_name,
+            name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        os.fsync(directory_fd)
+    finally:
+        _durable_unlink_at(directory_fd, temp_name)
+
+
+def _atomic_write_json_at(
+    directory_fd: int,
+    name: str,
+    payload: Mapping[str, Any],
+) -> None:
+    temp_name = f".{name}.{uuid.uuid4().hex}.tmp"
+    try:
+        _exclusive_write_json_at(directory_fd, temp_name, payload)
+        os.replace(
+            temp_name,
+            name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        os.fsync(directory_fd)
+    finally:
+        _durable_unlink_at(directory_fd, temp_name)
+
+
+def _durable_unlink_at(directory_fd: int, name: str) -> bool:
+    try:
+        os.unlink(name, dir_fd=directory_fd)
+    except FileNotFoundError:
+        return False
+    os.fsync(directory_fd)
+    return True
+
+
 def _exclusive_write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_directory_durable(path.parent)
     descriptor = os.open(
         path,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -777,15 +1985,29 @@ def _exclusive_write_json(path: Path, payload: Mapping[str, Any]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
+        _fsync_directory(path.parent)
     except Exception:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+        _durable_unlink(path)
         raise
 
 
+def _atomic_exclusive_write_json(
+    path: Path,
+    payload: Mapping[str, Any],
+) -> None:
+    """Publish a complete JSON file without replacing an existing claim."""
+    _ensure_directory_durable(path.parent)
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.claim")
+    try:
+        _exclusive_write_json(temp, payload)
+        os.link(temp, path, follow_symlinks=False)
+        _fsync_directory(path.parent)
+    finally:
+        _durable_unlink(temp)
+
+
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    _ensure_directory_durable(path.parent)
     temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         with temp.open("w", encoding="utf-8") as handle:
@@ -796,10 +2018,41 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
         os.replace(temp, path)
         _fsync_directory(path.parent)
     finally:
+        _durable_unlink(temp)
+
+
+def _ensure_directory_durable(directory: Path) -> None:
+    """Create each missing directory and persist its parent entry."""
+    if directory.is_dir():
+        return
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    if current.exists() and not current.is_dir():
+        raise NotADirectoryError(str(current))
+    for candidate in reversed(missing):
         try:
-            temp.unlink()
-        except FileNotFoundError:
-            pass
+            candidate.mkdir()
+        except FileExistsError:
+            if not candidate.is_dir():
+                raise
+        _fsync_directory(candidate.parent)
+    if not directory.is_dir():
+        raise NotADirectoryError(str(directory))
+
+
+def _durable_unlink(path: Path) -> bool:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    _fsync_directory(path.parent)
+    return True
 
 
 def _fsync_directory(directory: Path) -> None:

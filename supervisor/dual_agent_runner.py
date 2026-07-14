@@ -7,17 +7,21 @@ stops on the first blocked gate. Live process calls remain injectable.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import secrets
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+import psutil
+
+from .agent_runtime import AgentTask
 from .dual_agent import (
     GateRound,
     Outcome,
@@ -57,8 +61,16 @@ from .planning_validator import (
     required_planning_kinds_for_gate,
     validate_planning_artifacts,
 )
+from .process_containment import (
+    CONTAINMENT_ENV_VAR,
+    ProcessIdentity,
+    containment_environment,
+    new_containment_id,
+    scan_containment,
+    terminate_containment,
+)
 from .trace_graph import TraceGraph
-from .runtime_execution import RuntimeTaskRunner
+from .runtime_execution import RuntimeExecution, RuntimeTaskRunner
 from .state import State
 from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
@@ -647,44 +659,408 @@ def _required_planning_kinds(spec: DualAgentGateSpec) -> tuple[str, ...]:
     return required_planning_kinds_for_gate(spec.gate)
 
 
-class _CancellationGuardedState:
-    """Delegate to the real state, but stop persisting gate events once the
-    awaiting coroutine has been cancelled while the gate thread still runs."""
+def _process_group_id(pid: int) -> int | None:
+    if not hasattr(os, "getpgid"):
+        return None
+    try:
+        return os.getpgid(int(pid))
+    except OSError:
+        return None
 
-    def __init__(self, state: State, cancelled: threading.Event) -> None:
+
+@dataclass(frozen=True)
+class _ActiveGateInvocation:
+    invocation_id: str
+    containment_id: str
+    cancel_target: Any
+
+
+class _GateCancellation:
+    """Coordinate caller cancellation with the synchronous gate thread."""
+
+    def __init__(self) -> None:
+        self.cancelled = threading.Event()
+        self._gate_token = secrets.token_hex(16)
+        temp_root = (
+            os.environ.get("TMPDIR")
+            or os.environ.get("TEMP")
+            or "/tmp"
+        )
+        # Direct-Anthropic routing intentionally strips arbitrary environment
+        # keys but preserves PATH. A unique, nonexistent PATH component keeps
+        # the gate discoverable after the runtime installs its own containment
+        # id without changing command resolution.
+        self._path_marker = str(
+            Path(temp_root)
+            / f".codex-supervisor-dual-agent-{self._gate_token}"
+        )
+        self._condition = threading.Condition()
+        self._active: dict[str, _ActiveGateInvocation] = {}
+        self._known_containment_ids: set[str] = set()
+        self._state_write_lock = threading.Lock()
+
+    def wrap_runner(self, runner: Runner) -> Runner:
+        def _run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            containment_id = new_containment_id()
+            invocation_id = self._start_invocation(
+                containment_id=containment_id,
+                cancel_target=runner,
+            )
+            call_kwargs = dict(kwargs)
+            environment = self._tag_environment(
+                call_kwargs.get("env"),
+                containment_id,
+            )
+            call_kwargs["env"] = environment
+            if runner is subprocess.run and os.name == "posix":
+                call_kwargs.setdefault("start_new_session", True)
+            try:
+                if self.cancelled.is_set():
+                    raise RuntimeError("dual-agent gate invocation cancelled")
+                return runner(*args, **call_kwargs)
+            finally:
+                self._finish_invocation(invocation_id)
+
+        return _run
+
+    def wrap_runtime_runner(
+        self,
+        runtime_runner: RuntimeTaskRunner | None,
+    ) -> RuntimeTaskRunner | None:
+        if runtime_runner is None:
+            return None
+
+        def _run(task: AgentTask) -> RuntimeExecution:
+            containment_id = new_containment_id()
+            invocation_id = self._start_invocation(
+                containment_id=containment_id,
+                cancel_target=runtime_runner,
+            )
+            environment = self._tag_environment(
+                {
+                    str(key): str(value)
+                    for key, value in task.env.items()
+                },
+                containment_id,
+                runtime_marker=True,
+            )
+            controlled_task = replace(task, env=environment)
+            try:
+                if self.cancelled.is_set():
+                    raise RuntimeError("dual-agent gate invocation cancelled")
+                return runtime_runner(controlled_task)
+            finally:
+                self._finish_invocation(invocation_id)
+
+        return _run
+
+    def write_event(
+        self,
+        state: State,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        with self._state_write_lock:
+            if self.cancelled.is_set():
+                return None
+            return state.write_event(*args, **kwargs)
+
+    def write_event_once(
+        self,
+        state: State,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        with self._state_write_lock:
+            if self.cancelled.is_set():
+                return None
+            return state.write_event_once(*args, **kwargs)
+
+    def cancel_active_invocations(self) -> None:
+        cancelled_targets: set[int] = set()
+        while True:
+            active = self._active_snapshot()
+            containment_ids = self._known_containments()
+            processes_quiescent = self._terminate_gate_processes(
+                containment_ids
+            )
+
+            for invocation in active:
+                target_id = id(invocation.cancel_target)
+                if target_id in cancelled_targets:
+                    continue
+                cancelled_targets.add(target_id)
+                self._cancel_target(invocation.cancel_target)
+
+            with self._condition:
+                active_remaining = bool(self._active)
+            # Re-scan after the runner leaves its active section so a process
+            # spawned at the cancellation boundary cannot escape cleanup.
+            if (
+                not active_remaining
+                and processes_quiescent
+                and self._terminate_gate_processes(containment_ids)
+            ):
+                break
+            with self._condition:
+                self._condition.wait(timeout=0.02)
+
+        with self._state_write_lock:
+            pass
+
+    def _start_invocation(
+        self,
+        *,
+        containment_id: str,
+        cancel_target: Any,
+    ) -> str:
+        invocation_id = secrets.token_hex(8)
+        invocation = _ActiveGateInvocation(
+            invocation_id=invocation_id,
+            containment_id=containment_id,
+            cancel_target=cancel_target,
+        )
+        with self._condition:
+            self._active[invocation_id] = invocation
+            self._known_containment_ids.add(containment_id)
+            self._condition.notify_all()
+        return invocation_id
+
+    def _tag_environment(
+        self,
+        base: Mapping[str, str] | None,
+        containment_id: str,
+        *,
+        runtime_marker: bool = False,
+    ) -> dict[str, str]:
+        environment = containment_environment(base, containment_id)
+        if not runtime_marker:
+            return environment
+        current_path = str(environment.get("PATH") or "")
+        path_parts = (
+            current_path.split(os.pathsep)
+            if current_path
+            else os.defpath.split(os.pathsep)
+        )
+        if self._path_marker not in path_parts:
+            environment["PATH"] = os.pathsep.join([
+                self._path_marker,
+                *path_parts,
+            ])
+        return environment
+
+    def _finish_invocation(self, invocation_id: str) -> None:
+        with self._condition:
+            self._active.pop(invocation_id, None)
+            self._condition.notify_all()
+
+    def _active_snapshot(self) -> tuple[_ActiveGateInvocation, ...]:
+        with self._condition:
+            return tuple(self._active.values())
+
+    def _known_containments(self) -> set[str]:
+        with self._condition:
+            return set(self._known_containment_ids)
+
+    @staticmethod
+    def _cancel_target(target: Any) -> None:
+        for method_name in ("cancel", "terminate"):
+            method = getattr(target, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                result = method()
+                if inspect.isawaitable(result):
+                    asyncio.run(result)
+            except BaseException:
+                pass
+            return
+
+    def _terminate_gate_processes(
+        self,
+        containment_ids: set[str],
+    ) -> bool:
+        candidates, scans_complete = self._contained_process_candidates(
+            containment_ids
+        )
+        if not candidates:
+            return scans_complete
+        roots: dict[str, tuple[ProcessIdentity, int]] = {}
+        for containment_id, identity, process_group_id in candidates:
+            current = roots.get(containment_id)
+            if current is None or self._prefer_process_root(
+                identity,
+                process_group_id,
+                current[0],
+                current[1],
+            ):
+                roots[containment_id] = (identity, process_group_id)
+
+        safe_to_finalize = scans_complete
+        for containment_id, (identity, process_group_id) in roots.items():
+            termination = terminate_containment(
+                root_pid=identity.pid,
+                expected_root_started_at=identity.started_at,
+                expected_process_group_id=process_group_id,
+                containment_id=containment_id,
+            )
+            safe_to_finalize = (
+                safe_to_finalize
+                and bool(termination.get("safe_to_finalize"))
+            )
+        return safe_to_finalize
+
+    def _contained_process_candidates(
+        self,
+        containment_ids: set[str],
+    ) -> tuple[
+        tuple[tuple[str, ProcessIdentity, int], ...],
+        bool,
+    ]:
+        candidates: dict[
+            tuple[str, int, float],
+            tuple[str, ProcessIdentity, int],
+        ] = {}
+        scans_complete = True
+        for containment_id in containment_ids:
+            if not containment_id:
+                continue
+            snapshot = scan_containment(containment_id)
+            scans_complete = scans_complete and snapshot.scan_complete
+            for identity in snapshot.processes:
+                process_group_id = _process_group_id(identity.pid)
+                if process_group_id is None:
+                    continue
+                candidates[
+                    (containment_id, identity.pid, identity.started_at)
+                ] = (containment_id, identity, process_group_id)
+
+        for process in psutil.process_iter(["pid", "create_time"]):
+            try:
+                pid = int(process.info["pid"])
+                if pid == os.getpid():
+                    continue
+                environment = process.environ()
+                if (
+                    self._path_marker
+                    not in str(environment.get("PATH") or "").split(os.pathsep)
+                ):
+                    continue
+                containment_id = str(
+                    environment.get(CONTAINMENT_ENV_VAR, "")
+                ).strip()
+                if not containment_id:
+                    continue
+                started_at = float(
+                    process.info.get("create_time")
+                    or process.create_time()
+                )
+                process_group_id = _process_group_id(pid)
+                if process_group_id is None:
+                    continue
+                identity = ProcessIdentity(pid=pid, started_at=started_at)
+                candidates[
+                    (containment_id, identity.pid, identity.started_at)
+                ] = (containment_id, identity, process_group_id)
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                continue
+        return tuple(candidates.values()), scans_complete
+
+    @staticmethod
+    def _prefer_process_root(
+        candidate: ProcessIdentity,
+        candidate_pgid: int,
+        current: ProcessIdentity,
+        current_pgid: int,
+    ) -> bool:
+        candidate_is_leader = candidate.pid == candidate_pgid
+        current_is_leader = current.pid == current_pgid
+        if candidate_is_leader != current_is_leader:
+            return candidate_is_leader
+        return (candidate.started_at, candidate.pid) < (
+            current.started_at,
+            current.pid,
+        )
+
+
+class _CancellationGuardedState:
+    """Delegate reads while serializing writes against gate cancellation."""
+
+    def __init__(self, state: State, cancellation: _GateCancellation) -> None:
         self._state = state
-        self._cancelled = cancelled
+        self._cancellation = cancellation
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._state, name)
 
     def write_event(self, *args: Any, **kwargs: Any) -> int | None:
-        if self._cancelled.is_set():
-            return None
-        return self._state.write_event(*args, **kwargs)
+        return self._cancellation.write_event(
+            self._state,
+            *args,
+            **kwargs,
+        )
+
+    def write_event_once(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        return self._cancellation.write_event_once(
+            self._state,
+            *args,
+            **kwargs,
+        )
+
+
+async def _await_task_during_cancellation(task: asyncio.Task[Any]) -> Any:
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            continue
+    return task.result()
 
 
 async def run_dual_agent_gate_with_escalation(
     spec: DualAgentGateSpec,
     *,
     state: State,
-    notifier: Any,
+    notifier: Any | None,
     runner: Runner = subprocess.run,
     runtime_runner: RuntimeTaskRunner | None = None,
 ) -> DualAgentGateResult:
-    cancelled = threading.Event()
-    try:
-        result = await asyncio.to_thread(
+    cancellation = _GateCancellation()
+    gate_task = asyncio.create_task(
+        asyncio.to_thread(
             run_dual_agent_gate,
             spec,
-            runner=runner,
-            runtime_runner=runtime_runner,
-            state=_CancellationGuardedState(state, cancelled),
+            runner=cancellation.wrap_runner(runner),
+            runtime_runner=cancellation.wrap_runtime_runner(runtime_runner),
+            state=_CancellationGuardedState(state, cancellation),
         )
+    )
+    try:
+        result = await asyncio.shield(gate_task)
     except asyncio.CancelledError:
-        cancelled.set()
+        cancellation.cancelled.set()
+        cleanup_task = asyncio.create_task(
+            asyncio.to_thread(cancellation.cancel_active_invocations)
+        )
+        try:
+            await _await_task_during_cancellation(cleanup_task)
+        except BaseException:
+            pass
+        try:
+            await _await_task_during_cancellation(gate_task)
+        except BaseException:
+            pass
         raise
-    if result.status == "accepted":
+    if result.status == "accepted" or notifier is None:
         return result
     escalation = await _maybe_request_validation_escalation(
         result,

@@ -2,24 +2,76 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import time
 from pathlib import Path
 
 import pytest
 
 from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+from supervisor import run_registry as run_registry_module
 from supervisor.agent_runtime import AgentRunHandle, AgentRunResult, AgentTask
 from supervisor.config import Config
 from supervisor.drift_detector import DriftDetector
 from supervisor.model_client import ModelResponse
 from supervisor.rollout_watcher import RolloutWatcher
-from supervisor.run_registry import register_submitted_workflow
+from supervisor.run_registry import (
+    PENDING_SESSION_SOURCE,
+    consume_launch_receipt,
+    register_submitted_workflow,
+    register_workflow_runtime_session,
+    reserve_launch_receipt,
+)
 from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "rollout_watcher"
+
+
+def _track_run_registry_directory_fsyncs(monkeypatch) -> list[Path]:
+    synced_directories: list[Path] = []
+    directory_descriptors: dict[int, Path] = {}
+    real_open = run_registry_module.os.open
+    real_fsync = run_registry_module.os.fsync
+    real_close = run_registry_module.os.close
+
+    def tracking_open(path, flags, *args, **kwargs):
+        descriptor = real_open(path, flags, *args, **kwargs)
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            observed_path = Path(path)
+            parent_descriptor = kwargs.get("dir_fd")
+            if (
+                not observed_path.is_absolute()
+                and parent_descriptor in directory_descriptors
+            ):
+                observed_path = (
+                    directory_descriptors[parent_descriptor]
+                    / observed_path
+                )
+            directory_descriptors[descriptor] = (
+                observed_path.expanduser().absolute()
+            )
+        else:
+            directory_descriptors.pop(descriptor, None)
+        return descriptor
+
+    def tracking_fsync(descriptor):
+        directory = directory_descriptors.get(descriptor)
+        if directory is not None:
+            synced_directories.append(directory)
+        return real_fsync(descriptor)
+
+    def tracking_close(descriptor):
+        directory_descriptors.pop(descriptor, None)
+        return real_close(descriptor)
+
+    monkeypatch.setattr(run_registry_module.os, "open", tracking_open)
+    monkeypatch.setattr(run_registry_module.os, "fsync", tracking_fsync)
+    monkeypatch.setattr(run_registry_module.os, "close", tracking_close)
+    return synced_directories
 
 
 def _config(tmp_path: Path) -> Config:
@@ -178,6 +230,227 @@ async def test_captured_nested_claude_rollout_reaches_turn_terminal_only(tmp_pat
         "The repository inspection completed.",
     ]
     assert state.decisions.empty()
+
+
+@pytest.mark.asyncio
+async def test_workflow_owned_single_turn_terminalizes_once_across_restart(
+    tmp_path,
+):
+    target_session_id = "019f52a1-aaaa-7bbb-8ccc-111111111111"
+    workflow_run_id = "workflow-owned-single-turn"
+    cfg = _config(tmp_path)
+    state = State(cfg.supervisor.state_db)
+    api = CodexSupervisorMcpAPI(cfg, state)
+    submitted = api.submit_dual_agent_workflow_job(
+        cwd=str(tmp_path),
+        task_id="obs-workflow-owned-single-turn",
+        run_id=workflow_run_id,
+        intent="Complete exactly one workflow-owned target turn.",
+        client_token="obs-workflow-owned-single-turn-token",
+    )
+    assert submitted["status"] == "submitted"
+    assert submitted["target_session_id"] == ""
+    registration = register_workflow_runtime_session(
+        state=state,
+        registry_dir=cfg.orchestrator.run_registry_dir,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+        task_id="obs-workflow-owned-single-turn",
+        task="Complete exactly one workflow-owned target turn.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-owned-single-turn",
+        runtime_result_hash="1" * 64,
+        source="controlled_test_runtime",
+    )
+    assert registration["completion_policy"] == "single_turn"
+    target_run_id = registration["target_run_id"]
+
+    sessions_root, registry_dir, rollout = _captured_rollout(
+        tmp_path=tmp_path,
+        fixture_name="codex_nested_terminal.jsonl",
+        session_id=target_session_id,
+        captured_cwd=tmp_path,
+    )
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+
+    parent_run = state.get_run(workflow_run_id)
+    target_run = state.get_run(target_run_id)
+    assert parent_run is not None
+    assert parent_run["status"] == "running"
+    assert target_run is not None
+    assert target_run["status"] == "completed"
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM decision_outbox
+             WHERE run_id=? AND kind='evaluate_run'""",
+        (target_run_id,),
+    ).fetchone()[0] == 1
+
+    # A second terminal marker is a distinct durable source line, but it must
+    # not terminalize or enqueue evaluation a second time.
+    with rollout.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "type": "event_msg",
+            "payload": {"type": "task_complete"},
+        }) + "\n")
+    await watcher._drain_file(rollout)
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM decision_outbox
+             WHERE run_id=? AND kind='evaluate_run'""",
+        (target_run_id,),
+    ).fetchone()[0] == 1
+
+    # A daemon restart resumes at the durable offset and preserves the same
+    # one-shot terminal/evaluation decision.
+    state._conn.close()
+    restarted_state = State(cfg.supervisor.state_db)
+    restarted = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=restarted_state,
+    )
+    await restarted._drain_file(rollout)
+
+    assert restarted_state.get_run(workflow_run_id)["status"] == "running"
+    assert restarted_state.get_run(target_run_id)["status"] == "completed"
+    assert restarted_state._conn.execute(
+        """SELECT COUNT(*) FROM decision_outbox
+             WHERE run_id=? AND kind='evaluate_run'""",
+        (target_run_id,),
+    ).fetchone()[0] == 1
+
+
+def test_runtime_session_retry_rejects_changed_result_provenance(
+    tmp_path: Path,
+) -> None:
+    cfg = _config(tmp_path)
+    state = State(cfg.supervisor.state_db)
+    api = CodexSupervisorMcpAPI(cfg, state)
+    api.submit_dual_agent_workflow_job(
+        cwd=str(tmp_path),
+        task_id="obs-runtime-discrepancy",
+        run_id="workflow-runtime-discrepancy",
+        intent="Bind one exact runtime result.",
+        client_token="obs-runtime-discrepancy-token",
+    )
+    first = register_workflow_runtime_session(
+        state=state,
+        registry_dir=cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-runtime-discrepancy",
+        target_session_id="runtime-session-discrepancy",
+        task_id="obs-runtime-discrepancy",
+        task="Bind one exact runtime result.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-run-discrepancy",
+        runtime_result_hash="1" * 64,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="sidecar provenance discrepancy",
+    ):
+        register_workflow_runtime_session(
+            state=state,
+            registry_dir=cfg.orchestrator.run_registry_dir,
+            workflow_run_id="workflow-runtime-discrepancy",
+            target_session_id="runtime-session-discrepancy",
+            task_id="obs-runtime-discrepancy",
+            task="Bind one exact runtime result.",
+            target_kind="codex",
+            cwd=tmp_path,
+            gate="execution",
+            runtime_run_id="runtime-run-discrepancy",
+            runtime_result_hash="2" * 64,
+        )
+
+    snapshot = state.get_run_snapshot(first["target_run_id"])
+    assert snapshot is not None
+    config = json.loads(snapshot["config_json"])
+    assert config["runtime_result_hash"] == "1" * 64
+
+
+def test_existing_runtime_sidecar_repairs_missing_state_binding(
+    tmp_path: Path,
+) -> None:
+    registry_dir = tmp_path / "runs"
+    first_state = State(str(tmp_path / "first.db"))
+    register_submitted_workflow(
+        state=first_state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-sidecar-repair",
+        target_session_id="",
+        task_id="obs-sidecar-repair",
+        task="Repair an interrupted sidecar-to-State bind.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    first = register_workflow_runtime_session(
+        state=first_state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-sidecar-repair",
+        target_session_id="runtime-session-sidecar-repair",
+        task_id="obs-sidecar-repair",
+        task="Repair an interrupted sidecar-to-State bind.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-run-sidecar-repair",
+        runtime_result_hash="3" * 64,
+    )
+    first_state._conn.close()
+
+    restarted_state = State(str(tmp_path / "restarted.db"))
+    register_submitted_workflow(
+        state=restarted_state,
+        registry_dir=tmp_path / "restarted-parent-runs",
+        workflow_run_id="workflow-sidecar-repair",
+        target_session_id="",
+        task_id="obs-sidecar-repair",
+        task="Repair an interrupted sidecar-to-State bind.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    repaired = register_workflow_runtime_session(
+        state=restarted_state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-sidecar-repair",
+        target_session_id="runtime-session-sidecar-repair",
+        task_id="obs-sidecar-repair",
+        task="Repair an interrupted sidecar-to-State bind.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-run-sidecar-repair",
+        runtime_result_hash="3" * 64,
+    )
+
+    assert repaired["target_run_id"] == first["target_run_id"]
+    assert restarted_state.get_run(repaired["target_run_id"]) is not None
+    assert (
+        restarted_state.get_run_snapshot(repaired["target_run_id"])
+        is not None
+    )
+    binding_events = [
+        event
+        for event in restarted_state.read_events_since(
+            "workflow-sidecar-repair",
+            after_event_id=0,
+            limit=100,
+        )
+        if event["kind"] == "workflow_target_session_bound"
+    ]
+    assert len(binding_events) == 1
 
 
 @pytest.mark.asyncio
@@ -372,7 +645,7 @@ def test_start_codex_session_reserves_before_spawn_and_binds_runtime_session(
             ended_at_ms=120,
             cost_usd=0.0,
             resolved_model="gpt-5.5",
-            result_hash="runtime-result-hash",
+            result_hash="a" * 64,
             token_usage={"tokens_in": 3, "tokens_out": 1},
             model_provenance="fake.model",
             token_provenance="fake.usage",
@@ -415,6 +688,8 @@ def test_start_codex_session_reserves_before_spawn_and_binds_runtime_session(
     assert registration["workflow_run_id"] == workflow_run_id
     assert registration["task_id"] == task_id
     assert registration["target_kind"] == "codex"
+    assert registration["runtime_run_id"] == "runtime-run"
+    assert registration["runtime_result_hash"] == "a" * 64
     assert not list(
         (
             Path(cfg.orchestrator.run_registry_dir)
@@ -431,6 +706,99 @@ def test_start_codex_session_reserves_before_spawn_and_binds_runtime_session(
             ).glob("*.json")
         )
     ) == 1
+
+
+def test_launch_receipt_create_fsyncs_parent_directory(tmp_path, monkeypatch):
+    registry_dir = tmp_path / "runs"
+    state = State(str(tmp_path / "state.db"))
+    register_submitted_workflow(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-fsync-create",
+        target_session_id="",
+        task_id="task-fsync-create",
+        task="Durably publish the launch receipt.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    synced_directories = _track_run_registry_directory_fsyncs(monkeypatch)
+
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-fsync-create",
+        task_id="task-fsync-create",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=100,
+    )
+
+    launch_receipts_dir = receipt.receipt_path.parent.parent
+    assert synced_directories == [
+        registry_dir.resolve(),  # .launch-receipts directory creation
+        launch_receipts_dir,  # pending directory creation
+        launch_receipts_dir,  # consumed directory creation
+        launch_receipts_dir,  # locks directory creation
+        receipt.receipt_path.parent,  # pending receipt file creation
+    ]
+
+
+def test_launch_receipt_consume_fsyncs_each_directory_entry_transition(
+    tmp_path,
+    monkeypatch,
+):
+    registry_dir = tmp_path / "runs"
+    state = State(str(tmp_path / "state.db"))
+    register_submitted_workflow(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-fsync-consume",
+        target_session_id="",
+        task_id="task-fsync-consume",
+        task="Durably consume the launch receipt.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id="workflow-fsync-consume",
+        task_id="task-fsync-consume",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=100,
+    )
+    synced_directories = _track_run_registry_directory_fsyncs(monkeypatch)
+
+    consume_launch_receipt(
+        state=state,
+        registry_dir=registry_dir,
+        launch_id=receipt.launch_id,
+        nonce=receipt.nonce,
+        workflow_run_id="workflow-fsync-consume",
+        task_id="task-fsync-consume",
+        target_kind="codex",
+        target_session_id="session-fsync-consume",
+        cwd=tmp_path,
+        now=101,
+    )
+
+    consumed_dir = receipt.receipt_path.parent.parent / "consumed"
+    launch_receipts_dir = receipt.receipt_path.parent.parent
+    registry_root = registry_dir.resolve()
+    assert synced_directories == [
+        launch_receipts_dir / "locks",  # advisory-lock file creation
+        consumed_dir,  # temporary consuming-claim creation
+        consumed_dir,  # consuming-claim hard-link creation
+        consumed_dir,  # temporary consuming-claim removal
+        receipt.receipt_path.parent,  # pending receipt removal
+        registry_root,  # target-session sidecar creation
+        registry_root,  # pending registration removal
+        consumed_dir,  # temporary consumed-state creation
+        consumed_dir,  # consumed-state replace
+    ]
 
 
 @pytest.mark.asyncio

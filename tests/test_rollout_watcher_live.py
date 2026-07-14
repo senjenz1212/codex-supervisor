@@ -9,10 +9,18 @@ import json
 import os
 import time
 from pathlib import Path
+import uuid
 
 import pytest
 
-from supervisor.run_registry import register_submitted_workflow
+from supervisor.run_registry import (
+    PENDING_SESSION_SOURCE,
+    REUSABLE_SESSION_COMPLETION_POLICY,
+    SINGLE_TURN_COMPLETION_POLICY,
+    WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+    register_submitted_workflow,
+    register_workflow_runtime_session,
+)
 from supervisor.rollout_watcher import RolloutWatcher
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
@@ -335,3 +343,406 @@ async def test_rollout_watcher_read_failure_records_health(tmp_path, monkeypatch
     assert payload["status"] == "degraded"
     assert payload["reason"] == "read_exception"
     assert state.get_tail_offset(str(rollout)) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("completion_policy", "terminal_kind", "expected_status"),
+    tuple(
+        (
+            completion_policy,
+            terminal_kind,
+            (
+                terminal_status
+                if completion_policy == SINGLE_TURN_COMPLETION_POLICY
+                else "running"
+            ),
+        )
+        for completion_policy in (
+            SINGLE_TURN_COMPLETION_POLICY,
+            REUSABLE_SESSION_COMPLETION_POLICY,
+            WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+        )
+        for terminal_kind, terminal_status in (
+            ("turn.completed", "completed"),
+            ("turn.failed", "failed"),
+            ("run.completed", "completed"),
+            ("run.failed", "failed"),
+            ("run.cancelled", "cancelled"),
+        )
+    ),
+)
+async def test_completion_policy_controls_every_rollout_terminal(
+    tmp_path,
+    completion_policy,
+    terminal_kind,
+    expected_status,
+):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+    session_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{completion_policy}:{terminal_kind}",
+        )
+    )
+    workflow_run_id = f"workflow-{session_id}"
+    state = State(str(tmp_path / "state.db"))
+    register_submitted_workflow(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id=workflow_run_id,
+        target_session_id=session_id,
+        task_id=f"task-{session_id}",
+        task="Respect the registered completion policy.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source="controlled_test",
+        completion_policy=completion_policy,
+    )
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    terminal_line = json.dumps({"type": terminal_kind}) + "\n"
+    rollout.write_text(terminal_line + terminal_line, encoding="utf-8")
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+
+    assert state.get_run(workflow_run_id)["status"] == expected_status
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM events WHERE run_id=? AND kind=?",
+        (workflow_run_id, terminal_kind),
+    ).fetchone()[0] == 2
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM decision_outbox
+             WHERE run_id=? AND kind='evaluate_run'""",
+        (workflow_run_id,),
+    ).fetchone()[0] == (
+        1 if completion_policy == SINGLE_TURN_COMPLETION_POLICY else 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_corrupt_quarantine_payload_reconciles_offsets_and_stops_retrying(
+    tmp_path,
+):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "eeeeeeee-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    raw_line = (json.dumps({"type": "message", "text": "quarantine me"}) + "\n").encode()
+    rollout.write_bytes(raw_line)
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+
+    quarantine_path = next((registry_dir / ".rollout-quarantine").glob("*.json"))
+    records = quarantine_path.read_text(encoding="utf-8").splitlines()
+    corrupt_chunk = json.loads(records[1])
+    corrupt_chunk["raw_bytes_b64"] = "eA=="
+    quarantine_path.write_text(
+        records[0] + "\n" + json.dumps(corrupt_chunk) + "\n",
+        encoding="utf-8",
+    )
+    _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
+    rollout.unlink()
+    # Model a crash window where memory advanced beyond both the durable tail
+    # and the corrupt sidecar's advertised end. Recovery must never move back.
+    durable_before_replay = len(raw_line) + 7
+    in_memory_before_replay = durable_before_replay + 11
+    state.set_tail_offset(str(rollout), durable_before_replay)
+
+    restarted = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+    restarted.offsets[rollout] = in_memory_before_replay
+    await restarted.sweep_once()
+
+    assert not quarantine_path.exists()
+    assert state.get_tail_offset(str(rollout)) == in_memory_before_replay
+    assert restarted.offsets[rollout] == in_memory_before_replay
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM events WHERE source='rollout'"
+    ).fetchone()[0] == 0
+    health_count = state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE kind='supervisor_subsystem_health'
+               AND payload_json LIKE '%quarantine_payload_corrupt%'"""
+    ).fetchone()[0]
+    assert health_count == 1
+
+    await restarted.sweep_once()
+
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE kind='supervisor_subsystem_health'
+               AND payload_json LIKE '%quarantine_payload_corrupt%'"""
+    ).fetchone()[0] == health_count
+
+
+@pytest.mark.asyncio
+async def test_torn_final_quarantine_append_salvages_all_intact_chunks(tmp_path):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "ffffffff-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    first_line = (
+        json.dumps({"type": "message", "text": "first durable chunk"}) + "\n"
+    ).encode()
+    second_line = (
+        json.dumps({"type": "message", "text": "second durable chunk"}) + "\n"
+    ).encode()
+    rollout.write_bytes(first_line)
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+    with rollout.open("ab") as handle:
+        handle.write(second_line)
+    await watcher._drain_file(rollout)
+
+    quarantine_path = next((registry_dir / ".rollout-quarantine").glob("*.json"))
+    assert len(quarantine_path.read_text(encoding="utf-8").splitlines()) == 3
+    with quarantine_path.open("ab") as handle:
+        handle.write(b'{"end_offset":')
+    _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
+    rollout.unlink()
+
+    restarted = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+    await restarted.sweep_once()
+
+    events = state._conn.execute(
+        """SELECT kind, payload_json
+             FROM events
+            WHERE source='rollout'
+            ORDER BY event_id"""
+    ).fetchall()
+    assert [row["kind"] for row in events] == ["message", "message"]
+    assert [
+        json.loads(row["payload_json"])["text"]
+        for row in events
+    ] == ["first durable chunk", "second durable chunk"]
+    assert state.get_tail_offset(str(rollout)) == len(first_line) + len(second_line)
+    assert restarted.offsets[rollout] == len(first_line) + len(second_line)
+    assert not quarantine_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_registration_identity_overrides_conflicting_rollout_fields(
+    tmp_path,
+):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "abababab-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    rollout.write_text(
+        json.dumps({
+            "type": "message",
+            "workflow_run_id": "raw-workflow",
+            "task_id": "raw-task",
+            "run_id": "raw-run",
+            "target_session_id": "raw-session",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    state = State(str(tmp_path / "state.db"))
+    authoritative_run_id = _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+
+    row = state._conn.execute(
+        """SELECT run_id, payload_json
+             FROM events
+            WHERE source='rollout'"""
+    ).fetchone()
+    assert row is not None
+    payload = json.loads(row["payload_json"])
+    assert row["run_id"] == authoritative_run_id
+    assert payload["workflow_run_id"] == authoritative_run_id
+    assert payload["task_id"] == f"task-{session_id}"
+    assert payload["run_id"] == authoritative_run_id
+    assert payload["target_session_id"] == session_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("preexisting_state_binding", (False, True))
+async def test_strictly_rejected_registration_sidecar_stays_quarantined(
+    tmp_path,
+    preexisting_state_binding,
+):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = (
+        "cdcdcdcd-1111-2222-3333-444444444444"
+        if preexisting_state_binding
+        else "cececece-1111-2222-3333-444444444444"
+    )
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    rollout.write_text(
+        json.dumps({"type": "message", "text": "do not ingest"}) + "\n",
+        encoding="utf-8",
+    )
+    rejected_run_id = f"workflow-rejected-{session_id}"
+    (registry_dir / f"{session_id}.json").write_text(
+        json.dumps({
+            "workflow_run_id": rejected_run_id,
+            "run_id": rejected_run_id,
+            "target_session_id": "different-session",
+            "session_id": "different-session",
+            "task_id": "rejected-task",
+            "task": "Rejected registration",
+            "target_kind": "codex",
+            "config_snapshot": {"cwd": str(tmp_path.resolve())},
+        }) + "\n",
+        encoding="utf-8",
+    )
+    state = State(str(tmp_path / "state.db"))
+    if preexisting_state_binding:
+        state.register_run(
+            run_id="existing-state-run",
+            session_id=session_id,
+            rollout_path=str(rollout),
+            task="Existing state binding",
+            scope=ScopeContract(),
+            target_kind="codex",
+        )
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+    await watcher._drain_file(rollout)
+
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM events WHERE source='rollout'"
+    ).fetchone()[0] == 0
+    assert state.get_tail_offset(str(rollout)) == 0
+    assert not state.get_run(rejected_run_id)
+    quarantines = list(
+        (registry_dir / ".rollout-quarantine").glob("*.json")
+    )
+    assert len(quarantines) == 1
+    assert quarantines[0].is_file()
+
+
+@pytest.mark.asyncio
+async def test_runtime_owned_rollout_requires_initial_cwd_provenance(tmp_path):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "07" / "13"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    workflow_run_id = "workflow-runtime-cwd"
+    session_id = "dededede-1111-2222-3333-444444444444"
+    state = State(str(tmp_path / "state.db"))
+    register_submitted_workflow(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id=workflow_run_id,
+        target_session_id="",
+        task_id="task-runtime-cwd",
+        task="Require runtime cwd provenance.",
+        target_kind="codex",
+        cwd=workspace,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    runtime_registration = register_workflow_runtime_session(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id=workflow_run_id,
+        target_session_id=session_id,
+        task_id="task-runtime-cwd",
+        task="Require runtime cwd provenance.",
+        target_kind="codex",
+        cwd=workspace,
+        gate="execution",
+        runtime_run_id="runtime-cwd-run",
+        runtime_result_hash="1" * 64,
+    )
+    rollout = rollout_dir / f"rollout-2026-07-13T10-00-00-{session_id}.jsonl"
+    rollout.write_text(
+        json.dumps({
+            "type": "event_msg",
+            "payload": {"type": "task_complete"},
+        }) + "\n",
+        encoding="utf-8",
+    )
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+
+    target_run_id = str(runtime_registration["target_run_id"])
+    assert state.get_run(target_run_id)["status"] == "running"
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM events WHERE source='rollout'"
+    ).fetchone()[0] == 0
+    assert state.get_tail_offset(str(rollout)) == 0
+    assert len(
+        list((registry_dir / ".rollout-quarantine").glob("*.json"))
+    ) == 1

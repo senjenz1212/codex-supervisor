@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import multiprocessing
 import os
+import sqlite3
 import stat
 
 import pytest
@@ -16,11 +17,16 @@ import supervisor.ledger_checkpoints as ledger_checkpoints_module
 from supervisor.evidence_ledger import (
     ArtifactIntegrityError,
     ContentAddressedArtifactStore,
+    LEGACY_IMPORT_GENESIS,
     NATIVE_GENESIS,
     artifact_manifest_hash,
+    artifact_manifest_hash_for_payload,
     build_ledger_fields,
     canonical_json_bytes,
+    canonical_payload_hash,
+    compute_event_hash,
     create_ledger_checkpoint,
+    legacy_raw_payload_manifest_hash,
     rebuild_projection,
     sha256_hex,
     verify_event_chain_structure,
@@ -37,6 +43,30 @@ from supervisor.quality_projection import (
     quality_trend_projection_event_payload,
 )
 from supervisor.state import State
+
+
+def _write_event_once_process(
+    db_path: str,
+    barrier,
+    queue,
+) -> None:
+    state = State(db_path)
+    barrier.wait()
+    try:
+        event_id = state.write_event_once(
+            run_id="run-once",
+            source="dual_agent",
+            kind="dual_agent_production_trace_recorded",
+            payload={
+                "source_event_hash": "a" * 64,
+                "receipt": {"status": "recorded"},
+            },
+            idempotency_key="production-trace:" + ("a" * 64),
+        )
+    except Exception as exc:  # pragma: no cover - asserted through child result.
+        queue.put(("error", type(exc).__name__, str(exc)))
+    else:
+        queue.put(("ok", event_id))
 
 
 class HmacCheckpointKey:
@@ -136,6 +166,189 @@ def _events(count: int, *, run_id: str = "ledger-run") -> list[dict[str, object]
         )
         previous_hash = fields.event_hash
     return events
+
+
+def _event_for_hash_schema(
+    *,
+    schema_version: str,
+    payload: dict[str, object],
+    event_sequence: int = 1,
+    previous_event_hash: str | None = None,
+) -> dict[str, object]:
+    fields = build_ledger_fields(
+        run_id="schema-run",
+        event_sequence=event_sequence,
+        ts=99 + event_sequence,
+        source="test",
+        kind="event_msg",
+        payload=payload,
+        previous_event_hash=previous_event_hash,
+        ledger_genesis_kind=(
+            NATIVE_GENESIS if previous_event_hash is None else None
+        ),
+        event_hash_schema_version=schema_version,
+    )
+    return {
+        "event_id": event_sequence,
+        "event_sequence": event_sequence,
+        "run_id": "schema-run",
+        "ts": 99 + event_sequence,
+        "source": "test",
+        "kind": "event_msg",
+        "payload": payload,
+        "previous_event_hash": fields.previous_event_hash,
+        "event_hash": fields.event_hash,
+        "canonical_payload_hash": fields.canonical_payload_hash,
+        "artifact_manifest_hash": fields.artifact_manifest_hash,
+        "ledger_genesis_kind": fields.ledger_genesis_kind,
+    }
+
+
+def test_event_hash_schema_selects_exactly_its_bound_redactor() -> None:
+    unredacted_key_payload = {
+        "API_KEY=super-secret-value": "ordinary",
+    }
+    legacy = _event_for_hash_schema(
+        schema_version=(
+            evidence_ledger_module.LEGACY_EVENT_HASH_SCHEMA_VERSION
+        ),
+        payload=unredacted_key_payload,
+    )
+    current_unredacted = _event_for_hash_schema(
+        schema_version=evidence_ledger_module.EVENT_HASH_SCHEMA_VERSION,
+        payload=unredacted_key_payload,
+    )
+    current_redacted = _event_for_hash_schema(
+        schema_version=evidence_ledger_module.EVENT_HASH_SCHEMA_VERSION,
+        payload={"API_KEY=[REDACTED]": "ordinary"},
+    )
+
+    assert verify_event_chain_structure(
+        [legacy],
+        expected_run_id="schema-run",
+    ).valid is True
+    rejected = verify_event_chain_structure(
+        [current_unredacted],
+        expected_run_id="schema-run",
+    )
+    assert rejected.valid is False
+    assert rejected.failure_code == "payload_not_redacted"
+    assert verify_event_chain_structure(
+        [current_redacted],
+        expected_run_id="schema-run",
+    ).valid is True
+
+
+def test_event_verification_fails_closed_on_redacted_key_collision():
+    event = _event_for_hash_schema(
+        schema_version=evidence_ledger_module.EVENT_HASH_SCHEMA_VERSION,
+        payload={
+            "API_KEY=super-secret-value": "secret-key",
+            "API_KEY=[REDACTED]": "existing-marker",
+        },
+    )
+
+    verification = verify_event_chain_structure(
+        [event],
+        expected_run_id="schema-run",
+    )
+
+    assert verification.valid is False
+    assert verification.failure_code == "payload_not_redacted"
+    assert "duplicate object key" in str(verification.detail)
+
+
+def test_historical_event_schema_binding_ignores_mutable_registry_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    historical = _event_for_hash_schema(
+        schema_version=(
+            evidence_ledger_module.LEGACY_EVENT_HASH_SCHEMA_VERSION
+        ),
+        payload={"text": "future-secret"},
+    )
+    replacement_rules = "supervisor-redaction-rules/replacement-test"
+
+    def replacement_redactor(value):
+        if isinstance(value, str):
+            return value.replace("future-secret", "[REDACTED-FUTURE]")
+        if isinstance(value, dict):
+            return {
+                key: replacement_redactor(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [replacement_redactor(item) for item in value]
+        return value
+
+    monkeypatch.setitem(
+        evidence_ledger_module.REDACTION_RULES_BY_VERSION,
+        replacement_rules,
+        replacement_redactor,
+    )
+    monkeypatch.setitem(
+        evidence_ledger_module.EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA,
+        evidence_ledger_module.LEGACY_EVENT_HASH_SCHEMA_VERSION,
+        replacement_rules,
+    )
+
+    assert verify_event_chain_structure(
+        [historical],
+        expected_run_id="schema-run",
+    ).valid is True
+
+
+def test_unknown_event_hash_schema_fails_closed() -> None:
+    event = _event_for_hash_schema(
+        schema_version="evidence-ledger-event/v999-unknown",
+        payload={"text": "safe"},
+    )
+
+    verification = verify_event_chain_structure(
+        [event],
+        expected_run_id="schema-run",
+    )
+
+    assert verification.valid is False
+    assert verification.failure_code == "unsupported_event_hash_schema"
+
+
+def test_event_hash_schema_transitions_allow_upgrade_and_reject_downgrade():
+    legacy_schema = evidence_ledger_module.LEGACY_EVENT_HASH_SCHEMA_VERSION
+    current_schema = evidence_ledger_module.EVENT_HASH_SCHEMA_VERSION
+
+    v2 = _event_for_hash_schema(
+        schema_version=legacy_schema,
+        payload={"text": "safe-v2"},
+    )
+    v3 = _event_for_hash_schema(
+        schema_version=current_schema,
+        payload={"text": "safe-v3"},
+        event_sequence=2,
+        previous_event_hash=str(v2["event_hash"]),
+    )
+    assert verify_event_chain_structure(
+        [v2, v3],
+        expected_run_id="schema-run",
+    ).valid is True
+
+    v3_genesis = _event_for_hash_schema(
+        schema_version=current_schema,
+        payload={"text": "safe-v3"},
+    )
+    downgraded_v2 = _event_for_hash_schema(
+        schema_version=legacy_schema,
+        payload={"text": "safe-v2"},
+        event_sequence=2,
+        previous_event_hash=str(v3_genesis["event_hash"]),
+    )
+    rejected = verify_event_chain_structure(
+        [v3_genesis, downgraded_v2],
+        expected_run_id="schema-run",
+    )
+
+    assert rejected.valid is False
+    assert rejected.failure_code == "event_hash_schema_transition_not_allowed"
 
 
 def _append_checkpoint(
@@ -480,6 +693,53 @@ def test_event_verification_requires_canonical_payload_json():
         [event],
         expected_run_id="ledger-run",
     ).valid is True
+
+
+def test_legacy_event_verification_rejects_duplicate_payload_keys():
+    raw_payload_json = (
+        '{"token":"sk-proj-super-secret-value","token":"safe"}'
+    )
+    payload = {"token": "safe"}
+    payload_hash = canonical_payload_hash(payload)
+    semantic_manifest_hash = artifact_manifest_hash_for_payload(payload)
+    manifest_hash = legacy_raw_payload_manifest_hash(
+        raw_payload_json,
+        semantic_artifact_manifest_hash=semantic_manifest_hash,
+    )
+    event_hash = compute_event_hash(
+        run_id="legacy-duplicate-run",
+        event_sequence=1,
+        ts=100,
+        source="test",
+        kind="event_msg",
+        previous_event_hash=None,
+        canonical_payload_hash_value=payload_hash,
+        artifact_manifest_hash_value=manifest_hash,
+        ledger_genesis_kind=LEGACY_IMPORT_GENESIS,
+    )
+    event = {
+        "event_id": 1,
+        "event_sequence": 1,
+        "run_id": "legacy-duplicate-run",
+        "ts": 100,
+        "source": "test",
+        "kind": "event_msg",
+        "payload_json": raw_payload_json,
+        "previous_event_hash": None,
+        "event_hash": event_hash,
+        "canonical_payload_hash": payload_hash,
+        "artifact_manifest_hash": manifest_hash,
+        "ledger_genesis_kind": LEGACY_IMPORT_GENESIS,
+    }
+
+    verification = verify_event_chain_structure(
+        [event],
+        expected_run_id="legacy-duplicate-run",
+    )
+
+    assert verification.valid is False
+    assert verification.failure_code == "invalid_payload_json"
+    assert "duplicate JSON object key: 'token'" in str(verification.detail)
 
 
 def test_noncanonical_event_row_is_rejected_before_event_hashing(monkeypatch):
@@ -1386,3 +1646,154 @@ def test_quality_projection_row_and_event_commit_atomically(
 
     assert state.count_quality_trend_rows() == 0
     assert state.latest_event_id("quality-run") == 0
+
+
+def test_write_event_once_is_exact_and_rejects_changed_payload(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    kwargs = {
+        "run_id": "run-once",
+        "source": "dual_agent",
+        "kind": "dual_agent_production_trace_recorded",
+        "payload": {
+            "source_event_hash": "a" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        "idempotency_key": "production-trace:" + ("a" * 64),
+    }
+
+    first = state.write_event_once(**kwargs)
+    second = state.write_event_once(**kwargs)
+
+    assert second == first
+    assert state.latest_event_id("run-once") == first
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM event_idempotency_claims"
+    ).fetchone()[0] == 1
+    with pytest.raises(
+        RuntimeError,
+        match="changed source or payload",
+    ):
+        state.write_event_once(
+            **{
+                **kwargs,
+                "payload": {
+                    "source_event_hash": "a" * 64,
+                    "receipt": {"status": "different"},
+                },
+            }
+        )
+
+
+def test_event_idempotency_claims_reject_update_and_delete(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.write_event_once(
+        run_id="run-immutable-claim",
+        source="dual_agent",
+        kind="dual_agent_production_trace_recorded",
+        payload={
+            "source_event_hash": "a" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        idempotency_key="production-trace:" + ("a" * 64),
+    )
+
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="event idempotency claims are immutable",
+    ):
+        state._conn.execute(
+            """UPDATE event_idempotency_claims
+                  SET source='attacker'
+                WHERE run_id='run-immutable-claim'"""
+        )
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="event idempotency claims are immutable",
+    ):
+        state._conn.execute(
+            """DELETE FROM event_idempotency_claims
+                WHERE run_id='run-immutable-claim'"""
+        )
+
+
+def test_write_event_once_rejects_claim_bound_to_different_event(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    run_id = "run-forged-claim"
+    kind = "dual_agent_production_trace_recorded"
+    desired_payload = {
+        "source_event_hash": "b" * 64,
+        "receipt": {"status": "recorded"},
+    }
+    event_id = state.write_event(
+        run_id=run_id,
+        source="attacker",
+        kind=kind,
+        payload={
+            "source_event_hash": "c" * 64,
+            "receipt": {"status": "substituted"},
+        },
+    )
+    desired_event_payload = state._event_payload(
+        run_id=run_id,
+        source="dual_agent",
+        kind=kind,
+        payload=desired_payload,
+    )
+    state._conn.execute(
+        """INSERT INTO event_idempotency_claims(
+             run_id, kind, idempotency_key, event_id, source,
+             payload_sha256, created_at)
+           VALUES(?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            kind,
+            "forged-claim",
+            event_id,
+            "dual_agent",
+            canonical_payload_hash(desired_event_payload),
+            1,
+        ),
+    )
+    state._conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="does not match its immutable event",
+    ):
+        state.write_event_once(
+            run_id=run_id,
+            source="dual_agent",
+            kind=kind,
+            payload=desired_payload,
+            idempotency_key="forged-claim",
+        )
+
+
+def test_write_event_once_deduplicates_across_processes(tmp_path):
+    db_path = str(tmp_path / "state.db")
+    State(db_path)
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(2)
+    queue = context.Queue()
+    processes = [
+        context.Process(
+            target=_write_event_once_process,
+            args=(db_path, barrier, queue),
+        )
+        for _ in range(2)
+    ]
+    for process in processes:
+        process.start()
+    results = [queue.get(timeout=20) for _ in processes]
+    for process in processes:
+        process.join(timeout=20)
+        assert process.exitcode == 0
+
+    assert [result[0] for result in results] == ["ok", "ok"]
+    assert len({result[1] for result in results}) == 1
+    state = State(db_path)
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+            WHERE run_id='run-once'
+              AND kind='dual_agent_production_trace_recorded'"""
+    ).fetchone()[0] == 1

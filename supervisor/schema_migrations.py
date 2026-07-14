@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Callable
 
 from .evidence_ledger import (
+    EVENT_HASH_SCHEMA_VERSION,
     GENESIS_KINDS,
     LEGACY_IMPORT_GENESIS,
     build_legacy_import_ledger_fields,
     build_ledger_fields,
+    event_hash_schema_transition_allowed,
     prepare_event_payload,
+    strict_json_object_loads,
+    supported_event_hash_schema_versions,
 )
 from .quality_projection import (
     QUALITY_TREND_PROJECTION_EVENT,
@@ -738,6 +742,76 @@ def _legacy_event_backfill_affected_event_count(
     return int(row[0]) if row is not None else 0
 
 
+def _load_legacy_event_payload(
+    raw_payload_text: str,
+    *,
+    run_id: str,
+    event_id: int,
+) -> dict[str, object]:
+    try:
+        return strict_json_object_loads(raw_payload_text)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise RuntimeError(
+            "event payload is invalid or ambiguous JSON during ledger "
+            f"migration: run_id={run_id} event_id={event_id}: {exc}"
+        ) from exc
+
+
+def _ledger_fields_for_event_row(
+    *,
+    run_id: str,
+    event_sequence: int,
+    ts: int,
+    source: str,
+    kind: str,
+    payload: dict[str, object],
+    raw_payload_text: str,
+    previous_event_hash: str | None,
+    genesis_kind: str | None,
+    use_legacy_raw_commitment: bool,
+    observed_event_hash: str | None,
+):
+    def build_for_schema(schema_version: str):
+        if use_legacy_raw_commitment:
+            return build_legacy_import_ledger_fields(
+                run_id=run_id,
+                event_sequence=event_sequence,
+                ts=ts,
+                source=source,
+                kind=kind,
+                payload=payload,
+                raw_payload_json=raw_payload_text,
+                previous_event_hash=previous_event_hash,
+                ledger_genesis_kind=genesis_kind,
+                event_hash_schema_version=schema_version,
+            )
+        return build_ledger_fields(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=ts,
+            source=source,
+            kind=kind,
+            payload=payload,
+            previous_event_hash=previous_event_hash,
+            ledger_genesis_kind=genesis_kind,
+            event_hash_schema_version=schema_version,
+        )
+
+    if observed_event_hash is not None:
+        matches = [
+            (schema_version, fields)
+            for schema_version in supported_event_hash_schema_versions()
+            for fields in (build_for_schema(schema_version),)
+            if fields.event_hash == observed_event_hash
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return (
+        EVENT_HASH_SCHEMA_VERSION,
+        build_for_schema(EVENT_HASH_SCHEMA_VERSION),
+    )
+
+
 def _assert_prepopulated_event_ledger_metadata_matches(
     conn: sqlite3.Connection,
 ) -> None:
@@ -752,6 +826,7 @@ def _assert_prepopulated_event_ledger_metadata_matches(
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None
+    previous_event_hash_schema_version: str | None = None
     legacy_import_run = False
     for row in rows:
         run_id = _row_str(row, "run_id", 1)
@@ -759,33 +834,15 @@ def _assert_prepopulated_event_ledger_metadata_matches(
             current_run_id = run_id
             event_sequence = 0
             previous_event_hash = None
+            previous_event_hash_schema_version = None
             legacy_import_run = False
         event_sequence += 1
         raw_payload_text = _row_str(row, "payload_json", 6)
-        try:
-            payload = json.loads(raw_payload_text)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                "event payload is invalid JSON during ledger migration: "
-                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
-            ) from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError(
-                "event payload must be an object during ledger migration: "
-                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
-            )
-        normalized_payload = prepare_event_payload(
+        payload = _load_legacy_event_payload(
+            raw_payload_text,
             run_id=run_id,
-            source=_row_str(row, "source", 4),
-            kind=_row_str(row, "kind", 5),
-            payload=payload,
+            event_id=_row_int(row, "event_id", 0),
         )
-        if normalized_payload != payload:
-            raise RuntimeError(
-                "legacy event payload requires redaction or trace "
-                "normalization; refusing to rewrite historical evidence: "
-                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
-            )
         observed_genesis = _row_optional_str(
             row,
             "ledger_genesis_kind",
@@ -798,28 +855,46 @@ def _assert_prepopulated_event_ledger_metadata_matches(
         )
         if event_sequence == 1:
             legacy_import_run = genesis_kind == LEGACY_IMPORT_GENESIS
-        if legacy_import_run:
-            fields = build_legacy_import_ledger_fields(
-                run_id=run_id,
-                event_sequence=event_sequence,
-                ts=_row_int(row, "ts", 3),
-                source=_row_str(row, "source", 4),
-                kind=_row_str(row, "kind", 5),
-                payload=payload,
-                raw_payload_json=raw_payload_text,
-                previous_event_hash=previous_event_hash,
-                ledger_genesis_kind=genesis_kind,
+        event_hash_schema_version, fields = _ledger_fields_for_event_row(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=_row_int(row, "ts", 3),
+            source=_row_str(row, "source", 4),
+            kind=_row_str(row, "kind", 5),
+            payload=payload,
+            raw_payload_text=raw_payload_text,
+            previous_event_hash=previous_event_hash,
+            genesis_kind=genesis_kind,
+            use_legacy_raw_commitment=legacy_import_run,
+            observed_event_hash=_row_optional_str(row, "event_hash", 8),
+        )
+        if (
+            previous_event_hash_schema_version is not None
+            and not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
             )
-        else:
-            fields = build_ledger_fields(
-                run_id=run_id,
-                event_sequence=event_sequence,
-                ts=_row_int(row, "ts", 3),
-                source=_row_str(row, "source", 4),
-                kind=_row_str(row, "kind", 5),
-                payload=payload,
-                previous_event_hash=previous_event_hash,
-                ledger_genesis_kind=genesis_kind,
+        ):
+            raise RuntimeError(
+                "pre-populated event ledger has a disallowed event-hash "
+                "schema transition: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                f"{previous_event_hash_schema_version} -> "
+                f"{event_hash_schema_version}"
+            )
+        normalized_payload = prepare_event_payload(
+            run_id=run_id,
+            source=_row_str(row, "source", 4),
+            kind=_row_str(row, "kind", 5),
+            payload=payload,
+            event_hash_schema_version=event_hash_schema_version,
+        )
+        if normalized_payload != payload:
+            raise RuntimeError(
+                "legacy event payload requires redaction or trace "
+                "normalization; refusing to rewrite historical evidence: "
+                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
             )
         expected = {
             "event_sequence": fields.event_sequence,
@@ -856,6 +931,7 @@ def _assert_prepopulated_event_ledger_metadata_matches(
                     f"field={field}"
                 )
         previous_event_hash = fields.event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
 
 
 def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
@@ -867,7 +943,7 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TRIGGER IF EXISTS events_no_update")
     rows = conn.execute(
         f"""SELECT e.event_id, e.run_id, e.ts, e.source, e.kind,
-                   e.payload_json, e.ledger_genesis_kind
+                   e.payload_json, e.event_hash, e.ledger_genesis_kind
               FROM events AS e
               JOIN (
                     SELECT DISTINCT run_id
@@ -880,6 +956,7 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None
+    previous_event_hash_schema_version: str | None = None
     first_genesis = LEGACY_IMPORT_GENESIS
     for row in rows:
         run_id = _row_str(row, "run_id", 1)
@@ -887,10 +964,11 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             current_run_id = run_id
             event_sequence = 0
             previous_event_hash = None
+            previous_event_hash_schema_version = None
             observed_genesis = _row_optional_str(
                 row,
                 "ledger_genesis_kind",
-                6,
+                7,
             )
             first_genesis = (
                 observed_genesis
@@ -899,53 +977,54 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             )
         event_sequence += 1
         raw_payload_text = _row_str(row, "payload_json", 5)
-        try:
-            payload = json.loads(raw_payload_text)
-        except json.JSONDecodeError as exc:
+        payload = _load_legacy_event_payload(
+            raw_payload_text,
+            run_id=run_id,
+            event_id=_row_int(row, "event_id", 0),
+        )
+        genesis_kind = first_genesis if event_sequence == 1 else None
+        event_hash_schema_version, fields = _ledger_fields_for_event_row(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=_row_int(row, "ts", 2),
+            source=_row_str(row, "source", 3),
+            kind=_row_str(row, "kind", 4),
+            payload=payload,
+            raw_payload_text=raw_payload_text,
+            previous_event_hash=previous_event_hash,
+            genesis_kind=genesis_kind,
+            use_legacy_raw_commitment=(
+                first_genesis == LEGACY_IMPORT_GENESIS
+            ),
+            observed_event_hash=_row_optional_str(row, "event_hash", 6),
+        )
+        if (
+            previous_event_hash_schema_version is not None
+            and not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
+            )
+        ):
             raise RuntimeError(
-                "event payload is invalid JSON during ledger migration: "
-                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
-            ) from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError(
-                "event payload must be an object during ledger migration: "
-                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
+                "event ledger backfill would create a disallowed "
+                "event-hash schema transition: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                f"{previous_event_hash_schema_version} -> "
+                f"{event_hash_schema_version}"
             )
         normalized_payload = prepare_event_payload(
             run_id=run_id,
             source=_row_str(row, "source", 3),
             kind=_row_str(row, "kind", 4),
             payload=payload,
+            event_hash_schema_version=event_hash_schema_version,
         )
         if normalized_payload != payload:
             raise RuntimeError(
                 "legacy event payload requires redaction or trace "
                 "normalization; refusing to rewrite historical evidence: "
                 f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
-            )
-        genesis_kind = first_genesis if event_sequence == 1 else None
-        if first_genesis == LEGACY_IMPORT_GENESIS:
-            fields = build_legacy_import_ledger_fields(
-                run_id=run_id,
-                event_sequence=event_sequence,
-                ts=_row_int(row, "ts", 2),
-                source=_row_str(row, "source", 3),
-                kind=_row_str(row, "kind", 4),
-                payload=payload,
-                raw_payload_json=raw_payload_text,
-                previous_event_hash=previous_event_hash,
-                ledger_genesis_kind=genesis_kind,
-            )
-        else:
-            fields = build_ledger_fields(
-                run_id=run_id,
-                event_sequence=event_sequence,
-                ts=_row_int(row, "ts", 2),
-                source=_row_str(row, "source", 3),
-                kind=_row_str(row, "kind", 4),
-                payload=payload,
-                previous_event_hash=previous_event_hash,
-                ledger_genesis_kind=genesis_kind,
             )
         conn.execute(
             """UPDATE events
@@ -967,6 +1046,7 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             ),
         )
         previous_event_hash = fields.event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
     remaining = _legacy_event_backfill_affected_event_count(conn)
     if remaining:
         raise RuntimeError(
@@ -1097,7 +1177,12 @@ def _backfill_canonical_quality_projection_evidence(
                 "computed_at": _row_int(row, "computed_at", 15),
             }
         )
-        payload = quality_trend_projection_event_payload(projection_row)
+        payload = prepare_event_payload(
+            run_id=projection_row["run_id"],
+            source="schema_migration",
+            kind=QUALITY_TREND_PROJECTION_EVENT,
+            payload=quality_trend_projection_event_payload(projection_row),
+        )
         if _quality_projection_evidence_is_current(
             conn,
             run_id=projection_row["run_id"],
@@ -1163,6 +1248,12 @@ def _append_legacy_quality_projection_event(
     run_id: str,
     payload: dict[str, object],
 ) -> None:
+    prepared_payload = prepare_event_payload(
+        run_id=run_id,
+        source="schema_migration",
+        kind=QUALITY_TREND_PROJECTION_EVENT,
+        payload=payload,
+    )
     head = conn.execute(
         """SELECT event_sequence, event_hash
              FROM events
@@ -1188,7 +1279,7 @@ def _append_legacy_quality_projection_event(
         ts=event_ts,
         source="schema_migration",
         kind=QUALITY_TREND_PROJECTION_EVENT,
-        payload=payload,
+        payload=prepared_payload,
         previous_event_hash=previous_event_hash,
         ledger_genesis_kind=(
             LEGACY_IMPORT_GENESIS if previous_event_hash is None else None
@@ -1207,7 +1298,7 @@ def _append_legacy_quality_projection_event(
             "schema_migration",
             QUALITY_TREND_PROJECTION_EVENT,
             json.dumps(
-                payload,
+                prepared_payload,
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=True,
@@ -1248,6 +1339,7 @@ def _validate_quality_trend_audits(conn: sqlite3.Connection) -> None:
 
 
 def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
+    _migration_event_idempotency_claims(conn)
     if _table_exists(conn, "events"):
         _ensure_event_ledger_columns(conn)
         conn.execute(
@@ -1471,7 +1563,117 @@ def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
                        'worker_reaped_at is immutable once recorded'
                      );
                    END"""
+    )
+
+
+def _migration_event_idempotency_claims(
+    conn: sqlite3.Connection,
+) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS event_idempotency_claims (
+             run_id          TEXT NOT NULL,
+             kind            TEXT NOT NULL,
+             idempotency_key TEXT NOT NULL,
+             event_id        INTEGER NOT NULL,
+             source          TEXT NOT NULL,
+             payload_sha256  TEXT NOT NULL,
+             created_at      INTEGER NOT NULL,
+             PRIMARY KEY(run_id, kind, idempotency_key),
+             UNIQUE(event_id),
+             CHECK(event_id > 0)
+           )"""
+    )
+    if not _table_exists(conn, "events"):
+        return
+    rows = conn.execute(
+        """SELECT event_id, run_id, source, kind, payload_json,
+                  canonical_payload_hash, ts
+             FROM events
+            WHERE kind='dual_agent_production_trace_recorded'
+            ORDER BY event_id ASC"""
+    ).fetchall()
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        try:
+            payload = strict_json_object_loads(
+                _row_str(row, "payload_json", 4)
             )
+        except ValueError as exc:
+            raise RuntimeError(
+                "cannot backfill event idempotency from invalid payload JSON"
+            ) from exc
+        source_event_hash = str(
+            payload.get("source_event_hash") or ""
+        ).strip()
+        if not source_event_hash:
+            raise RuntimeError(
+                "production trace event lacks source_event_hash for "
+                "idempotency backfill"
+            )
+        identity = (
+            _row_str(row, "run_id", 1),
+            _row_str(row, "kind", 3),
+            f"production-trace:{source_event_hash}",
+        )
+        if identity in seen:
+            raise RuntimeError(
+                "duplicate production trace events require manual repair "
+                "before idempotency migration"
+            )
+        seen.add(identity)
+        expected = (
+            _row_int(row, "event_id", 0),
+            _row_str(row, "source", 2),
+            _row_str(row, "canonical_payload_hash", 5),
+        )
+        existing = conn.execute(
+            """SELECT event_id, source, payload_sha256
+                 FROM event_idempotency_claims
+                WHERE run_id=? AND kind=? AND idempotency_key=?""",
+            identity,
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """INSERT INTO event_idempotency_claims(
+                     run_id, kind, idempotency_key, event_id, source,
+                     payload_sha256, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    identity[0],
+                    identity[1],
+                    identity[2],
+                    *expected,
+                    _row_int(row, "ts", 6),
+                ),
+            )
+        elif (
+            _row_int(existing, "event_id", 0),
+            _row_str(existing, "source", 1),
+            _row_str(existing, "payload_sha256", 2),
+        ) != expected:
+            raise RuntimeError(
+                "event idempotency claim conflicts with the immutable event"
+            )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_update
+           BEFORE UPDATE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_delete
+           BEFORE DELETE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
@@ -1622,5 +1824,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         15,
         "historical_operation_claims",
         _migration_historical_operation_claims,
+    ),
+    SchemaMigration(
+        16,
+        "event_idempotency_claims",
+        _migration_event_idempotency_claims,
     ),
 )

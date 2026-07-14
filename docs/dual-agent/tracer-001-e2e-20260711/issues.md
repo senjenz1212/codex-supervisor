@@ -19,7 +19,8 @@
 - Acceptance:
   - All A/B/C arms on both runtimes terminate.
   - Events join, result freezes, verifier is blind, grade appends, ledger
-    verifies, trace closes, and ClaimGate returns no more than L2.
+    verifies, trace closes, and ClaimGate returns exactly L1 for the
+    same-principal fixture.
 
 ## TR3: Execute Unity end-to-end thread
 
@@ -38,4 +39,4 @@
 - Acceptance:
   - Report lists every run/artifact/grade/trace/ledger hash and failure.
   - No missing arm or selective exclusion is hidden.
-  - Claim text explicitly caps authority at L2.
+  - Claim text explicitly caps hermetic authority at L1.

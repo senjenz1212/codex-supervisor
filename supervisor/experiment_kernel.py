@@ -1647,6 +1647,26 @@ class SqliteExperimentStore:
             raise ValueError("persisted frozen result hash is invalid")
         return frozen
 
+    def get_frozen_result_owner(
+        self,
+        frozen_result_hash: str,
+    ) -> Mapping[str, str] | None:
+        row = self._conn.execute(
+            """
+            SELECT experiment_id, task_id, arm
+            FROM experiment_frozen_results
+            WHERE frozen_result_hash=?
+            """,
+            (str(frozen_result_hash),),
+        ).fetchone()
+        if row is None:
+            return None
+        return MappingProxyType({
+            "experiment_id": str(row["experiment_id"]),
+            "task_id": str(row["task_id"]),
+            "arm": str(row["arm"]),
+        })
+
     def put_assignment(self, assignment: Assignment) -> Assignment:
         with self._write_transaction():
             return self._put_assignment_locked(assignment)
@@ -2127,6 +2147,35 @@ class SqliteExperimentStore:
             )
         return MappingProxyType(state)
 
+    def list_terminal_arm_events(self) -> tuple[Mapping[str, Any], ...]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT experiment_id, task_id, block_attempt, arm
+            FROM experiment_arm_state_events
+            WHERE state IN (
+              'completed', 'failed', 'common_infrastructure_failed'
+            )
+            ORDER BY experiment_id, task_id, block_attempt, arm
+            """
+        ).fetchall()
+        terminal_events: list[Mapping[str, Any]] = []
+        for row in rows:
+            state = self.get_arm_attempt_state(
+                str(row["experiment_id"]),
+                str(row["task_id"]),
+                block_attempt=int(row["block_attempt"]),
+                arm=Arm(str(row["arm"])),
+            )
+            terminal_events.extend(
+                event
+                for terminal_state, event in state.items()
+                if terminal_state in _TERMINAL_ARM_STATES
+            )
+        return tuple(sorted(
+            terminal_events,
+            key=lambda event: int(event["arm_state_sequence"]),
+        ))
+
     def _append_arm_state_event_locked(
         self,
         *,
@@ -2537,6 +2586,172 @@ class ExperimentKernel:
         self.store = store
         self.executor = executor
         self.gradebook = gradebook or GradeBook(store.path)
+        self._reconciled_grade_orphans: dict[
+            tuple[str, str, str],
+            tuple[Mapping[str, str], ...],
+        ] = {}
+        self._reconcile_grade_terminal_commits()
+
+    def _reconcile_grade_terminal_commits(self) -> None:
+        if not isinstance(self.gradebook, GradeBook):
+            return
+        reconciled_orphans: dict[
+            tuple[str, str, str],
+            list[Mapping[str, str]],
+        ] = {}
+        terminal_lineages: list[
+            tuple[Mapping[str, Any], GradeRevision]
+        ] = []
+        for event in self.store.list_terminal_arm_events():
+            if event["state"] not in {"completed", "failed"}:
+                continue
+            try:
+                terminal_outcome = _arm_outcome_from_terminal_event(event)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "authoritative terminal outcome is malformed for "
+                    f"{event['experiment_id']}:{event['task_id']}:"
+                    f"{event['arm']}"
+                ) from exc
+            terminal_ref = terminal_outcome.grade_revision
+            if terminal_ref is None:
+                if _allows_missing_terminal_grade_revision(terminal_outcome):
+                    continue
+                raise RuntimeError(
+                    "authoritative terminal outcome lacks immutable grade "
+                    "lineage for "
+                    f"{event['experiment_id']}:{event['task_id']}:"
+                    f"{event['arm']}"
+                )
+            try:
+                terminal_revision = self.gradebook.get_revision(
+                    terminal_ref.grade_id
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "authoritative terminal outcome references an unavailable "
+                    f"grade: {terminal_ref.grade_id}"
+                ) from exc
+            if (
+                GradeRevisionRef.from_revision(terminal_revision)
+                != terminal_ref
+            ):
+                raise RuntimeError(
+                    "authoritative terminal outcome grade reference does not "
+                    f"match GradeBook: {terminal_ref.grade_id}"
+                )
+            if (
+                event["state"] == "failed"
+                and terminal_revision.passed
+            ):
+                raise RuntimeError(
+                    "failed terminal outcome references a passing grade: "
+                    f"{terminal_ref.grade_id}"
+                )
+            if (
+                event["state"] == "completed"
+                and terminal_outcome.status != "completed"
+            ):
+                raise RuntimeError(
+                    "completed terminal outcome carries a non-completed status"
+                )
+            if (
+                event["state"] == "failed"
+                and terminal_outcome.status == "completed"
+            ):
+                raise RuntimeError(
+                    "failed terminal outcome carries a completed status"
+                )
+            terminal_lineages.append((event, terminal_revision))
+
+        for revision in self.gradebook.list_uncommitted_revisions():
+            matching_event: Mapping[str, Any] | None = None
+            for event, terminal_revision in terminal_lineages:
+                if terminal_revision.grade_id != revision.grade_id:
+                    continue
+                if event["state"] == "failed" and revision.passed:
+                    continue
+                matching_event = event
+                break
+
+            owner: Mapping[str, str] | None
+            if matching_event is not None:
+                owner = MappingProxyType({
+                    "experiment_id": str(
+                        matching_event["experiment_id"]
+                    ),
+                    "task_id": str(matching_event["task_id"]),
+                    "arm": str(matching_event["arm"]),
+                })
+                try:
+                    self.gradebook.commit_terminal_grade(
+                        grade_id=revision.grade_id,
+                        revision_hash=revision.revision_hash,
+                        experiment_id=owner["experiment_id"],
+                        task_id=owner["task_id"],
+                        arm=owner["arm"],
+                        terminal_state=str(matching_event["state"]),
+                        terminal_state_hash=str(
+                            matching_event["state_hash"]
+                        ),
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "authoritative grade terminal reconciliation failed "
+                        f"for {revision.grade_id}"
+                    ) from exc
+                continue
+
+            owner = self.store.get_frozen_result_owner(
+                revision.run_envelope.frozen_result_hash
+            )
+            invalidations = self.gradebook.list_invalidations(
+                revision.grade_id
+            )
+            quarantine = next(
+                (
+                    invalidation
+                    for invalidation in reversed(invalidations)
+                    if invalidation.kind == "quarantined"
+                ),
+                None,
+            )
+            quarantine_error: Exception | None = None
+            if not invalidations:
+                try:
+                    quarantine = self.gradebook.quarantine_grade(
+                        revision.grade_id,
+                        reason="missing_terminal_commit_after_restart",
+                    )
+                except Exception as exc:
+                    quarantine_error = exc
+            orphan: dict[str, str] = {
+                "grade_id": revision.grade_id,
+                "revision_hash": revision.revision_hash,
+            }
+            if quarantine is not None:
+                orphan["quarantine_hash"] = (
+                    quarantine.invalidation_hash
+                )
+            if quarantine_error is not None:
+                orphan["quarantine_error_type"] = type(
+                    quarantine_error
+                ).__name__
+                orphan["quarantine_error"] = str(quarantine_error)
+            if owner is None:
+                continue
+            key = (
+                owner["experiment_id"],
+                owner["task_id"],
+                owner["arm"],
+            )
+            reconciled_orphans.setdefault(key, []).append(
+                MappingProxyType(orphan)
+            )
+        self._reconciled_grade_orphans = {
+            key: tuple(records)
+            for key, records in reconciled_orphans.items()
+        }
 
     def assign(self, experiment: ExperimentSpec, task: TaskSpec) -> Assignment:
         with self.store._write_transaction():
@@ -2817,13 +3032,45 @@ class ExperimentKernel:
                         ),
                         observation=observation,
                     )
+                    reconciled_orphans = (
+                        self._reconciled_grade_orphans.get(
+                            (
+                                experiment.experiment_id,
+                                task.task_id,
+                                arm.value,
+                            ),
+                            (),
+                        )
+                    )
+                    if reconciled_orphans:
+                        orphan_records = [
+                            dict(record)
+                            for record in reconciled_orphans
+                        ]
+                        outcome = replace(
+                            outcome,
+                            grade=replace(
+                                outcome.grade,
+                                evidence={
+                                    **dict(outcome.grade.evidence),
+                                    (
+                                        "reconciled_orphaned_"
+                                        "passing_grades"
+                                    ): orphan_records,
+                                    "grade_compensation_failed": any(
+                                        "quarantine_error" in record
+                                        for record in orphan_records
+                                    ),
+                                },
+                            ),
+                        )
                     outcome = self._with_failure_grade_revision_best_effort(
                         experiment=experiment,
                         task=task,
                         assignment=assignment,
                         outcome=outcome,
                     )
-                    self.store.finish_arm_attempt(
+                    terminal_event = self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         block_attempt=block_attempt,
@@ -2835,6 +3082,12 @@ class ExperimentKernel:
                             f"{transition_prefix}.failed"
                         ),
                         transition_payload=outcome.to_dict(),
+                    )
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
                     )
                     outcomes.append(outcome)
                     continue
@@ -2931,7 +3184,7 @@ class ExperimentKernel:
                         assignment=assignment,
                         outcome=outcome,
                     )
-                    self.store.finish_arm_attempt(
+                    terminal_event = self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         block_attempt=block_attempt,
@@ -2943,6 +3196,12 @@ class ExperimentKernel:
                             f"{transition_prefix}.failed"
                         ),
                         transition_payload=outcome.to_dict(),
+                    )
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
                     )
                     outcomes.append(outcome)
                     continue
@@ -2972,7 +3231,7 @@ class ExperimentKernel:
                         assignment=assignment,
                         outcome=outcome,
                     )
-                    self.store.finish_arm_attempt(
+                    terminal_event = self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         block_attempt=block_attempt,
@@ -2984,6 +3243,12 @@ class ExperimentKernel:
                             f"{transition_prefix}.failed"
                         ),
                         transition_payload=outcome.to_dict(),
+                    )
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
                     )
                     outcomes.append(outcome)
                     continue
@@ -3090,7 +3355,7 @@ class ExperimentKernel:
                         outcome=outcome,
                     )
                     stage = "terminal_persistence"
-                    self.store.finish_arm_attempt(
+                    terminal_event = self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         block_attempt=block_attempt,
@@ -3103,7 +3368,17 @@ class ExperimentKernel:
                         ),
                         transition_payload=outcome.to_dict(),
                     )
+                    stage = "grade_terminal_commit"
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
+                    )
                 except Exception as exc:
+                    if stage == "grade_terminal_commit":
+                        raise
+                    compensation_failed = False
                     appended_revision = None
                     graded_frozen_result_hash = ""
                     if stage == "terminal_persistence":
@@ -3132,34 +3407,154 @@ class ExperimentKernel:
                         execution_receipt=validated_receipt,
                     )
                     if appended_revision is not None:
-                        revision = self.gradebook.regrade(
-                            run=RunEnvelopeRef(
-                                run_id=appended_revision.run_id,
-                                run_envelope_hash=(
-                                    appended_revision.run_envelope_hash
+                        try:
+                            revision = self.gradebook.regrade(
+                                run=RunEnvelopeRef(
+                                    run_id=appended_revision.run_id,
+                                    run_envelope_hash=(
+                                        appended_revision.run_envelope_hash
+                                    ),
+                                    frozen_result_hash=(
+                                        graded_frozen_result_hash
+                                    ),
                                 ),
-                                frozen_result_hash=(
-                                    graded_frozen_result_hash
+                                grade=outcome.grade,
+                                verifier_config_hash=_verifier_config_hash(
+                                    task,
+                                    verifier_version=(
+                                        outcome.grade.verifier_version
+                                    ),
                                 ),
-                            ),
-                            grade=outcome.grade,
-                            verifier_config_hash=_verifier_config_hash(
-                                task,
-                                verifier_version=(
-                                    outcome.grade.verifier_version
+                                supersedes_grade_id=(
+                                    appended_revision.grade_id
                                 ),
-                            ),
-                            supersedes_grade_id=(
-                                appended_revision.grade_id
-                            ),
-                            reason="terminal_persistence_failure",
-                        )
-                        outcome = replace(
-                            outcome,
-                            grade_revision=(
-                                GradeRevisionRef.from_revision(revision)
-                            ),
-                        )
+                                reason="terminal_persistence_failure",
+                            )
+                        except Exception as grade_exc:
+                            invalidation = None
+                            invalidation_exc: Exception | None = None
+                            quarantine = None
+                            quarantine_exc: Exception | None = None
+                            try:
+                                invalidation = (
+                                    self.gradebook.invalidate_grade(
+                                        appended_revision.grade_id,
+                                        reason=(
+                                            "terminal_persistence_failure"
+                                        ),
+                                    )
+                                )
+                            except Exception as exc:
+                                invalidation_exc = exc
+                                if not isinstance(
+                                    self.gradebook,
+                                    GradeBook,
+                                ):
+                                    quarantine_exc = RuntimeError(
+                                        "grade compensation failed and the "
+                                        "authority cannot quarantine the "
+                                        "orphaned passing grade"
+                                    )
+                                else:
+                                    try:
+                                        quarantine = (
+                                            GradeBook.quarantine_grade(
+                                                self.gradebook,
+                                                appended_revision.grade_id,
+                                                reason=(
+                                                    "terminal_persistence_"
+                                                    "failure"
+                                                ),
+                                            )
+                                        )
+                                    except Exception as quarantine_error:
+                                        quarantine_exc = quarantine_error
+                                compensation_failed = (
+                                    quarantine_exc is not None
+                                )
+                            evidence = {
+                                **dict(outcome.grade.evidence),
+                                (
+                                    "grade_supersession_failed_after_"
+                                    "terminal_persistence"
+                                ): True,
+                                "grade_supersession_error_type": (
+                                    type(grade_exc).__name__
+                                ),
+                                "grade_supersession_error": str(grade_exc),
+                                "orphaned_passing_grade_id": (
+                                    appended_revision.grade_id
+                                ),
+                                "orphaned_passing_grade_revision_hash": (
+                                    appended_revision.revision_hash
+                                ),
+                                "orphaned_passing_grade_invalidated": (
+                                    invalidation is not None
+                                ),
+                                "orphaned_passing_grade_quarantined": (
+                                    quarantine is not None
+                                ),
+                                "grade_compensation_failed": (
+                                    compensation_failed
+                                ),
+                            }
+                            if invalidation is not None:
+                                evidence[
+                                    "orphaned_grade_invalidation_hash"
+                                ] = invalidation.invalidation_hash
+                            if quarantine is not None:
+                                evidence[
+                                    "orphaned_grade_quarantine_hash"
+                                ] = quarantine.invalidation_hash
+                            if invalidation_exc is not None:
+                                evidence[
+                                    "grade_invalidation_error_type"
+                                ] = type(invalidation_exc).__name__
+                                evidence["grade_invalidation_error"] = str(
+                                    invalidation_exc
+                                )
+                            if quarantine_exc is not None:
+                                evidence[
+                                    "grade_quarantine_error_type"
+                                ] = type(quarantine_exc).__name__
+                                evidence["grade_quarantine_error"] = str(
+                                    quarantine_exc
+                                )
+                            compensation_error = (
+                                "GradeBook "
+                                f"{type(grade_exc).__name__}: {grade_exc}"
+                            )
+                            if invalidation_exc is not None:
+                                compensation_error += (
+                                    "; GradeBook invalidation "
+                                    f"{type(invalidation_exc).__name__}: "
+                                    f"{invalidation_exc}"
+                                )
+                            if quarantine_exc is not None:
+                                compensation_error += (
+                                    "; GradeBook quarantine "
+                                    f"{type(quarantine_exc).__name__}: "
+                                    f"{quarantine_exc}"
+                                )
+                            outcome = replace(
+                                outcome,
+                                grade=replace(
+                                    outcome.grade,
+                                    evidence=evidence,
+                                ),
+                                error=(
+                                    outcome.error
+                                    + ("; " if outcome.error else "")
+                                    + compensation_error
+                                ),
+                            )
+                        else:
+                            outcome = replace(
+                                outcome,
+                                grade_revision=(
+                                    GradeRevisionRef.from_revision(revision)
+                                ),
+                            )
                     elif stage != "gradebook":
                         outcome = (
                             self._with_failure_grade_revision_best_effort(
@@ -3169,18 +3564,35 @@ class ExperimentKernel:
                                 outcome=outcome,
                             )
                         )
-                    self.store.finish_arm_attempt(
+                    failed_transition_kind = (
+                        "arm.compensation_failed"
+                        if compensation_failed
+                        else "arm.failed"
+                    )
+                    failed_transition_suffix = (
+                        "compensation_failed"
+                        if compensation_failed
+                        else "failed"
+                    )
+                    terminal_event = self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         block_attempt=block_attempt,
                         arm=arm,
                         state="failed",
                         payload={"outcome": outcome.to_dict()},
-                        transition_kind="arm.failed",
+                        transition_kind=failed_transition_kind,
                         transition_idempotency_key=(
-                            f"{transition_prefix}.failed"
+                            f"{transition_prefix}."
+                            f"{failed_transition_suffix}"
                         ),
                         transition_payload=outcome.to_dict(),
+                    )
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
                     )
                 outcomes.append(outcome)
 
@@ -3204,18 +3616,17 @@ class ExperimentKernel:
                         },
                     )
                     continue
+                # A repeated common pre-treatment outage invalidates the whole
+                # block before any comparable arm result exists. Persist the
+                # task-level failure records, but do not mint arm grade
+                # revisions that could never receive arm-terminal authority.
                 final_outcomes = tuple(
-                    self._with_failure_grade_revision_best_effort(
-                        experiment=experiment,
+                    _common_pre_treatment_block_failure(
+                        arm=arm,
                         task=task,
+                        verifier_version=verifier_version,
                         assignment=assignment,
-                        outcome=_common_pre_treatment_block_failure(
-                            arm=arm,
-                            task=task,
-                            verifier_version=verifier_version,
-                            assignment=assignment,
-                            exc=common_failure,
-                        ),
+                        exc=common_failure,
                     )
                     for arm in assignment.order
                 )
@@ -3293,6 +3704,39 @@ class ExperimentKernel:
             },
         )
         return result
+
+    def _commit_outcome_terminal_grade(
+        self,
+        *,
+        experiment: ExperimentSpec,
+        task: TaskSpec,
+        outcome: ArmOutcome,
+        terminal_event: Mapping[str, Any],
+    ) -> None:
+        grade_revision = outcome.grade_revision
+        if grade_revision is None:
+            if outcome.status == "completed":
+                raise RuntimeError(
+                    "completed outcome lacks immutable grade lineage"
+                )
+            return
+        expected_state = (
+            "completed" if outcome.status == "completed" else "failed"
+        )
+        terminal_state = str(terminal_event["state"])
+        if terminal_state != expected_state:
+            raise RuntimeError(
+                "grade terminal authority state does not match outcome"
+            )
+        self.gradebook.commit_terminal_grade(
+            grade_id=grade_revision.grade_id,
+            revision_hash=grade_revision.revision_hash,
+            experiment_id=experiment.experiment_id,
+            task_id=task.task_id,
+            arm=outcome.arm.value,
+            terminal_state=terminal_state,
+            terminal_state_hash=str(terminal_event["state_hash"]),
+        )
 
     def _with_grade_revision(
         self,
@@ -3447,6 +3891,52 @@ class ExperimentKernel:
             ),
             supersedes_grade_id=history[-1].grade_id,
             reason=reason,
+        )
+        expected_terminal_state = (
+            "completed" if outcome.status == "completed" else "failed"
+        )
+        terminal_event: Mapping[str, Any] | None = None
+        for event in reversed(
+            self.store.get_arm_state_events(
+                experiment_id,
+                task_id,
+                arm=arm,
+            )
+        ):
+            if event["state"] != expected_terminal_state:
+                continue
+            payload = event.get("payload")
+            raw_outcome = (
+                payload.get("outcome")
+                if isinstance(payload, MappingABC)
+                else None
+            )
+            raw_grade_revision = (
+                raw_outcome.get("grade_revision")
+                if isinstance(raw_outcome, MappingABC)
+                else None
+            )
+            if (
+                isinstance(raw_grade_revision, MappingABC)
+                and str(raw_grade_revision.get("grade_id") or "")
+                == outcome.grade_revision.grade_id
+                and str(raw_grade_revision.get("revision_hash") or "")
+                == outcome.grade_revision.revision_hash
+            ):
+                terminal_event = event
+                break
+        if terminal_event is None:
+            raise ValueError(
+                "persisted outcome lacks matching terminal grade authority"
+            )
+        self.gradebook.commit_terminal_grade(
+            grade_id=revision.grade_id,
+            revision_hash=revision.revision_hash,
+            experiment_id=experiment_id,
+            task_id=task_id,
+            arm=arm.value,
+            terminal_state=expected_terminal_state,
+            terminal_state_hash=str(terminal_event["state_hash"]),
         )
         self.store.append_transition(
             experiment_id=experiment_id,
@@ -4181,6 +4671,22 @@ def _arm_outcome_from_terminal_event(
             "terminal arm outcome does not match its durable state"
         )
     return parsed
+
+
+def _allows_missing_terminal_grade_revision(
+    outcome: ArmOutcome,
+) -> bool:
+    """Recognize an explicitly recorded failure to persist grade authority."""
+    if outcome.status == "completed":
+        return False
+    evidence = outcome.grade.evidence
+    return (
+        evidence.get("gradebook_persistence_failed") is True
+        or evidence.get(
+            "grade_supersession_failed_after_terminal_persistence"
+        )
+        is True
+    )
 
 
 def _remember_persisted_outcome_claims(

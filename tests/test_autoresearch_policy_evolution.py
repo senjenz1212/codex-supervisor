@@ -1537,6 +1537,43 @@ def test_approval_rejects_duplicate_recorded_proposal_identity(
     assert target.read_text(encoding="utf-8") == BASE_OVERLAY
 
 
+def test_approval_rejects_conflicting_duplicate_recorded_proposal(
+    tmp_path,
+    policy_authority,
+):
+    state, target, _candidate, proposal = _proposal_fixture(
+        tmp_path,
+        policy_authority,
+    )
+    conflicting = {
+        key: value
+        for key, value in proposal.items()
+        if key != "proposal_event_id"
+    }
+    conflicting["candidate_hash"] = "0" * 64
+    state.write_event(
+        run_id="policy-run",
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_created",
+        payload=conflicting,
+    )
+
+    with pytest.raises(
+        PolicyEvolutionError,
+        match="identity is missing or duplicated",
+    ):
+        approve_policy_proposal(
+            proposal,
+            state=state,
+            run_id="policy-run",
+            repo_root=tmp_path,
+            approver="sam.zhang",
+            approval_channel="codex_desktop",
+        )
+
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+
+
 def test_approval_rejects_forged_report_authority_binding(
     tmp_path,
     policy_authority,

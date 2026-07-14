@@ -59,6 +59,26 @@ def _init_git_repo(path: Path) -> str:
     ).stdout.strip()
 
 
+def test_workspace_overlay_marks_oversized_content_incomplete(
+    tmp_path: Path,
+) -> None:
+    baseline = _init_git_repo(tmp_path)
+    oversized = tmp_path / "oversized.bin"
+    oversized.write_bytes(b"x" * ((1024 * 1024) + 1))
+
+    overlay = build_workspace_overlay(
+        tmp_path,
+        base_commit=baseline,
+    )
+
+    assert overlay["status"] == "incomplete"
+    assert overlay["omitted_paths"] == ["oversized.bin"]
+    [entry] = overlay["entries"]
+    assert entry["path"] == "oversized.bin"
+    assert entry["content_omitted"] == "size_limit_exceeded"
+    assert "content_base64" not in entry
+
+
 def _write_manifest(
     path: Path,
     *,
@@ -80,6 +100,9 @@ def _write_manifest(
                 "trace_envelope": "dual-agent-trace-envelope/v1",
                 "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
                 "interaction": "dual-agent-interaction/v1",
+                "production_trace_export": (
+                    "dual-agent-production-trace-export/v1"
+                ),
             },
             "workspace_snapshot": {
                 "status": "captured",

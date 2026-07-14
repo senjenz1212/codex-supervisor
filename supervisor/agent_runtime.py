@@ -12,8 +12,10 @@ import hashlib
 import json
 import math
 import os
+import platform
 import re
 import shutil
+import stat
 import sys
 import time
 import uuid
@@ -33,6 +35,17 @@ RUN_RESULT_SCHEMA_VERSION = "supervisor-agent-run-result/v1"
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 _SUBPROCESS_STREAM_LIMIT = 32 * 1024 * 1024
 _WORKSPACE_ONLY_ISOLATION_MODE = "workspace_only"
+_EXECUTION_ENVIRONMENT_ATTESTATION_SCHEMA_VERSION = (
+    "supervisor-execution-environment-attestation/v1"
+)
+_LOCAL_SUBPROCESS_EVIDENCE_SCHEMA_VERSION = (
+    "supervisor-local-subprocess-backend-evidence/v1"
+)
+_TRANSPORT_OWNED_RESULT_METADATA_KEYS = frozenset({
+    "execution_environment_attestation",
+    "execution_attestation",
+    "resource_attestation",
+})
 _PROCESS_ENV_KEYS = frozenset({
     "HOME",
     "PATH",
@@ -324,7 +337,12 @@ class CommandAgentRuntime:
         self._session_ids: dict[str, str] = {}
 
     def runtime_manifest(self, task: AgentTask) -> Mapping[str, Any]:
-        binary_manifest = _binary_identity_manifest(self._binary)
+        runtime_env = self._runtime_env(task)
+        binary_manifest = _binary_identity_manifest(
+            self._binary,
+            cwd=Path(task.cwd).resolve(),
+            search_path=runtime_env.get("PATH"),
+        )
         transport_manifest = _transport_identity_manifest(self._transport)
         route_manifest = self._route_identity_manifest(task)
         tools = task.metadata.get("tools")
@@ -363,6 +381,7 @@ class CommandAgentRuntime:
         }
 
     async def start(self, task: AgentTask) -> AgentRunHandle:
+        _task_result_metadata(task.metadata)
         cwd = Path(task.cwd).resolve()
         isolation = _filesystem_isolation_policy(task.metadata, cwd=cwd)
         supports_isolation = _transport_supports_filesystem_isolation(
@@ -488,7 +507,7 @@ class CommandAgentRuntime:
             "cost_provenance": cost_provenance,
             "token_provenance": token_provenance,
             "metadata": {
-                **dict(task.metadata.get("result_metadata") or {}),
+                **_task_result_metadata(task.metadata),
                 **dict(transport_result.metadata),
                 "returncode": transport_result.returncode,
                 "stderr": transport_result.stderr,
@@ -869,14 +888,6 @@ def _validated_reasoning_effort(metadata: Mapping[str, Any]) -> str:
     return reasoning_effort
 
 
-_CLAUDE_EXTRA_ARG_DENYLIST = frozenset({
-    "--permission-mode",
-    "--dangerously-skip-permissions",
-    "--add-dir",
-    "--settings",
-})
-
-
 def _claude_cli_controls(task: AgentTask) -> list[str]:
     metadata = task.metadata
     argv: list[str] = []
@@ -940,14 +951,11 @@ def _claude_cli_controls(task: AgentTask) -> list[str]:
             for value in raw_extra_args
             if str(value).strip()
         ]
-        for value in extra_args:
-            flag = value.split("=", 1)[0].strip()
-            if flag in _CLAUDE_EXTRA_ARG_DENYLIST:
-                raise ValueError(
-                    "extra_args may not override permission or isolation "
-                    f"controls: {value!r}"
-                )
-        argv.extend(extra_args)
+        if extra_args:
+            raise ValueError(
+                "Claude extra_args are unsupported; use the typed runtime "
+                "metadata controls instead"
+            )
     return argv
 
 
@@ -957,10 +965,11 @@ class _SubprocessToken:
     process_group_id: int
     process_started_at: float | None
     containment_id: str
-    queue: asyncio.Queue[Mapping[str, Any] | None]
+    queue: asyncio.Queue[Mapping[str, Any] | BaseException | None]
     raw_events: list[Mapping[str, Any]]
     stdout: list[str]
     stderr: list[str]
+    result_metadata: Mapping[str, Any]
     started_at_ms: int
     timeout_s: float
     deadline: float
@@ -979,11 +988,12 @@ class _AsyncioProcessPoller:
 
 
 async def _read_stream_line(stream: asyncio.StreamReader) -> bytes:
-    while True:
-        try:
-            return await stream.readline()
-        except (asyncio.LimitOverrunError, ValueError):
-            continue
+    try:
+        return await stream.readline()
+    except (asyncio.LimitOverrunError, ValueError) as exc:
+        raise RuntimeError(
+            "runtime stream-json line exceeds the configured limit"
+        ) from exc
 
 
 def _subprocess_identity(pid: int) -> tuple[int, float | None]:
@@ -1002,11 +1012,191 @@ def _subprocess_identity(pid: int) -> tuple[int, float | None]:
     return process_group_id, started_at
 
 
+def _task_result_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    raw = metadata.get("result_metadata")
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ValueError("result_metadata must be a mapping")
+    forbidden = sorted(
+        _TRANSPORT_OWNED_RESULT_METADATA_KEYS & set(raw)
+    )
+    if forbidden:
+        raise ValueError(
+            "backend attestation metadata is transport-owned: "
+            + ", ".join(forbidden)
+        )
+    return dict(raw)
+
+
+def _local_subprocess_result_metadata(
+    metadata: Mapping[str, Any],
+    *,
+    cwd: Path,
+    timeout_s: float,
+    policy: _FilesystemIsolationPolicy | None,
+) -> dict[str, Any]:
+    experiment = metadata.get("experiment")
+    if not isinstance(experiment, Mapping):
+        return {}
+    runtime_plan = experiment.get("runtime_plan")
+    if not isinstance(runtime_plan, Mapping):
+        return {}
+    execution_mode = str(
+        metadata.get("execution_mode")
+        or runtime_plan.get("execution_mode")
+        or ""
+    ).strip().casefold()
+    if execution_mode != "operational":
+        return {}
+
+    expected_image = str(
+        runtime_plan.get("container_digest")
+        or runtime_plan.get("image_digest")
+        or ""
+    ).strip()
+    expected_architecture = str(
+        runtime_plan.get("architecture") or ""
+    ).strip()
+    expected_os_name = str(runtime_plan.get("os_name") or "").strip()
+    expected_network = str(
+        runtime_plan.get("network_policy") or ""
+    ).strip()
+    raw_limits = runtime_plan.get("resource_limits")
+    expected_limits = (
+        dict(raw_limits)
+        if isinstance(raw_limits, Mapping)
+        else {}
+    )
+
+    actual_architecture = platform.machine()
+    actual_os_name = platform.system().lower()
+    if actual_os_name == "darwin":
+        actual_os_name = "macos"
+    observed_network = (
+        policy.network_policy if policy is not None else "enabled"
+    )
+    enforced_limits: dict[str, Any] = {}
+    unmet_pins: list[str] = []
+
+    # A local subprocess does not instantiate the TaskSpec container image.
+    # Never echo the requested digest into an operational attestation.
+    if expected_image:
+        unmet_pins.append("image_digest:no_container_backend")
+    else:
+        unmet_pins.append("image_digest:missing_requested_pin")
+    if not expected_architecture:
+        unmet_pins.append("architecture:missing_requested_pin")
+    elif actual_architecture.casefold() != expected_architecture.casefold():
+        unmet_pins.append("architecture:host_mismatch")
+    if not expected_os_name:
+        unmet_pins.append("os_name:missing_requested_pin")
+    elif actual_os_name.casefold() != expected_os_name.casefold():
+        unmet_pins.append("os_name:host_mismatch")
+    if not expected_network:
+        unmet_pins.append("network_policy:missing_requested_pin")
+    elif observed_network != expected_network:
+        unmet_pins.append("network_policy:not_enforced_by_local_subprocess")
+
+    for key, expected_value in sorted(expected_limits.items()):
+        if key == "timeout_s":
+            try:
+                requested_timeout = float(expected_value)
+            except (TypeError, ValueError):
+                unmet_pins.append("resource_limits.timeout_s:invalid")
+                continue
+            if (
+                not math.isfinite(requested_timeout)
+                or requested_timeout < 0
+                or float(timeout_s) > requested_timeout + 1e-6
+            ):
+                unmet_pins.append(
+                    "resource_limits.timeout_s:not_enforced_by_local_subprocess"
+                )
+                continue
+            # The transport deadline is equal to or stricter than the frozen
+            # ceiling, so recording the frozen ceiling is truthful.
+            enforced_limits[key] = expected_value
+            continue
+        unmet_pins.append(
+            f"resource_limits.{key}:not_enforced_by_local_subprocess"
+        )
+
+    backend = (
+        "local-subprocess/macos-sandbox-exec"
+        if policy is not None
+        else "local-subprocess/unisolated"
+    )
+    backend_evidence = {
+        "schema_version": _LOCAL_SUBPROCESS_EVIDENCE_SCHEMA_VERSION,
+        "container_backend": False,
+        "launch": "asyncio.create_subprocess_exec",
+        "workspace": os.fspath(cwd),
+        "filesystem_isolation": (
+            policy.mode if policy is not None else "none"
+        ),
+        "network_policy_rule": observed_network,
+        "network_isolation_enforced": bool(
+            policy is not None and policy.network_policy == "disabled"
+        ),
+        "process_group_isolation": True,
+        "containment_tagged": True,
+        "timeout_enforced": True,
+        "effective_timeout_s": float(timeout_s),
+        "compute_resource_hash": str(
+            experiment.get("compute_resource_hash") or ""
+        ),
+    }
+    attestation_body = {
+        "schema_version": (
+            _EXECUTION_ENVIRONMENT_ATTESTATION_SCHEMA_VERSION
+        ),
+        "attestation_source": "runtime_transport",
+        "mode": "operational",
+        "backend": backend,
+        "image_digest": "",
+        "architecture": actual_architecture,
+        "os_name": actual_os_name,
+        "network_policy": observed_network,
+        "resource_limits": enforced_limits,
+        "enforced": not unmet_pins,
+        "unmet_pins": unmet_pins,
+        "backend_evidence": backend_evidence,
+    }
+    return {
+        "execution_environment_attestation": {
+            **attestation_body,
+            "attestation_id": _sha256_json(attestation_body),
+        }
+    }
+
+
 class SubprocessRuntimeTransport:
     """Async subprocess transport with process-group cancellation."""
 
     def __init__(self) -> None:
         self._tokens: dict[str, _SubprocessToken] = {}
+
+    def identity_manifest(self) -> Mapping[str, Any]:
+        isolation_backend = (
+            "macos-sandbox-exec"
+            if self.supports_filesystem_isolation(
+                _WORKSPACE_ONLY_ISOLATION_MODE
+            )
+            else "unavailable"
+        )
+        return {
+            "launch": "asyncio.create_subprocess_exec",
+            "process_group": "new_session",
+            "containment": "tagged-process-tree-reap",
+            "filesystem_isolation": isolation_backend,
+            "execution_environment_attestation": (
+                _LOCAL_SUBPROCESS_EVIDENCE_SCHEMA_VERSION
+            ),
+            "container_backend": False,
+            "hard_resource_limits": ["timeout_s"],
+            "complete": True,
+        }
 
     def supports_filesystem_isolation(self, mode: str) -> bool:
         return (
@@ -1029,11 +1219,18 @@ class SubprocessRuntimeTransport:
         timeout_s: float,
         metadata: Mapping[str, Any],
     ) -> str:
+        policy = _filesystem_isolation_policy(metadata, cwd=cwd)
         launch_argv = await self._prepare_launch_argv(
             argv,
             cwd=cwd,
             env=env,
             metadata=metadata,
+        )
+        result_metadata = _local_subprocess_result_metadata(
+            metadata,
+            cwd=cwd,
+            timeout_s=timeout_s,
+            policy=policy,
         )
         containment_id = new_containment_id()
         process = await asyncio.create_subprocess_exec(
@@ -1055,6 +1252,7 @@ class SubprocessRuntimeTransport:
             raw_events=[],
             stdout=[],
             stderr=[],
+            result_metadata=result_metadata,
             started_at_ms=int(time.time() * 1000),
             timeout_s=timeout_s,
             deadline=(
@@ -1084,11 +1282,18 @@ class SubprocessRuntimeTransport:
             )
         await asyncio.shield(current.done)
         await self._terminate_process(current)
+        policy = _filesystem_isolation_policy(metadata, cwd=cwd)
         launch_argv = await self._prepare_launch_argv(
             argv,
             cwd=cwd,
             env=env,
             metadata=metadata,
+        )
+        result_metadata = _local_subprocess_result_metadata(
+            metadata,
+            cwd=cwd,
+            timeout_s=timeout_s,
+            policy=policy,
         )
         containment_id = new_containment_id()
         process = await asyncio.create_subprocess_exec(
@@ -1110,6 +1315,7 @@ class SubprocessRuntimeTransport:
             raw_events=current.raw_events,
             stdout=current.stdout,
             stderr=current.stderr,
+            result_metadata=result_metadata,
             started_at_ms=current.started_at_ms,
             timeout_s=timeout_s,
             deadline=(
@@ -1227,6 +1433,8 @@ class SubprocessRuntimeTransport:
             event = await item.queue.get()
             if event is None:
                 return
+            if isinstance(event, BaseException):
+                raise event
             yield event
 
     async def collect(self, token: str) -> RuntimeTransportResult:
@@ -1257,48 +1465,58 @@ class SubprocessRuntimeTransport:
                         provenance["token_usage"]
                         and provenance["token_provenance"]
                     ),
-                }
+                },
+                "provenance_blockers": _provenance_blockers(provenance),
+                **dict(item.result_metadata),
             },
         )
 
     async def _run_with_timeout(self, item: _SubprocessToken) -> int:
         pump_task = asyncio.create_task(self._pump(item))
+        terminal_error: BaseException | None = None
         remaining_s = max(
             0.0,
             item.deadline - asyncio.get_running_loop().time(),
         )
         try:
-            returncode = await asyncio.wait_for(
-                asyncio.shield(pump_task),
-                timeout=remaining_s,
-            )
+            try:
+                returncode = await asyncio.wait_for(
+                    asyncio.shield(pump_task),
+                    timeout=remaining_s,
+                )
+            except asyncio.TimeoutError:
+                # Once the deadline wins, cleanup-time stream failures must
+                # not replace the stable timeout classification.
+                pump_task.cancel()
+                await asyncio.gather(pump_task, return_exceptions=True)
+                await self._terminate_process(item)
+                return 124
+            except BaseException:
+                pump_task.cancel()
+                await asyncio.gather(pump_task, return_exceptions=True)
+                await self._terminate_process(item)
+                raise
             await self._terminate_process(item)
             return returncode
-        except asyncio.TimeoutError:
-            if pump_task.done():
-                returncode = await pump_task
-                await self._terminate_process(item)
-                return returncode
-            await self._terminate_process(item)
-            await pump_task
-            return 124
-        except BaseException:
-            pump_task.cancel()
-            try:
-                await pump_task
-            except BaseException:
-                pass
-            await self._terminate_process(item)
+        except BaseException as exc:
+            terminal_error = exc
             raise
         finally:
-            await item.queue.put(None)
+            await item.queue.put(terminal_error)
 
     async def _pump(self, item: _SubprocessToken) -> int:
         stdout_task = asyncio.create_task(self._pump_stdout(item))
         stderr_task = asyncio.create_task(self._pump_stderr(item))
-        returncode = await item.process.wait()
-        await asyncio.gather(stdout_task, stderr_task)
-        return returncode
+        process_task = asyncio.create_task(item.process.wait())
+        tasks = (process_task, stdout_task, stderr_task)
+        try:
+            await asyncio.gather(*tasks)
+            return process_task.result()
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _pump_stdout(self, item: _SubprocessToken) -> None:
         if item.process.stdout is None:
@@ -1623,6 +1841,29 @@ def _provenance_from_raw_events(
     }
 
 
+def _provenance_blockers(
+    provenance: Mapping[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    if not (
+        str(provenance.get("resolved_model") or "").strip()
+        and str(provenance.get("model_provenance") or "").strip()
+    ):
+        blockers.append("resolved_model")
+    if not str(provenance.get("cost_provenance") or "").strip():
+        blockers.append("cost_provenance")
+    if not str(provenance.get("token_provenance") or "").strip():
+        blockers.append("token_provenance")
+    token_usage = provenance.get("token_usage")
+    if (
+        not isinstance(token_usage, Mapping)
+        or "tokens_in" not in token_usage
+        or "tokens_out" not in token_usage
+    ):
+        blockers.append("token_usage")
+    return blockers
+
+
 def _usage_semantics(candidate: Mapping[str, Any]) -> str:
     raw = (
         candidate.get("usage_semantics")
@@ -1876,26 +2117,148 @@ def _with_token_totals(usage: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _binary_identity_manifest(binary: str) -> dict[str, Any]:
+def _binary_identity_manifest(
+    binary: str,
+    *,
+    cwd: Path | None = None,
+    search_path: str | None = None,
+) -> dict[str, Any]:
     requested = str(binary or "").strip()
-    resolved = ""
-    if requested:
-        candidate = Path(requested).expanduser()
-        if candidate.is_absolute() or candidate.parent != Path("."):
-            resolved = str(candidate.resolve(strict=False))
-        else:
-            resolved = str(shutil.which(requested) or "")
+    invocation_root = Path(cwd or Path.cwd()).expanduser().resolve()
+    invoked_path = ""
+    resolved_target = ""
     digest = ""
-    if resolved:
-        path = Path(resolved)
-        if path.is_file() and not path.is_symlink():
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    error = ""
+    explicit_relative = False
+
+    if not requested:
+        error = "binary_request_missing"
+    else:
+        candidate = Path(requested).expanduser()
+        if candidate.is_absolute():
+            invoked = candidate
+        elif (
+            os.sep in requested
+            or (os.altsep is not None and os.altsep in requested)
+        ):
+            explicit_relative = True
+            invoked = invocation_root / candidate
+        else:
+            located = shutil.which(
+                requested,
+                path=search_path,
+            )
+            if not located:
+                invoked = Path()
+                error = "binary_not_found"
+            else:
+                invoked = Path(located)
+                if not invoked.is_absolute():
+                    invoked = invocation_root / invoked
+        if not error:
+            invoked = Path(os.path.abspath(os.fspath(invoked)))
+            invoked_path = os.fspath(invoked)
+            if explicit_relative and not _path_is_within(
+                invoked,
+                invocation_root,
+            ):
+                error = "binary_path_escapes_invocation_root"
+            else:
+                try:
+                    target = invoked.resolve(strict=True)
+                except (FileNotFoundError, RuntimeError):
+                    error = "binary_target_missing"
+                except OSError:
+                    error = "binary_target_unresolvable"
+                else:
+                    resolved_target = os.fspath(target)
+                    if (
+                        explicit_relative
+                        and not _path_is_within(target, invocation_root)
+                    ):
+                        error = (
+                            "binary_target_escapes_invocation_root"
+                        )
+                    elif not os.access(target, os.R_OK):
+                        error = "binary_target_unreadable"
+                    elif not os.access(target, os.X_OK):
+                        error = "binary_target_not_executable"
+                    else:
+                        try:
+                            digest = _sha256_regular_file(target)
+                        except PermissionError:
+                            error = "binary_target_unreadable"
+                        except (FileNotFoundError, RuntimeError):
+                            error = "binary_target_changed_during_hash"
+                        except ValueError:
+                            error = "binary_target_not_regular"
+                        except OSError:
+                            error = "binary_target_unhashable"
     return {
         "requested": requested,
-        "resolved_path": resolved,
+        "invoked_path": invoked_path,
+        "resolved_target": resolved_target,
+        # Retain the older field as a compatibility alias. New evidence should
+        # use ``invoked_path`` and ``resolved_target`` explicitly.
+        "resolved_path": resolved_target,
         "sha256": digest,
-        "complete": bool(requested and resolved and digest),
+        "error": error,
+        "complete": bool(
+            requested
+            and invoked_path
+            and resolved_target
+            and digest
+            and not error
+        ),
     }
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _sha256_regular_file(path: Path) -> str:
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(os.fspath(path), flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("runtime binary target must be a regular file")
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if identity_before != identity_after:
+            raise RuntimeError(
+                "runtime binary target changed while it was hashed"
+            )
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
 
 
 def _transport_identity_manifest(

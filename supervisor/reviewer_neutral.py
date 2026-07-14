@@ -354,7 +354,10 @@ class StructuredReviewerAdapter:
             except Exception as exc:
                 reason = (
                     "structured_reviewer_timeout"
-                    if isinstance(exc, TimeoutError)
+                    if isinstance(
+                        exc,
+                        (TimeoutError, asyncio.TimeoutError),
+                    )
                     else "structured_reviewer_invocation_failed"
                 )
                 failed_attempts.append({

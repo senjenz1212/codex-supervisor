@@ -28,6 +28,9 @@
 9. Require stored primary-review hashes before constructing adjudication.
 10. Integrate real `AgentRuntime`, `TaskEnvironmentAdapter`, verifier, ledger,
    grade revision, trace graph, and ClaimGate in TRACER-001.
+11. If a passing grade is appended but terminal state persistence fails,
+    append a failing replacement. If replacement and normal invalidation both
+    fail, quarantine the orphan pass and prove its citation is rejected.
 
 ## Verification
 

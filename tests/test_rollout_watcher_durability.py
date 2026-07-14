@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 from supervisor.rollout_watcher import RolloutWatcher
-from supervisor.run_registry import register_submitted_workflow
+from supervisor.run_registry import (
+    REUSABLE_SESSION_COMPLETION_POLICY,
+    SINGLE_TURN_COMPLETION_POLICY,
+    register_submitted_workflow,
+)
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
 
@@ -17,6 +21,7 @@ def _registered_watcher(
     tmp_path: Path,
     *,
     session_id: str,
+    completion_policy: str = REUSABLE_SESSION_COMPLETION_POLICY,
 ) -> tuple[State, RolloutWatcher, Path]:
     sessions_root = tmp_path / "sessions"
     registry_dir = tmp_path / "runs"
@@ -39,6 +44,7 @@ def _registered_watcher(
         cwd=tmp_path,
         session_id_source="test",
         scope_contract=ScopeContract(),
+        completion_policy=completion_policy,
     )
     return (
         state,
@@ -88,6 +94,7 @@ async def test_run_terminal_atomically_closes_and_enqueues_once_across_retry(
     state, watcher, rollout = _registered_watcher(
         tmp_path,
         session_id=session_id,
+        completion_policy=SINGLE_TURN_COMPLETION_POLICY,
     )
     raw_line = (json.dumps({"type": "run_completed"}) + "\n").encode()
     rollout.write_bytes(raw_line)
@@ -124,6 +131,7 @@ async def test_multi_event_source_line_rolls_back_as_one_unit(
     state, watcher, rollout = _registered_watcher(
         tmp_path,
         session_id=session_id,
+        completion_policy=SINGLE_TURN_COMPLETION_POLICY,
     )
     raw_line = (
         json.dumps(
@@ -170,7 +178,7 @@ async def test_multi_event_source_line_rolls_back_as_one_unit(
         )
     ] == ["agent.message", "turn.completed"]
     assert state.get_tail_offset(str(rollout)) == len(raw_line)
-    assert state.get_run_by_session(session_id)["status"] == "running"
+    assert state.get_run_by_session(session_id)["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -181,6 +189,7 @@ async def test_post_commit_crash_recovery_does_not_duplicate_terminal_work(
     state, watcher, rollout = _registered_watcher(
         tmp_path,
         session_id=session_id,
+        completion_policy=SINGLE_TURN_COMPLETION_POLICY,
     )
     raw_line = (json.dumps({"type": "run_completed"}) + "\n").encode()
     rollout.write_bytes(raw_line)

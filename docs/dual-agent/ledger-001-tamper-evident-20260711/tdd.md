@@ -15,6 +15,10 @@
 8. Rebuild every covered projection twice and compare canonical bytes.
 9. Complete a configured workflow run and observe a terminal checkpoint.
 10. Cross the configured event interval and observe a periodic checkpoint.
+11. Infer the event-hash schema from its hash preimage and apply only that
+    schema's frozen redactor; accept a historical future-only secret, reject
+    the same unredacted value under a future schema, and reject unknown
+    schemas.
 
 ## Focused Suites
 

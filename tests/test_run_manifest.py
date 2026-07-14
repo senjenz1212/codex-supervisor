@@ -3,8 +3,11 @@ from __future__ import annotations
 import sys
 from hashlib import sha256
 
+import pytest
+
 from supervisor.run_manifest import (
     _acceptance_artifact_roots,
+    _canonical_json_bytes,
     build_execution_provenance,
     execution_provenance_issues,
 )
@@ -51,6 +54,13 @@ def test_acceptance_artifact_root_rejects_parent_component(tmp_path):
         / "dual-agent"
         / "dual-agent-task",
     )
+
+
+def test_hash_bearing_json_rejects_non_json_values() -> None:
+    with pytest.raises(TypeError):
+        _canonical_json_bytes({"opaque": object()})
+    with pytest.raises(ValueError, match="Out of range float values"):
+        _canonical_json_bytes({"not_a_number": float("nan")})
 
 
 def test_observed_call_shape_cannot_stand_in_for_canonical_tool_contract():

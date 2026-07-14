@@ -8,10 +8,12 @@ Forbidden outcome guarded against:
   - "A secret appears in SQLite or Telegram text."
 """
 from __future__ import annotations
+import re
 import sqlite3
 
 import pytest
 
+from supervisor import redaction as redaction_module
 from supervisor.state import State
 
 
@@ -121,3 +123,81 @@ def test_redaction_does_not_corrupt_identifiers_containing_sk_prefix():
 
     identifier = "task-policy-1"
     assert redact_for_telegram(identifier) == identifier
+
+
+def test_event_payload_object_keys_are_redacted_before_persistence(tmp_path):
+    state = State(str(tmp_path / "object-key.db"))
+    state.write_event(
+        run_id="object-key-redaction",
+        source="test",
+        kind="event_msg",
+        payload={"API_KEY=super-secret-value": "ordinary"},
+    )
+
+    dump = _dump_all_rows(state.db_path)
+    [event] = state.read_events_since(
+        "object-key-redaction",
+        after_event_id=0,
+        limit=10,
+    )
+
+    assert "super-secret-value" not in dump
+    assert event["payload"]["API_KEY=[REDACTED]"] == "ordinary"
+
+
+def test_redaction_rejects_object_key_collisions():
+    from supervisor.redaction import redact
+
+    with pytest.raises(ValueError, match="duplicate object key"):
+        redact(
+            {
+                "API_KEY=super-secret-value": "secret-key",
+                "API_KEY=[REDACTED]": "existing-marker",
+            }
+        )
+
+
+def test_historical_ledger_redaction_rules_remain_frozen(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    future_patterns = (
+        *redaction_module._V1_PATTERNS,
+        (re.compile(r"future-secret"), "[REDACTED-FUTURE]"),
+    )
+    monkeypatch.setattr(
+        redaction_module,
+        "_PATTERNS",
+        future_patterns,
+    )
+    monkeypatch.setattr(
+        redaction_module,
+        "_V1_PATTERNS",
+        future_patterns,
+    )
+    monkeypatch.setattr(
+        redaction_module,
+        "_V2_PATTERNS",
+        future_patterns,
+    )
+
+    assert redaction_module.redact("future-secret") == "[REDACTED-FUTURE]"
+    assert redaction_module.redact_v1("future-secret") == "future-secret"
+    assert redaction_module.redact_v2("future-secret") == "future-secret"
+    state = State(str(tmp_path / "state.db"))
+    state.write_event(
+        run_id="frozen-redactor",
+        source="test",
+        kind="event_msg",
+        payload={"text": "future-secret"},
+    )
+    [event] = state.read_events_since(
+        "frozen-redactor",
+        after_event_id=0,
+        limit=10,
+    )
+
+    assert event["payload"]["text"] == "future-secret"
+    assert state.verify_event_ledger_structure(
+        "frozen-redactor"
+    ).valid is True

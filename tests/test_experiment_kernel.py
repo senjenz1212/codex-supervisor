@@ -30,6 +30,7 @@ from supervisor.experiment_kernel import (
     build_primary_reviewer_packet,
     validate_primary_reviewer_packet,
 )
+from supervisor.grade_revisions import DecisionGradeCitation, GradeBook
 from supervisor.pilot_readiness import PilotReadinessError
 from supervisor.task_environment import FrozenTaskResult, Grade, TaskSpec
 
@@ -751,10 +752,15 @@ async def test_repeated_common_pre_treatment_failure_never_reruns_a_third_block(
             )
 
     executor = RepeatedCommonInfraExecutor(store)
-    result = await ExperimentKernel(
+    kernel = ExperimentKernel(
         store=store,
         executor=executor,
-    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    )
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
 
     assert executor.calls == [
         result.assignment.order[0],
@@ -765,6 +771,10 @@ async def test_repeated_common_pre_treatment_failure_never_reruns_a_third_block(
     assert {
         outcome.failure_classification for outcome in result.outcomes
     } == {"common_pre_treatment_infrastructure_failure"}
+    assert all(
+        outcome.grade_revision is None for outcome in result.outcomes
+    )
+    assert kernel.gradebook.list_uncommitted_revisions() == ()
 
 
 @pytest.mark.asyncio
@@ -2118,6 +2128,483 @@ async def test_retry_after_task_persistence_error_reuses_terminal_arms(
 
 
 @pytest.mark.asyncio
+async def test_completed_arm_commits_passing_grade_to_exact_terminal_event(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "terminal-grade-commit.db"
+    store = SqliteExperimentStore(database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    for outcome in result.outcomes:
+        assert outcome.grade_revision is not None
+        [terminal] = [
+            event
+            for event in store.get_arm_state_events(
+                "exp-1",
+                "task-1",
+                arm=outcome.arm,
+            )
+            if event["state"] == "completed"
+        ]
+        commit = kernel.gradebook.get_terminal_commit(
+            outcome.grade_revision.grade_id
+        )
+        assert commit is not None
+        assert commit.grade_revision_hash == (
+            outcome.grade_revision.revision_hash
+        )
+        assert commit.experiment_id == "exp-1"
+        assert commit.task_id == "task-1"
+        assert commit.arm == outcome.arm.value
+        assert commit.terminal_state == terminal["state"]
+        assert commit.terminal_state_hash == terminal["state_hash"]
+        assert kernel.gradebook.validate_decision([
+            DecisionGradeCitation(
+                outcome.grade_revision.grade_id,
+                outcome.grade_revision.revision_hash,
+            )
+        ]).accepted is True
+
+    with GradeBook(database) as reopened:
+        for outcome in result.outcomes:
+            assert outcome.grade_revision is not None
+            assert reopened.validate_decision([
+                DecisionGradeCitation(
+                    outcome.grade_revision.grade_id,
+                    outcome.grade_revision.revision_hash,
+                )
+            ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_verifier_completed_failure_commits_to_completed_terminal(
+    tmp_path: Path,
+) -> None:
+    class FailingVerifier(RecordingVerifier):
+        async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+            grade = await super().verify(frozen_result)
+            return replace(
+                grade,
+                passed=False,
+                score=0.0,
+                failure_classification="tests_failed",
+            )
+
+    database = tmp_path / "completed-failing-grade-commit.db"
+    store = SqliteExperimentStore(database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        FailingVerifier(),
+    )
+
+    for outcome in result.outcomes:
+        assert outcome.status == "completed"
+        assert outcome.grade.passed is False
+        assert outcome.grade_revision is not None
+        commit = kernel.gradebook.get_terminal_commit(
+            outcome.grade_revision.grade_id
+        )
+        assert commit is not None
+        assert commit.terminal_state == "completed"
+        assert kernel.gradebook.validate_decision([
+            DecisionGradeCitation(
+                outcome.grade_revision.grade_id,
+                outcome.grade_revision.revision_hash,
+            )
+        ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_itt_failure_commits_grade_to_failed_terminal_across_restart(
+    tmp_path: Path,
+) -> None:
+    class FailingExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            self.calls.append(kwargs["arm"])
+            raise RuntimeError("provider crashed")
+
+    database = tmp_path / "failed-terminal-grade-commit.db"
+    store = SqliteExperimentStore(database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=FailingExecutor(store),
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    for outcome in result.outcomes:
+        assert outcome.status == "failed"
+        assert outcome.grade_revision is not None
+        [terminal] = [
+            event
+            for event in store.get_arm_state_events(
+                "exp-1",
+                "task-1",
+                arm=outcome.arm,
+            )
+            if event["state"] == "failed"
+        ]
+        commit = kernel.gradebook.get_terminal_commit(
+            outcome.grade_revision.grade_id
+        )
+        assert commit is not None
+        assert commit.grade_revision_hash == (
+            outcome.grade_revision.revision_hash
+        )
+        assert commit.terminal_state == "failed"
+        assert commit.terminal_state_hash == terminal["state_hash"]
+
+    kernel.gradebook.close()
+    with GradeBook(database) as reopened:
+        for outcome in result.outcomes:
+            assert outcome.grade_revision is not None
+            assert reopened.validate_decision([
+                DecisionGradeCitation(
+                    outcome.grade_revision.grade_id,
+                    outcome.grade_revision.revision_hash,
+                )
+            ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_restart_reconciles_completed_terminal_without_grade_commit(
+    tmp_path: Path,
+) -> None:
+    class FailOnceTerminalCommitGradeBook(GradeBook):
+        fail_once = True
+
+        def commit_terminal_grade(self, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("grade terminal commit unavailable")
+            return super().commit_terminal_grade(**kwargs)
+
+    database = tmp_path / "terminal-grade-reconciliation.db"
+    first_store = SqliteExperimentStore(database)
+    first_executor = RecordingExecutor(first_store)
+    first_gradebook = FailOnceTerminalCommitGradeBook(database)
+
+    with pytest.raises(
+        RuntimeError,
+        match="grade terminal commit unavailable",
+    ):
+        await ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            gradebook=first_gradebook,
+        ).run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+
+    assert len(first_executor.calls) == 1
+    [completed] = [
+        event
+        for event in first_store.get_arm_state_events("exp-1", "task-1")
+        if event["state"] == "completed"
+    ]
+    orphan_ref = completed["payload"]["outcome"]["grade_revision"]
+    assert first_gradebook.get_terminal_commit(
+        str(orphan_ref["grade_id"])
+    ) is None
+    first_gradebook.close()
+
+    restarted_store = SqliteExperimentStore(database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    restarted = ExperimentKernel(
+        store=restarted_store,
+        executor=restarted_executor,
+    )
+    result = await restarted.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    reconciled = restarted.gradebook.get_terminal_commit(
+        str(orphan_ref["grade_id"])
+    )
+    assert reconciled is not None
+    assert reconciled.grade_revision_hash == orphan_ref["revision_hash"]
+    assert reconciled.terminal_state_hash == completed["state_hash"]
+    assert restarted.gradebook.validate_decision([
+        DecisionGradeCitation(
+            str(orphan_ref["grade_id"]),
+            str(orphan_ref["revision_hash"]),
+        )
+    ]).accepted is True
+    assert len(restarted_executor.calls) == 2
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ("missing", "hash_mismatch"))
+async def test_restart_rejects_malformed_terminal_grade_authority(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    database = tmp_path / f"terminal-grade-{tamper}.db"
+    initial_store = SqliteExperimentStore(database)
+    initial_kernel = ExperimentKernel(
+        store=initial_store,
+        executor=RecordingExecutor(initial_store),
+    )
+    await initial_kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+    initial_kernel.gradebook.close()
+
+    class TamperedTerminalStore(SqliteExperimentStore):
+        def list_terminal_arm_events(self):
+            events = json.loads(
+                json.dumps(super().list_terminal_arm_events())
+            )
+            grade_ref = events[0]["payload"]["outcome"]["grade_revision"]
+            if tamper == "missing":
+                events[0]["payload"]["outcome"]["grade_revision"] = None
+            else:
+                grade_ref["revision_hash"] = "f" * 64
+            return tuple(events)
+
+    restarted_store = TamperedTerminalStore(database)
+    expected = (
+        "terminal outcome is malformed"
+        if tamper == "missing"
+        else "does not match GradeBook"
+    )
+    with pytest.raises(RuntimeError, match=expected):
+        ExperimentKernel(
+            store=restarted_store,
+            executor=RecordingExecutor(restarted_store),
+        )
+
+
+@pytest.mark.asyncio
+async def test_restart_fails_closed_when_terminal_grade_reconciliation_fails(
+    tmp_path: Path,
+) -> None:
+    class FailTerminalCommitGradeBook(GradeBook):
+        def commit_terminal_grade(self, **_kwargs: Any):
+            raise RuntimeError("grade terminal commit permanently unavailable")
+
+    database = tmp_path / "terminal-grade-reconciliation-blocked.db"
+    store = SqliteExperimentStore(database)
+    executor = RecordingExecutor(store)
+    gradebook = FailTerminalCommitGradeBook(database)
+
+    with pytest.raises(
+        RuntimeError,
+        match="grade terminal commit permanently unavailable",
+    ):
+        await ExperimentKernel(
+            store=store,
+            executor=executor,
+            gradebook=gradebook,
+        ).run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+
+    assert len(executor.calls) == 1
+    gradebook.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="authoritative grade terminal reconciliation failed",
+    ):
+        ExperimentKernel(
+            store=SqliteExperimentStore(database),
+            executor=RecordingExecutor(SqliteExperimentStore(database)),
+            gradebook=FailTerminalCommitGradeBook(database),
+        )
+
+
+@pytest.mark.asyncio
+async def test_restart_reconciles_failed_terminal_without_grade_commit(
+    tmp_path: Path,
+) -> None:
+    class FailingExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            self.calls.append(kwargs["arm"])
+            raise RuntimeError("provider crashed")
+
+    class FailOnceTerminalCommitGradeBook(GradeBook):
+        fail_once = True
+
+        def commit_terminal_grade(self, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("grade terminal commit unavailable")
+            return super().commit_terminal_grade(**kwargs)
+
+    database = tmp_path / "failed-terminal-grade-reconciliation.db"
+    first_store = SqliteExperimentStore(database)
+    first_executor = FailingExecutor(first_store)
+    first_gradebook = FailOnceTerminalCommitGradeBook(database)
+
+    with pytest.raises(
+        RuntimeError,
+        match="grade terminal commit unavailable",
+    ):
+        await ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            gradebook=first_gradebook,
+        ).run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+
+    [failed] = [
+        event
+        for event in first_store.get_arm_state_events("exp-1", "task-1")
+        if event["state"] == "failed"
+    ]
+    orphan_ref = failed["payload"]["outcome"]["grade_revision"]
+    assert first_gradebook.get_terminal_commit(
+        str(orphan_ref["grade_id"])
+    ) is None
+    first_gradebook.close()
+
+    restarted_store = SqliteExperimentStore(database)
+    restarted_executor = FailingExecutor(restarted_store)
+    restarted = ExperimentKernel(
+        store=restarted_store,
+        executor=restarted_executor,
+    )
+
+    reconciled = restarted.gradebook.get_terminal_commit(
+        str(orphan_ref["grade_id"])
+    )
+    assert reconciled is not None
+    assert reconciled.grade_revision_hash == orphan_ref["revision_hash"]
+    assert reconciled.terminal_state == "failed"
+    assert reconciled.terminal_state_hash == failed["state_hash"]
+
+    result = await restarted.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    assert len(restarted_executor.calls) == 2
+    assert all(outcome.status == "failed" for outcome in result.outcomes)
+    assert restarted.gradebook.validate_decision([
+        DecisionGradeCitation(
+            str(orphan_ref["grade_id"]),
+            str(orphan_ref["revision_hash"]),
+        )
+    ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_restart_quarantines_orphan_and_failed_terminal_refs_it(
+    tmp_path: Path,
+) -> None:
+    class CrashBeforeCompletedTerminalStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise KeyboardInterrupt("simulated process death")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    database = tmp_path / "orphan-grade-reconciliation.db"
+    first_store = CrashBeforeCompletedTerminalStore(database)
+    first_executor = RecordingExecutor(first_store)
+    first_kernel = ExperimentKernel(
+        store=first_store,
+        executor=first_executor,
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="simulated process death"):
+        await first_kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+
+    [orphan] = (
+        first_kernel.gradebook.list_uncommitted_passing_revisions()
+    )
+    assert first_kernel.gradebook.list_invalidations(
+        orphan.grade_id
+    ) == ()
+    first_kernel.gradebook.close()
+
+    restarted_store = SqliteExperimentStore(database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    restarted = ExperimentKernel(
+        store=restarted_store,
+        executor=restarted_executor,
+    )
+
+    [quarantine] = restarted.gradebook.list_invalidations(orphan.grade_id)
+    assert quarantine.kind == "quarantined"
+    assert quarantine.reason == "missing_terminal_commit_after_restart"
+
+    result = await restarted.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    repaired = next(
+        outcome for outcome in result.outcomes if outcome.status == "failed"
+    )
+    assert repaired.grade.evidence[
+        "reconciled_orphaned_passing_grades"
+    ] == [
+        {
+            "grade_id": orphan.grade_id,
+            "revision_hash": orphan.revision_hash,
+            "quarantine_hash": quarantine.invalidation_hash,
+        }
+    ]
+    [failed_terminal] = [
+        event
+        for event in restarted_store.get_arm_state_events(
+            "exp-1",
+            "task-1",
+            arm=repaired.arm,
+        )
+        if event["state"] == "failed"
+    ]
+    assert failed_terminal["payload"]["outcome"]["grade"]["evidence"][
+        "reconciled_orphaned_passing_grades"
+    ][0]["grade_id"] == orphan.grade_id
+    assert len(restarted_executor.calls) == 2
+    validation = restarted.gradebook.validate_decision([
+        DecisionGradeCitation(orphan.grade_id, orphan.revision_hash)
+    ])
+    assert [blocker.code for blocker in validation.blockers] == [
+        "grade_terminal_commit_missing"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_terminal_persistence_failure_supersedes_passing_grade(
     tmp_path: Path,
 ) -> None:
@@ -2158,6 +2645,201 @@ async def test_terminal_persistence_failure_supersedes_passing_grade(
         ]
         assert history[0].passed is True
         assert history[-1].passed is False
+
+
+@pytest.mark.asyncio
+async def test_terminal_failure_persists_when_grade_supersession_fails(
+    tmp_path: Path,
+) -> None:
+    class FailingCompletedFinishStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise RuntimeError("terminal persistence unavailable")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    class FailingRegradeBook(GradeBook):
+        def regrade(self, **_kwargs: Any):
+            raise RuntimeError("grade supersession unavailable")
+
+        def invalidate_grade(self, *_args: Any, **_kwargs: Any):
+            raise RuntimeError("grade invalidation unavailable")
+
+        def quarantine_grade(self, *_args: Any, **_kwargs: Any):
+            raise AssertionError(
+                "emergency quarantine must bypass subclass overrides"
+            )
+
+    store = FailingCompletedFinishStore(
+        tmp_path / "terminal-double-failure.db"
+    )
+    gradebook = FailingRegradeBook(tmp_path / "terminal-grades.db")
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+        gradebook=gradebook,
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    assert store.get_result("exp-1", "task-1") == result
+    assert all(outcome.status == "failed" for outcome in result.outcomes)
+    assert all(
+        outcome.failure_classification
+        == "post_launch_persistence_failure"
+        for outcome in result.outcomes
+    )
+    assert all(
+        outcome.grade_revision is None for outcome in result.outcomes
+    )
+    assert all(outcome.grade.passed is False for outcome in result.outcomes)
+    assert all(
+        outcome.grade.evidence[
+            "orphaned_passing_grade_invalidated"
+        ]
+        is False
+        and outcome.grade.evidence[
+            "orphaned_passing_grade_quarantined"
+        ]
+        is True
+        and outcome.grade.evidence[
+            "grade_supersession_failed_after_terminal_persistence"
+        ]
+        is True
+        and "grade supersession unavailable" in outcome.error
+        for outcome in result.outcomes
+    )
+    terminal_events = [
+        event
+        for event in store.get_arm_state_events("exp-1", "task-1")
+        if event["state"] in {"completed", "failed"}
+    ]
+    assert [event["state"] for event in terminal_events] == [
+        "failed",
+        "failed",
+        "failed",
+    ]
+    grade_ids = [
+        str(row["grade_id"])
+        for row in gradebook._conn.execute(
+            "SELECT grade_id FROM grade_revisions ORDER BY recorded_at_ms"
+        ).fetchall()
+    ]
+    assert len(grade_ids) == 3
+    for grade_id in grade_ids:
+        revision = gradebook.get_revision(grade_id)
+        assert revision.passed is True
+        [invalidation] = gradebook.list_invalidations(revision.grade_id)
+        assert invalidation.kind == "quarantined"
+        assert invalidation.reason == "terminal_persistence_failure"
+        validation = gradebook.validate_decision(
+            [
+                DecisionGradeCitation(
+                    revision.grade_id,
+                    revision.revision_hash,
+                )
+            ]
+        )
+        assert validation.accepted is False
+        assert [blocker.code for blocker in validation.blockers] == [
+            "grade_terminal_commit_missing"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_quarantine_write_failure_still_persists_failed_terminal(
+    tmp_path: Path,
+) -> None:
+    class FailingCompletedFinishStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise RuntimeError("terminal persistence unavailable")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    class FailingCompensationGradeBook(GradeBook):
+        def regrade(self, **_kwargs: Any):
+            raise RuntimeError("grade supersession unavailable")
+
+        def invalidate_grade(self, *_args: Any, **_kwargs: Any):
+            raise RuntimeError("grade invalidation unavailable")
+
+        def _insert_invalidation(self, **kwargs: Any):
+            if kwargs.get("kind") == "quarantined":
+                raise sqlite3.OperationalError(
+                    "grade quarantine persistence unavailable"
+                )
+            return super()._insert_invalidation(**kwargs)
+
+    store = FailingCompletedFinishStore(
+        tmp_path / "terminal-compensation-failure.db"
+    )
+    grade_database = tmp_path / "terminal-compensation-grades.db"
+    gradebook = FailingCompensationGradeBook(grade_database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+        gradebook=gradebook,
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    terminal_events = [
+        event
+        for event in store.get_arm_state_events("exp-1", "task-1")
+        if event["state"] in {"completed", "failed"}
+    ]
+    compensation_transitions = [
+        transition
+        for transition in store.get_transitions("exp-1", "task-1")
+        if transition["kind"] == "arm.compensation_failed"
+    ]
+    orphaned = [
+        (
+            outcome.grade.evidence["orphaned_passing_grade_id"],
+            outcome.grade.evidence[
+                "orphaned_passing_grade_revision_hash"
+            ],
+        )
+        for outcome in result.outcomes
+    ]
+
+    assert [event["state"] for event in terminal_events] == [
+        "failed",
+        "failed",
+        "failed",
+    ]
+    assert len(compensation_transitions) == 3
+    assert all(
+        outcome.status == "failed"
+        and outcome.grade.evidence["grade_compensation_failed"] is True
+        and outcome.grade.evidence[
+            "orphaned_passing_grade_quarantined"
+        ]
+        is False
+        and "grade quarantine persistence unavailable" in outcome.error
+        for outcome in result.outcomes
+    )
+    gradebook.close()
+
+    with GradeBook(grade_database) as reopened:
+        for grade_id, revision_hash in orphaned:
+            assert reopened.get_terminal_commit(str(grade_id)) is None
+            validation = reopened.validate_decision([
+                DecisionGradeCitation(
+                    str(grade_id),
+                    str(revision_hash),
+                )
+            ])
+            assert [blocker.code for blocker in validation.blockers] == [
+                "grade_terminal_commit_missing"
+            ]
 
 
 @pytest.mark.asyncio
@@ -2311,10 +2993,9 @@ async def test_task_execution_is_idempotent_and_regrade_appends_lineage_only(
                 verifier_version=self.verifier_version,
                 verifier_hash=self.verifier_hash,
                 frozen_result_hash=frozen_result.result_hash,
-                passed=False,
-                score=0.0,
+                passed=True,
+                score=1.0,
                 evidence={"regrade": True},
-                failure_classification="tests_failed",
             )
 
     target = first.outcomes[0]
@@ -2337,6 +3018,82 @@ async def test_task_execution_is_idempotent_and_regrade_appends_lineage_only(
         target.grade_revision.grade_id,
         revision.grade_id,
     ]
+    [terminal] = [
+        event
+        for event in store.get_arm_state_events(
+            first.experiment_id,
+            first.task_id,
+            arm=target.arm,
+        )
+        if event["state"] == "completed"
+    ]
+    regrade_commit = kernel.gradebook.get_terminal_commit(
+        revision.grade_id
+    )
+    assert regrade_commit is not None
+    assert regrade_commit.terminal_state_hash == terminal["state_hash"]
+    assert kernel.gradebook.validate_decision([
+        DecisionGradeCitation(revision.grade_id, revision.revision_hash)
+    ]).accepted is True
     assert store.get_transitions(first.experiment_id, first.task_id)[-1][
         "kind"
     ] == "arm.regraded"
+
+
+@pytest.mark.asyncio
+async def test_restart_does_not_authorize_an_uncommitted_direct_regrade(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "uncommitted-direct-regrade.db"
+    store = SqliteExperimentStore(database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    )
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+    outcome = result.outcomes[0]
+    assert outcome.grade_revision is not None
+    root = kernel.gradebook.get_revision(outcome.grade_revision.grade_id)
+    uncommitted = kernel.gradebook.regrade(
+        run=root.run_envelope,
+        grade=Grade(
+            verifier_id="hidden",
+            verifier_version="2",
+            verifier_hash="a" * 64,
+            frozen_result_hash=root.run_envelope.frozen_result_hash,
+            passed=False,
+            score=0.0,
+            evidence={"source": "direct-gradebook-write"},
+            failure_classification="tests_failed",
+        ),
+        verifier_config_hash=hashlib.sha256(
+            b"direct-gradebook-write"
+        ).hexdigest(),
+        supersedes_grade_id=root.grade_id,
+        reason="direct gradebook write",
+    )
+    kernel.gradebook.close()
+
+    restarted_store = SqliteExperimentStore(database)
+    restarted = ExperimentKernel(
+        store=restarted_store,
+        executor=RecordingExecutor(restarted_store),
+    )
+
+    assert restarted.gradebook.get_terminal_commit(
+        uncommitted.grade_id
+    ) is None
+    [quarantine] = restarted.gradebook.list_invalidations(
+        uncommitted.grade_id
+    )
+    assert quarantine.kind == "quarantined"
+    assert restarted.gradebook.validate_decision([
+        DecisionGradeCitation(
+            uncommitted.grade_id,
+            uncommitted.revision_hash,
+        )
+    ]).accepted is False

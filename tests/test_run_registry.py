@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 import threading
 
 import pytest
 
+import supervisor.run_registry as run_registry
 from supervisor.run_registry import (
     LaunchReceiptError,
     PENDING_SESSION_SOURCE,
     bind_unambiguous_pending_workflow,
+    bind_workflow_target_session,
     consume_launch_receipt,
     load_session_registration,
     register_submitted_workflow,
+    register_workflow_runtime_session,
     reserve_launch_receipt,
     resolve_target_session_id,
 )
@@ -114,6 +118,56 @@ def test_registry_rejects_existing_sidecar_symlink_to_outside(tmp_path):
 
     with pytest.raises(ValueError, match="escapes registry root"):
         load_session_registration(registry, "session-123")
+
+
+def test_registry_rejects_existing_sidecar_symlink_within_root(tmp_path):
+    registry = tmp_path / "registry"
+    registry.mkdir()
+    target = registry / "target.json"
+    target.write_text(
+        json.dumps({
+            "workflow_run_id": "workflow-symlink",
+            "target_session_id": "session-123",
+        }),
+        encoding="utf-8",
+    )
+    (registry / "session-123.json").symlink_to(target)
+
+    assert load_session_registration(registry, "session-123") is None
+
+
+def test_registry_read_cannot_be_redirected_after_path_validation(
+    tmp_path,
+    monkeypatch,
+):
+    _, registration = _register(tmp_path, session_id="session-123")
+    sidecar = registration.registry_path
+    outside = tmp_path / "outside.json"
+    outside.write_text(
+        json.dumps({
+            "workflow_run_id": "workflow-outside",
+            "target_session_id": "session-123",
+        }),
+        encoding="utf-8",
+    )
+    real_read_text = Path.read_text
+    swapped = False
+
+    def swap_before_path_read(path, *args, **kwargs):
+        nonlocal swapped
+        if path == sidecar and not swapped:
+            swapped = True
+            sidecar.unlink()
+            sidecar.symlink_to(outside)
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", swap_before_path_read)
+
+    loaded = load_session_registration(tmp_path / "registry", "session-123")
+
+    assert loaded is not None
+    assert loaded["workflow_run_id"] == "workflow-run"
+    assert swapped is False
 
 
 def test_unknown_target_session_stays_pending_until_runtime_binding(tmp_path):
@@ -308,6 +362,8 @@ def test_valid_launch_receipt_is_single_use_and_nonce_is_not_stored(tmp_path):
         task_id="task-one",
         target_kind="codex",
         target_session_id="session-one",
+        runtime_run_id="runtime-run-one",
+        runtime_result_hash="a" * 64,
         cwd=tmp_path,
         now=1_001,
     )
@@ -316,6 +372,8 @@ def test_valid_launch_receipt_is_single_use_and_nonce_is_not_stored(tmp_path):
     assert bound["task_id"] == "task-one"
     assert bound["target_kind"] == "codex"
     assert bound["launch_id"] == receipt.launch_id
+    assert bound["runtime_run_id"] == "runtime-run-one"
+    assert bound["runtime_result_hash"] == "a" * 64
     assert state.get_run("workflow-one")["session_id"] == "session-one"
 
     with pytest.raises(LaunchReceiptError, match="already consumed"):
@@ -572,4 +630,556 @@ def test_concurrent_launch_receipt_consume_has_single_winner(tmp_path):
         """SELECT COUNT(*) FROM events
            WHERE run_id=? AND kind='workflow_target_session_bound'""",
         ("workflow-race",),
+    ).fetchone()[0] == 1
+
+
+def test_launch_receipt_store_rejects_namespace_swap_without_writing_replacement(
+    tmp_path,
+    monkeypatch,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-namespace-swap",
+        task_id="task-namespace-swap",
+        cwd=tmp_path,
+    )
+    receipt_root = registry / ".launch-receipts"
+    detached_root = registry / ".launch-receipts-detached"
+    real_write = run_registry._LaunchReceiptStore.exclusive_write_json
+    swapped = False
+
+    def swap_namespace_then_write(store, bucket, name, payload):
+        nonlocal swapped
+        if not swapped:
+            swapped = True
+            os.rename(receipt_root, detached_root)
+            for child in ("pending", "consumed", "locks"):
+                (receipt_root / child).mkdir(parents=True, exist_ok=True)
+        return real_write(store, bucket, name, payload)
+
+    monkeypatch.setattr(
+        run_registry._LaunchReceiptStore,
+        "exclusive_write_json",
+        swap_namespace_then_write,
+    )
+
+    with pytest.raises(
+        LaunchReceiptError,
+        match="namespace changed during operation",
+    ):
+        reserve_launch_receipt(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id="workflow-namespace-swap",
+            task_id="task-namespace-swap",
+            target_kind="codex",
+            cwd=tmp_path,
+            now=6_050,
+            ttl_s=60,
+        )
+
+    assert swapped is True
+    assert list((receipt_root / "pending").iterdir()) == []
+    assert len(list((detached_root / "pending").glob("*.json"))) == 1
+    assert state.get_run("workflow-namespace-swap")["session_id"] == (
+        "pending:workflow-namespace-swap"
+    )
+
+
+def test_consuming_launch_receipt_resumes_exact_binding_after_crash(
+    tmp_path,
+    monkeypatch,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-resume-consuming",
+        task_id="task-resume-consuming",
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-resume-consuming",
+        task_id="task-resume-consuming",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=6_100,
+        ttl_s=60,
+    )
+    consume_kwargs = {
+        "state": state,
+        "registry_dir": registry,
+        "launch_id": receipt.launch_id,
+        "nonce": receipt.nonce,
+        "workflow_run_id": "workflow-resume-consuming",
+        "task_id": "task-resume-consuming",
+        "target_kind": "codex",
+        "target_session_id": "session-resume-consuming",
+        "runtime_run_id": "runtime-resume-consuming",
+        "runtime_result_hash": "a" * 64,
+        "cwd": tmp_path,
+        "now": 6_101,
+    }
+    real_bind = run_registry.bind_workflow_target_session
+
+    def crash_after_receipt_claim(**_kwargs):
+        raise KeyboardInterrupt("simulated process crash")
+
+    monkeypatch.setattr(
+        run_registry,
+        "bind_workflow_target_session",
+        crash_after_receipt_claim,
+    )
+    with pytest.raises(KeyboardInterrupt, match="simulated process crash"):
+        consume_launch_receipt(**consume_kwargs)
+
+    consumed_path = next(
+        (registry / ".launch-receipts" / "consumed").glob("*.json")
+    )
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consuming"
+    )
+    assert not receipt.receipt_path.exists()
+    assert state.get_run("workflow-resume-consuming")["session_id"] == (
+        "pending:workflow-resume-consuming"
+    )
+
+    monkeypatch.setattr(
+        run_registry,
+        "bind_workflow_target_session",
+        real_bind,
+    )
+    consume_kwargs["now"] = 6_500  # A claimed receipt remains recoverable after TTL.
+    bound = consume_launch_receipt(**consume_kwargs)
+
+    assert bound["target_session_id"] == "session-resume-consuming"
+    assert bound["runtime_run_id"] == "runtime-resume-consuming"
+    assert bound["runtime_result_hash"] == "a" * 64
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consumed"
+    )
+    assert state.get_run("workflow-resume-consuming")["session_id"] == (
+        "session-resume-consuming"
+    )
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        ("workflow-resume-consuming",),
+    ).fetchone()[0] == 1
+
+
+def test_launch_receipt_claim_is_recoverable_before_pending_unlink(
+    tmp_path,
+    monkeypatch,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    workflow_run_id = "workflow-crash-before-pending-unlink"
+    task_id = "task-crash-before-pending-unlink"
+    target_session_id = "session-crash-before-pending-unlink"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        target_kind="codex",
+        cwd=tmp_path,
+        now=6_150,
+        ttl_s=60,
+    )
+    consume_kwargs = {
+        "state": state,
+        "registry_dir": registry,
+        "launch_id": receipt.launch_id,
+        "nonce": receipt.nonce,
+        "workflow_run_id": workflow_run_id,
+        "task_id": task_id,
+        "target_kind": "codex",
+        "target_session_id": target_session_id,
+        "runtime_run_id": "runtime-crash-before-pending-unlink",
+        "runtime_result_hash": "e" * 64,
+        "cwd": tmp_path,
+        "now": 6_151,
+    }
+    real_unlink = run_registry._LaunchReceiptStore.unlink
+    crashed = False
+
+    def crash_before_pending_unlink(store, bucket, name):
+        nonlocal crashed
+        if (
+            store.path(bucket, name) == receipt.receipt_path
+            and not crashed
+        ):
+            crashed = True
+            raise KeyboardInterrupt("simulated crash before pending unlink")
+        return real_unlink(store, bucket, name)
+
+    monkeypatch.setattr(
+        run_registry._LaunchReceiptStore,
+        "unlink",
+        crash_before_pending_unlink,
+    )
+    with pytest.raises(
+        KeyboardInterrupt,
+        match="simulated crash before pending unlink",
+    ):
+        consume_launch_receipt(**consume_kwargs)
+
+    consumed_path = next(
+        (registry / ".launch-receipts" / "consumed").glob("*.json")
+    )
+    claimed = json.loads(consumed_path.read_text(encoding="utf-8"))
+    assert claimed["status"] == "consuming"
+    assert claimed["target_session_id"] == target_session_id
+    assert claimed["runtime_run_id"] == (
+        "runtime-crash-before-pending-unlink"
+    )
+    assert receipt.receipt_path.exists()
+    assert state.get_run(workflow_run_id)["session_id"] == (
+        f"pending:{workflow_run_id}"
+    )
+
+    monkeypatch.setattr(
+        run_registry._LaunchReceiptStore,
+        "unlink",
+        real_unlink,
+    )
+    consume_kwargs["now"] = 6_500
+    bound = consume_launch_receipt(**consume_kwargs)
+
+    assert bound["target_session_id"] == target_session_id
+    assert not receipt.receipt_path.exists()
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consumed"
+    )
+
+
+def test_consume_failed_receipt_repairs_missing_binding_event(
+    tmp_path,
+    monkeypatch,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    workflow_run_id = "workflow-resume-failed"
+    task_id = "task-resume-failed"
+    target_session_id = "session-resume-failed"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        target_kind="codex",
+        cwd=tmp_path,
+        now=6_200,
+        ttl_s=60,
+    )
+    consume_kwargs = {
+        "state": state,
+        "registry_dir": registry,
+        "launch_id": receipt.launch_id,
+        "nonce": receipt.nonce,
+        "workflow_run_id": workflow_run_id,
+        "task_id": task_id,
+        "target_kind": "codex",
+        "target_session_id": target_session_id,
+        "runtime_run_id": "runtime-resume-failed",
+        "runtime_result_hash": "b" * 64,
+        "cwd": tmp_path,
+        "now": 6_201,
+    }
+    real_write_event = state.write_event
+
+    def fail_binding_event(*, kind, **kwargs):
+        if kind == "workflow_target_session_bound":
+            raise RuntimeError("simulated binding-event crash")
+        return real_write_event(kind=kind, **kwargs)
+
+    monkeypatch.setattr(state, "write_event", fail_binding_event)
+    with pytest.raises(RuntimeError, match="simulated binding-event crash"):
+        consume_launch_receipt(**consume_kwargs)
+
+    consumed_path = next(
+        (registry / ".launch-receipts" / "consumed").glob("*.json")
+    )
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consume_failed"
+    )
+    assert state.get_run(workflow_run_id)["session_id"] == target_session_id
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        (workflow_run_id,),
+    ).fetchone()[0] == 0
+
+    monkeypatch.setattr(state, "write_event", real_write_event)
+    consume_kwargs["now"] = 6_500
+    consume_launch_receipt(**consume_kwargs)
+
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consumed"
+    )
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        (workflow_run_id,),
+    ).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "mismatched_value"),
+    (
+        ("nonce", "wrong-nonce"),
+        ("workflow_run_id", "workflow-other"),
+        ("task_id", "task-other"),
+        ("target_kind", "claude_code"),
+        ("target_session_id", "session-other"),
+        ("runtime_run_id", "runtime-other"),
+        ("runtime_result_hash", "c" * 64),
+    ),
+)
+def test_claimed_launch_receipt_rejects_mismatched_replay(
+    tmp_path,
+    monkeypatch,
+    field,
+    mismatched_value,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    workflow_run_id = "workflow-reject-claimed-replay"
+    task_id = "task-reject-claimed-replay"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=task_id,
+        target_kind="codex",
+        cwd=tmp_path,
+        now=6_300,
+        ttl_s=60,
+    )
+    consume_kwargs = {
+        "state": state,
+        "registry_dir": registry,
+        "launch_id": receipt.launch_id,
+        "nonce": receipt.nonce,
+        "workflow_run_id": workflow_run_id,
+        "task_id": task_id,
+        "target_kind": "codex",
+        "target_session_id": "session-reject-claimed-replay",
+        "runtime_run_id": "runtime-reject-claimed-replay",
+        "runtime_result_hash": "d" * 64,
+        "cwd": tmp_path,
+        "now": 6_301,
+    }
+    real_bind = run_registry.bind_workflow_target_session
+
+    def fail_after_claim(**_kwargs):
+        raise RuntimeError("simulated transient bind failure")
+
+    monkeypatch.setattr(
+        run_registry,
+        "bind_workflow_target_session",
+        fail_after_claim,
+    )
+    with pytest.raises(RuntimeError, match="simulated transient bind failure"):
+        consume_launch_receipt(**consume_kwargs)
+
+    replay_kwargs = {**consume_kwargs, field: mismatched_value, "now": 6_500}
+    with pytest.raises(LaunchReceiptError, match="mismatch"):
+        consume_launch_receipt(**replay_kwargs)
+
+    consumed_path = next(
+        (registry / ".launch-receipts" / "consumed").glob("*.json")
+    )
+    assert json.loads(consumed_path.read_text(encoding="utf-8"))["status"] == (
+        "consume_failed"
+    )
+    assert state.get_run(workflow_run_id)["session_id"] == (
+        f"pending:{workflow_run_id}"
+    )
+
+    monkeypatch.setattr(
+        run_registry,
+        "bind_workflow_target_session",
+        real_bind,
+    )
+    consume_kwargs["now"] = 6_501
+    consume_launch_receipt(**consume_kwargs)
+    assert state.get_run(workflow_run_id)["session_id"] == (
+        "session-reject-claimed-replay"
+    )
+
+
+def test_launch_receipt_consume_requires_runtime_cwd(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-cwd-required",
+        task_id="task-cwd-required",
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-cwd-required",
+        task_id="task-cwd-required",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=7_000,
+        ttl_s=60,
+    )
+
+    with pytest.raises(LaunchReceiptError, match="cwd is required"):
+        consume_launch_receipt(
+            state=state,
+            registry_dir=registry,
+            launch_id=receipt.launch_id,
+            nonce=receipt.nonce,
+            workflow_run_id="workflow-cwd-required",
+            task_id="task-cwd-required",
+            target_kind="codex",
+            target_session_id="session-cwd-required",
+            runtime_run_id="runtime-cwd-required",
+            runtime_result_hash="b" * 64,
+            cwd=None,
+            now=7_001,
+        )
+
+    assert receipt.receipt_path.exists()
+    assert state.get_run("workflow-cwd-required")["session_id"] == (
+        "pending:workflow-cwd-required"
+    )
+    assert load_session_registration(
+        registry,
+        "session-cwd-required",
+    ) is None
+
+
+@pytest.mark.parametrize("runtime_cwd_mode", ("missing", "mismatch"))
+def test_runtime_session_cwd_must_match_parent_registration(
+    tmp_path,
+    runtime_cwd_mode,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    workflow_run_id = f"workflow-runtime-{runtime_cwd_mode}"
+    session_id = f"session-runtime-{runtime_cwd_mode}"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id=workflow_run_id,
+        task_id=f"task-runtime-{runtime_cwd_mode}",
+        cwd=workspace,
+    )
+    runtime_cwd = (
+        ""
+        if runtime_cwd_mode == "missing"
+        else tmp_path / "different-workspace"
+    )
+
+    with pytest.raises(ValueError, match="cwd"):
+        register_workflow_runtime_session(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id=workflow_run_id,
+            target_session_id=session_id,
+            task_id=f"task-runtime-{runtime_cwd_mode}",
+            task="Bind the runtime to the authoritative workspace.",
+            target_kind="codex",
+            cwd=runtime_cwd,
+            gate="execution",
+            runtime_run_id=f"runtime-run-{runtime_cwd_mode}",
+            runtime_result_hash="c" * 64,
+        )
+
+    assert load_session_registration(registry, session_id) is None
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM runs"
+    ).fetchone()[0] == 1
+
+
+def test_same_session_retry_rejects_conflicting_runtime_provenance(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-session-retry",
+        task_id="task-session-retry",
+        cwd=tmp_path,
+    )
+    first = bind_workflow_target_session(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-session-retry",
+        target_session_id="session-retry",
+        source="runtime_result",
+        runtime_run_id="runtime-run-original",
+        runtime_result_hash="d" * 64,
+    )
+    repeated = bind_workflow_target_session(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-session-retry",
+        target_session_id="session-retry",
+        source="runtime_result",
+        runtime_run_id="runtime-run-original",
+        runtime_result_hash="d" * 64,
+    )
+    assert repeated == first
+
+    with pytest.raises(RuntimeError, match="provenance discrepancy"):
+        bind_workflow_target_session(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id="workflow-session-retry",
+            target_session_id="session-retry",
+            source="runtime_result",
+            runtime_run_id="runtime-run-conflict",
+            runtime_result_hash="e" * 64,
+        )
+
+    loaded = load_session_registration(registry, "session-retry")
+    assert loaded is not None
+    assert loaded["runtime_run_id"] == first["runtime_run_id"]
+    assert loaded["runtime_result_hash"] == first["runtime_result_hash"]
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        ("workflow-session-retry",),
     ).fetchone()[0] == 1

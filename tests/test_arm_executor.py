@@ -5,6 +5,7 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+import shlex
 import subprocess
 from typing import Any
 
@@ -14,7 +15,10 @@ from supervisor.agent_runtime import (
     AgentRunHandle,
     AgentRunResult,
     AgentTask,
+    ClaudeCodeRuntime,
+    CodexRuntime,
     RuntimeEvent,
+    SubprocessRuntimeTransport,
 )
 from supervisor.arm_executor import RepositoryArmExecutor, RuntimeArmPlan
 from supervisor.experiment_kernel import (
@@ -1007,6 +1011,103 @@ async def test_operational_executor_persists_backend_environment_attestation(
     assert execution.receipt.environment.mode == "operational"
     assert execution.receipt.environment.enforced is True
     assert execution.receipt.runtime_manifest["complete"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("runtime_cls", "binary_name"),
+    (
+        (ClaudeCodeRuntime, "claude"),
+        (CodexRuntime, "codex"),
+    ),
+)
+async def test_concrete_subprocess_runtimes_fail_closed_on_unenforced_pins(
+    tmp_path: Path,
+    runtime_cls: type[ClaudeCodeRuntime] | type[CodexRuntime],
+    binary_name: str,
+) -> None:
+    transport = SubprocessRuntimeTransport()
+    if not transport.supports_filesystem_isolation("workspace_only"):
+        pytest.skip("local workspace isolation backend is unavailable")
+    repo, revision = _repo(tmp_path)
+    hidden = tmp_path / "hidden"
+    hidden.mkdir()
+    model = f"{binary_name}-served-model-v1"
+    payload = json.dumps(
+        {
+            "type": "result",
+            "result": "done",
+            "total_cost_usd": 0.01,
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+            "modelUsage": {
+                model: {
+                    "inputTokens": 3,
+                    "outputTokens": 2,
+                    "costUSD": 0.01,
+                }
+            },
+        },
+    )
+    target = tmp_path / "runtime-targets" / f"{binary_name}-v1"
+    target.parent.mkdir()
+    target.write_text(
+        "#!/bin/sh\n"
+        "printf 'after\\n' > README.md\n"
+        f"printf '%s\\n' {shlex.quote(payload)}\n",
+        encoding="utf-8",
+    )
+    target.chmod(0o755)
+    invoked = tmp_path / "runtime-bin" / binary_name
+    invoked.parent.mkdir()
+    invoked.symlink_to(target)
+    runtime = runtime_cls(
+        transport=transport,
+        binary=str(invoked),
+    )
+    executor = RepositoryArmExecutor(
+        task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+        runtimes={arm: runtime for arm in Arm},
+        plans={
+            arm: _plan(
+                arm=arm,
+                model=model,
+                instruction_prefix=arm.value,
+                execution_mode="operational",
+                denied_paths=(str(hidden),),
+                tools=("shell",),
+            )
+            for arm in Arm
+        },
+    )
+
+    with pytest.raises(
+        ArmExecutionError,
+        match=(
+            "operational backend did not enforce execution environment pins: "
+            "image_digest:no_container_backend"
+        ),
+    ) as failure:
+        await executor.execute(
+            arm=Arm.B,
+            task=_task(repo, revision),
+            budget=ArmBudget(
+                max_tokens=100,
+                max_cost_usd=1.0,
+                timeout_s=30,
+                max_retries=0,
+            ),
+            assignment_id=f"assignment-concrete-{binary_name}",
+        )
+
+    record = failure.value.attempt_records[0]
+    attestation = record["execution_environment_attestation"]
+    assert attestation["attestation_source"] == "runtime_transport"
+    assert attestation["enforced"] is False
+    assert "image_digest:no_container_backend" in attestation["unmet_pins"]
+    assert (
+        "resource_limits.max_tokens:not_enforced_by_local_subprocess"
+        in attestation["unmet_pins"]
+    )
 
 
 @pytest.mark.asyncio

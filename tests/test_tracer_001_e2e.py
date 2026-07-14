@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -12,6 +13,7 @@ from supervisor.evidence_ledger import (
     canonical_json_bytes,
 )
 from supervisor.experiment_kernel import Arm
+from supervisor.grade_revisions import GradeBook
 from supervisor.harness_tracer import (
     run_hermetic_harness_tracer,
     run_hermetic_treatment_wire_cut,
@@ -141,6 +143,49 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
         assert len(invalidations) == 1
         assert invalidations[0].kind == "superseded"
         assert invalidations[0].replacement_grade_id == revisions[1].grade_id
+        terminal_commits = execution.grade_history.terminal_commits
+        assert [commit.grade_id for commit in terminal_commits] == [
+            revision.grade_id for revision in revisions
+        ]
+        assert [
+            commit.grade_revision_hash for commit in terminal_commits
+        ] == [revision.revision_hash for revision in revisions]
+        assert all(
+            commit.experiment_id == execution.experiment_id
+            and commit.task_id == execution.task_spec.task_id
+            and commit.arm == execution.coordinate.arm.value
+            and commit.terminal_state
+            == execution.grade_history.terminal_state
+            and commit.terminal_state_hash
+            == execution.grade_history.terminal_state_hash
+            for commit in terminal_commits
+        )
+        assert execution.grade_history.terminal_state == "completed"
+        source_terminal_commits = (
+            execution.grade_history.source_terminal_commits
+        )
+        assert len(source_terminal_commits) == 1
+        source_terminal_commit = source_terminal_commits[0]
+        assert execution.outcome.grade_revision is not None
+        assert source_terminal_commit.grade_id == (
+            execution.outcome.grade_revision.grade_id
+        )
+        assert source_terminal_commit.grade_revision_hash == (
+            execution.outcome.grade_revision.revision_hash
+        )
+        assert (
+            source_terminal_commit.experiment_id,
+            source_terminal_commit.task_id,
+            source_terminal_commit.arm,
+            source_terminal_commit.terminal_state,
+            source_terminal_commit.terminal_state_hash,
+        ) == (
+            execution.experiment_id,
+            execution.task_spec.task_id,
+            execution.coordinate.arm.value,
+            execution.grade_history.terminal_state,
+            execution.grade_history.terminal_state_hash,
+        )
 
     assert len(report.registered_run_ids) == 13
     assert report.aggregate_run_id in report.registered_run_ids
@@ -209,6 +254,42 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
         report.evidence_root / "cas"
     )
     assert artifact_store.verify_manifest(report.artifact_manifest)
+    grade_history_descriptor = next(
+        artifact
+        for artifact in report.artifact_manifest["artifacts"]
+        if artifact["name"] == "artifacts/grade-revisions.json"
+    )
+    grade_history_evidence = json.loads(
+        artifact_store.read_bytes(
+            grade_history_descriptor["digest"]["sha256"]
+        )
+    )
+    published_histories = {
+        history["execution_id"]: history
+        for history in grade_history_evidence["histories"]
+    }
+    assert set(published_histories) == {
+        execution.execution_id for execution in report.executions
+    }
+    for execution in report.executions:
+        assert [
+            commit["commit_hash"]
+            for commit in published_histories[
+                execution.execution_id
+            ]["terminal_commits"]
+        ] == [
+            commit.commit_hash
+            for commit in execution.grade_history.terminal_commits
+        ]
+        assert [
+            commit["commit_hash"]
+            for commit in published_histories[
+                execution.execution_id
+            ]["source_terminal_commits"]
+        ] == [
+            commit.commit_hash
+            for commit in execution.grade_history.source_terminal_commits
+        ]
     projection_descriptor = next(
         artifact
         for artifact in report.artifact_manifest["artifacts"]
@@ -219,6 +300,44 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
     )
     assert projection_bytes == canonical_json_bytes(report.projection)
     assert report.projection_sha256 == projection_descriptor["digest"]["sha256"]
+    executions_descriptor = next(
+        artifact
+        for artifact in report.artifact_manifest["artifacts"]
+        if artifact["name"] == "artifacts/executions.json"
+    )
+    execution_evidence = json.loads(
+        artifact_store.read_bytes(
+            executions_descriptor["digest"]["sha256"]
+        )
+    )
+    execution_records = {
+        record["execution_id"]: record
+        for record in execution_evidence["executions"]
+    }
+    assert set(execution_records) == {
+        execution.execution_id for execution in report.executions
+    }
+    for execution in report.executions:
+        record = execution_records[execution.execution_id]
+        assert record["terminal_state"] == "completed"
+        assert (
+            record["terminal_state_hash"]
+            == execution.grade_history.terminal_state_hash
+        )
+        assert [
+            commit["commit_hash"]
+            for commit in record["grade_terminal_commits"]
+        ] == [
+            commit.commit_hash
+            for commit in execution.grade_history.terminal_commits
+        ]
+        assert [
+            commit["commit_hash"]
+            for commit in record["source_grade_terminal_commits"]
+        ] == [
+            commit.commit_hash
+            for commit in execution.grade_history.source_terminal_commits
+        ]
     assert report.projection["recognized_event_count"] == 21
     assert len(report.projection["matrix"]) == 12
     assert len(report.projection["assignments"]) == 4
@@ -265,7 +384,26 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
         len(event["payload"]["grade_invalidation_hashes"]) == 1
         for event in joined_events
     )
+    assert all(
+        event["payload"]["terminal_state"] == "completed"
+        and len(event["payload"]["terminal_state_hash"]) == 64
+        and len(event["payload"]["grade_terminal_commit_hashes"]) == 2
+        for event in joined_events
+    )
     for execution in report.executions:
+        joined = next(
+            event
+            for event in joined_events
+            if event["payload"]["execution_id"] == execution.execution_id
+        )
+        assert (
+            joined["payload"]["terminal_state_hash"]
+            == execution.grade_history.terminal_state_hash
+        )
+        assert joined["payload"]["grade_terminal_commit_hashes"] == [
+            commit.commit_hash
+            for commit in execution.grade_history.terminal_commits
+        ]
         registration = load_session_registration(
             report.run_registry_path,
             execution.transport.session_id,
@@ -378,6 +516,36 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
                 scenario[Arm.B].arm_execution.receipt.compute_resource_hash
                 == scenario[Arm.C].arm_execution.receipt.compute_resource_hash
             )
+
+
+@pytest.mark.asyncio
+async def test_hermetic_tracer_blocks_when_a_grade_terminal_commit_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_commit = GradeBook.commit_terminal_grade
+
+    def omit_tracer_grade_commit(
+        self: GradeBook,
+        **kwargs: object,
+    ) -> None:
+        if Path(self.path).name == "grades.db":
+            return None
+        real_commit(self, **kwargs)
+
+    monkeypatch.setattr(
+        GradeBook,
+        "commit_terminal_grade",
+        omit_tracer_grade_commit,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="grade terminal authority is incomplete",
+    ):
+        await run_hermetic_harness_tracer(
+            tmp_path / "missing-terminal-commit"
+        )
 
 
 @pytest.mark.asyncio

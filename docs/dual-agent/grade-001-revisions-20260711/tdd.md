@@ -18,4 +18,6 @@ existing `Grade`/`FrozenTaskResult` shapes. They do not inspect SQLite tables.
 5. Append a reasoned invalidation, reopen the database, and prove both grade
    and invalidation history survive.
 6. Attempt to append a grade without verifier hashes; persistence rejects it.
-
+7. Fail terminal persistence after a passing grade is appended, then fail both
+   normal regrade and invalidation. The emergency quarantine is immutable,
+   survives reopen, and the original passing citation cannot validate.

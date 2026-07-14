@@ -23,6 +23,7 @@ from supervisor.claim_gate import (
     SEALED_HOLDOUT_RECEIPT_SCHEMA_VERSION,
     SHADOW_RESULT_SCHEMA_VERSION,
     STRATA_REPLICATION_ANALYSIS_SCHEMA_VERSION,
+    STRUCTURED_CLAIM_FIELD_NAMES,
     UnsupportedClaimError,
 )
 from tests.test_claim_gate import (
@@ -416,12 +417,51 @@ def test_report_asserting_forbidden_improvement_claim_is_rejected(
 
     with pytest.raises(
         UnsupportedClaimError,
-        match="supervisor improves outcomes requires L3; evidence supports L1",
+        match=(
+            "CLAIM-HARNESS-L3-CAUSAL-IMPROVEMENT requires L3; "
+            "evidence supports L1"
+        ),
+    ):
+        ClaimGate.validate_report(
+            {
+                "claims": [
+                    "CLAIM-HARNESS-L3-CAUSAL-IMPROVEMENT"
+                ]
+            },
+            fixture_replay,
+            evidence_root=tmp_path,
+        )
+
+
+def test_claims_field_rejects_free_form_claim_text(tmp_path: Path) -> None:
+    with pytest.raises(
+        UnsupportedClaimError,
+        match="unregistered report claim: supervisor improves outcomes",
     ):
         ClaimGate.validate_report(
             {"claims": ["supervisor improves outcomes"]},
-            fixture_replay,
+            _outcome_bundle(tmp_path),
             evidence_root=tmp_path,
+        )
+
+
+def test_explicit_claim_text_field_requires_registered_id(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
+    with pytest.raises(
+        UnsupportedClaimError,
+        match="unregistered report claim",
+    ):
+        ClaimGate.validate_report(
+            {
+                "claim_text": (
+                    "The orchestration layer lifted the solved-task yield."
+                )
+            },
+            bundle,
+            evidence_root=tmp_path,
+            ledger_verification_resolver=ledger_resolver,
         )
 
 
@@ -620,6 +660,11 @@ def test_program_pack_matches_runtime_claim_registry() -> None:
     } == {
         rule.claim_id: rule.required_level.value
         for rule in DEFAULT_CLAIM_RULES
+    }
+    assert claims["claim_field_policy"] == {
+        "representation": "registered_claim_ids_only",
+        "canonical_text_source": "claims[].canonical_text",
+        "explicit_field_names": sorted(STRUCTURED_CLAIM_FIELD_NAMES),
     }
     assert all(
         (repository_root / item["path"]).is_file()

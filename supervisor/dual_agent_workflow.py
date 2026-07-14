@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from .dual_agent import Outcome, ProbeResult, outcome_accepts
-from .dual_agent_artifacts import default_dual_agent_artifact_dir
+from .dual_agent_artifacts import (
+    default_dual_agent_artifact_dir,
+    default_dual_agent_release_dir,
+)
 from .receipt_provenance import sanitize_receipt_provenance
 from .state import State
 
@@ -197,6 +200,7 @@ def mandatory_artifact_status(
     task_complexity: str = "large",
 ) -> dict[str, Any]:
     output_dir = default_dual_agent_artifact_dir(cwd, task_id)
+    release_dir = default_dual_agent_release_dir(cwd, task_id)
     required = MANDATORY_ARTIFACTS_BY_COMPLEXITY.get(
         task_complexity,
         (),
@@ -204,11 +208,18 @@ def mandatory_artifact_status(
     missing = [
         relative
         for relative in required
-        if not (output_dir / relative).exists()
+        if not (
+            (
+                output_dir / relative
+                if relative.startswith("source/")
+                else release_dir / relative
+            ).exists()
+        )
     ]
     return {
         "status": "ok" if not missing else "blocked",
         "output_dir": str(output_dir),
+        "release_dir": str(release_dir),
         "required": list(required),
         "missing": missing,
     }

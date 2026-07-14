@@ -12,6 +12,7 @@ def test_replay_schema_versions_reject_missing_schema_declaration():
         "failure_taxonomy",
         "interaction",
         "manifest",
+        "production_trace_export",
         "trace_envelope",
     ]
 
@@ -24,6 +25,9 @@ def test_replay_schema_versions_accept_current_manifest_versions():
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
             "interaction": "dual-agent-interaction/v1",
+            "production_trace_export": (
+                "dual-agent-production-trace-export/v1"
+            ),
         }
     })
 
@@ -39,6 +43,9 @@ def test_replay_schema_versions_accept_real_exported_manifest_keys():
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
             "agent_interaction": "dual-agent-interaction/v1",
+            "production_trace_export": (
+                "dual-agent-production-trace-export/v1"
+            ),
         }
     })
 
@@ -54,6 +61,9 @@ def test_replay_schema_versions_reject_unapplied_known_migration():
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
             "interaction": "dual-agent-interaction/v1",
+            "production_trace_export": (
+                "dual-agent-production-trace-export/v1"
+            ),
         }
     })
 

@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 import pytest
 
+from supervisor.claim_gate import ClaimGate
 from supervisor.evidence_committer import (
     EVIDENCE_COMMIT_EVENT_KIND,
     EvidenceArtifact,
@@ -27,8 +28,16 @@ from supervisor.evidence_committer import (
     _write_evidence_file,
 )
 from supervisor.evidence_ledger import canonical_json_bytes
-from supervisor.experiment_kernel import SqliteExperimentStore
-from supervisor.grade_revisions import GradeBook, RunEnvelopeRef
+from supervisor.experiment_kernel import (
+    Arm,
+    GradeRevisionRef,
+    SqliteExperimentStore,
+)
+from supervisor.grade_revisions import (
+    GradeBook,
+    GradeTerminalCommit,
+    RunEnvelopeRef,
+)
 from supervisor.ledger_checkpoints import checkpoint_identity
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
@@ -36,10 +45,12 @@ from supervisor.task_environment import FrozenTaskResult, Grade
 from supervisor.trace_graph import (
     EdgeType,
     NodeType,
+    TraceClosureBinding,
     TraceEdge,
     TraceGraph,
     TraceIdentity,
     TraceNode,
+    TracePlanningArtifactRef,
     canonical_revision_hash,
     trace_instance_id_from_hash,
 )
@@ -88,6 +99,45 @@ class _IndependentCheckpointPins:
         with self._lock:
             value = self._latest.get(str(run_id))
             return None if value is None else dict(value)
+
+
+def test_evidence_request_fingerprint_binds_expected_workflow_context(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    artifact = TracePlanningArtifactRef(
+        kind="implementation_plan",
+        path="/repo/implementation-plan.md",
+        sha256="9" * 64,
+    )
+    first_binding = TraceClosureBinding(
+        task_id="task-1",
+        run_id="workflow-1",
+        gate="execution",
+        planning_artifacts=(artifact,),
+    )
+    second_binding = TraceClosureBinding(
+        task_id="task-1",
+        run_id="workflow-2",
+        gate="execution",
+        planning_artifacts=(artifact,),
+    )
+    first = replace(
+        fixture.request,
+        trace_graph=fixture.request.trace_graph.bind_validation(
+            expected_binding=first_binding
+        ),
+    )
+    second = replace(
+        fixture.request,
+        trace_graph=fixture.request.trace_graph.bind_validation(
+            expected_binding=second_binding
+        ),
+    )
+
+    assert canonical_json_bytes(first.fingerprint_payload()) != (
+        canonical_json_bytes(second.fingerprint_payload())
+    )
 
 
 class _CountingCheckpointAuthority:
@@ -197,6 +247,40 @@ def test_evidence_commit_rejects_trace_that_drops_grade_lineage(
         )
 
 
+def test_evidence_commit_recomputes_claim_cap_from_bound_evidence(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    report_artifact = next(
+        artifact
+        for artifact in fixture.request.artifacts
+        if artifact.role == "claim_report"
+    )
+    forged_report = json.loads(report_artifact.content)
+    forged_report["claim_gate"]["max_claim_level"] = "L2"
+    forged_artifacts = tuple(
+        replace(
+            artifact,
+            content=canonical_json_bytes(forged_report),
+        )
+        if artifact.role == "claim_report"
+        else artifact
+        for artifact in fixture.request.artifacts
+    )
+
+    with pytest.raises(
+        EvidenceCommitConflict,
+        match="not authorized by its bound evidence bundle",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            replace(
+                fixture.request,
+                claim_cap="L2",
+                artifacts=forged_artifacts,
+            )
+        )
+
+
 def test_evidence_commit_rejects_acknowledged_but_unresolved_stale_grade(
     tmp_path: Path,
 ) -> None:
@@ -300,6 +384,7 @@ def test_evidence_commit_accepts_stale_grade_with_exact_current_resolution(
         else artifact
         for artifact in fixture.request.artifacts
     )
+    artifacts = _rebind_fixture_claim_authority(artifacts)
 
     result = EvidenceCommitter(
         **fixture.committer_arguments
@@ -312,6 +397,170 @@ def test_evidence_commit_accepts_stale_grade_with_exact_current_resolution(
     )
 
     assert result.status == "complete"
+
+
+def test_evidence_commit_rejects_terminal_grade_authority_without_arm_event(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    experiment_path = fixture.committer_arguments["experiment_db_path"]
+    assert isinstance(experiment_path, Path)
+    with sqlite3.connect(experiment_path) as connection:
+        connection.execute("DROP TRIGGER experiment_arm_states_no_delete")
+        connection.execute(
+            """
+            DELETE FROM experiment_arm_state_events
+            WHERE state IN (
+              'completed', 'failed', 'common_infrastructure_failed'
+            )
+            """
+        )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal grade authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_evidence_commit_rejects_history_that_omits_terminal_commits(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    history = fixture.request.grade_histories[0]
+    request = replace(
+        fixture.request,
+        grade_histories=(
+            replace(history, terminal_commits=()),
+        ),
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal_commits",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(request)
+
+
+def test_evidence_commit_requires_one_terminal_commit_per_revision(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    history = fixture.request.grade_histories[0]
+    missing_commit = history.terminal_commits[0]
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+    with sqlite3.connect(gradebook_path) as connection:
+        connection.execute("DROP TRIGGER grade_terminal_commits_no_delete")
+        connection.execute(
+            "DELETE FROM grade_terminal_commits WHERE grade_id=?",
+            (missing_commit.grade_id,),
+        )
+    request = replace(
+        fixture.request,
+        grade_histories=(
+            replace(
+                history,
+                terminal_commits=history.terminal_commits[1:],
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="exactly one terminal commit per published revision",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(request)
+
+
+@pytest.mark.parametrize("malformation", ("extra", "duplicate"))
+def test_evidence_commit_rejects_extra_or_duplicate_terminal_grade_ids(
+    tmp_path: Path,
+    malformation: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    history = fixture.request.grade_histories[0]
+    terminal_commits = history.terminal_commits
+    if malformation == "extra":
+        terminal_commits = (
+            *terminal_commits,
+            replace(
+                terminal_commits[0],
+                commit_id="terminal_commit_extra",
+                commit_hash="e" * 64,
+                grade_id="grade_extra",
+            ),
+        )
+    else:
+        terminal_commits = (*terminal_commits, terminal_commits[0])
+    request = replace(
+        fixture.request,
+        grade_histories=(
+            replace(history, terminal_commits=terminal_commits),
+        ),
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="no missing, extra, or duplicate grade IDs",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(request)
+
+
+def test_evidence_commit_rejects_mismatched_terminal_grade_reference(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(
+        tmp_path,
+        mismatched_terminal_grade_reference=True,
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal arm event grade reference",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+@pytest.mark.parametrize("tamper", ("row_identity", "terminal_state_hash"))
+def test_evidence_commit_rejects_mismatched_terminal_arm_authority(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    _tamper_experiment_terminal_authority(fixture, tamper=tamper)
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal grade authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_evidence_commit_rejects_recommitted_source_terminal_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    original = _load_fixture_source_terminal_commit(fixture)
+    recommitted = _recommit_terminal_authority(
+        fixture.committer_arguments["experiment_db_path"],
+        original,
+    )
+    _assert_same_terminal_semantics(original, recommitted)
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="source terminal authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
 
 
 def test_evidence_commit_resumes_idempotently_and_fails_closed(
@@ -831,6 +1080,153 @@ def test_completed_commit_replay_uses_pinned_result_after_streams_append(
     }
 
 
+def test_completed_commit_replay_rejects_a_tampered_trace_store(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+    EvidenceCommitter(**arguments).commit(fixture.request)
+    trace_path = Path(arguments["trace_store_path"])
+
+    with sqlite3.connect(trace_path) as connection:
+        connection.execute("DROP TRIGGER trace_edges_no_delete")
+        connection.execute(
+            """
+            DELETE FROM trace_edges
+            WHERE edge_sequence = (
+              SELECT MAX(edge_sequence) FROM trace_edges
+            )
+            """
+        )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="persisted trace graph differs",
+    ):
+        EvidenceCommitter(**arguments).commit(fixture.request)
+
+
+def test_completed_commit_replay_rejects_removed_terminal_arm_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    EvidenceCommitter(**fixture.committer_arguments).commit(fixture.request)
+    experiment_path = fixture.committer_arguments["experiment_db_path"]
+    assert isinstance(experiment_path, Path)
+    with sqlite3.connect(experiment_path) as connection:
+        connection.execute("DROP TRIGGER experiment_arm_states_no_delete")
+        connection.execute(
+            """
+            DELETE FROM experiment_arm_state_events
+            WHERE state IN (
+              'completed', 'failed', 'common_infrastructure_failed'
+            )
+            """
+        )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal grade authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+@pytest.mark.parametrize("tamper", ("row_identity", "terminal_state_hash"))
+def test_completed_commit_replay_rejects_tampered_terminal_arm_authority(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    EvidenceCommitter(**fixture.committer_arguments).commit(fixture.request)
+    _tamper_experiment_terminal_authority(fixture, tamper=tamper)
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="terminal grade authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_completed_commit_replay_rejects_recommitted_gradebook_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    EvidenceCommitter(**fixture.committer_arguments).commit(fixture.request)
+    history = fixture.request.grade_histories[0]
+    original = history.terminal_commits[0]
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+    with sqlite3.connect(gradebook_path) as connection:
+        connection.execute("DROP TRIGGER grade_terminal_commits_no_delete")
+        connection.execute(
+            "DELETE FROM grade_terminal_commits WHERE grade_id=?",
+            (original.grade_id,),
+        )
+    with GradeBook(gradebook_path) as gradebook:
+        recommitted = gradebook.commit_terminal_grade(
+            grade_id=original.grade_id,
+            revision_hash=original.grade_revision_hash,
+            experiment_id=original.experiment_id,
+            task_id=original.task_id,
+            arm=original.arm,
+            terminal_state=original.terminal_state,
+            terminal_state_hash=original.terminal_state_hash,
+        )
+
+    assert recommitted.commit_id != original.commit_id
+    assert recommitted.commit_hash != original.commit_hash
+    assert (
+        recommitted.experiment_id,
+        recommitted.task_id,
+        recommitted.arm,
+        recommitted.terminal_state,
+        recommitted.terminal_state_hash,
+    ) == (
+        original.experiment_id,
+        original.task_id,
+        original.arm,
+        original.terminal_state,
+        original.terminal_state_hash,
+    )
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="GradeBook history does not match the evidence request",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_completed_commit_replay_rejects_recommitted_source_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    EvidenceCommitter(**fixture.committer_arguments).commit(fixture.request)
+    original = _load_fixture_source_terminal_commit(fixture)
+    recommitted = _recommit_terminal_authority(
+        fixture.committer_arguments["experiment_db_path"],
+        original,
+    )
+    _assert_same_terminal_semantics(original, recommitted)
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="source terminal authority",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
 def test_completed_commit_replay_requires_external_latest_checkpoint_to_exist_locally(
     tmp_path: Path,
 ) -> None:
@@ -899,7 +1295,11 @@ class _Fixture:
         self.committer_arguments = committer_arguments
 
 
-def _build_fixture(tmp_path: Path) -> _Fixture:
+def _build_fixture(
+    tmp_path: Path,
+    *,
+    mismatched_terminal_grade_reference: bool = False,
+) -> _Fixture:
     state_path = tmp_path / "state.db"
     experiment_path = tmp_path / "experiments.db"
     gradebook_path = tmp_path / "grades.db"
@@ -920,7 +1320,7 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
                 "operational_efficacy_evidence": False,
             },
         )
-    SqliteExperimentStore(experiment_path)
+    experiment_store = SqliteExperimentStore(experiment_path)
 
     frozen = FrozenTaskResult.create(
         task_id="fixture-task",
@@ -954,11 +1354,77 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
             "operational_verifier": False,
         },
     )
+    with GradeBook(experiment_path) as authority_gradebook:
+        authority_revision = authority_gradebook.append_grade(
+            run=run,
+            grade=grade,
+            verifier_config_hash="6" * 64,
+        )
+        experiment_store.start_arm_attempt(
+            experiment_id="fixture-experiment",
+            task_id="fixture-task",
+            block_attempt=0,
+            arm=Arm.A,
+            payload={
+                "assignment_id": "assignment-1",
+                "execution_id": "fixture-execution",
+            },
+            transition_idempotency_key="fixture.arm.A.started",
+        )
+        terminal_event = experiment_store.finish_arm_attempt(
+            experiment_id="fixture-experiment",
+            task_id="fixture-task",
+            block_attempt=0,
+            arm=Arm.A,
+            state="completed",
+            payload={
+                "outcome": {
+                    "arm": Arm.A.value,
+                    "status": "completed",
+                    "grade_revision": replace(
+                        GradeRevisionRef.from_revision(
+                            authority_revision
+                        ),
+                        grade_id="grade_unpublished",
+                        revision_hash="f" * 64,
+                    ).to_dict()
+                    if mismatched_terminal_grade_reference
+                    else GradeRevisionRef.from_revision(
+                        authority_revision
+                    ).to_dict(),
+                },
+            },
+            transition_kind="arm.completed",
+            transition_idempotency_key="fixture.arm.A.completed",
+            transition_payload={
+                "execution_id": "fixture-execution",
+                "grade_revision_hash": authority_revision.revision_hash,
+            },
+        )
+        source_terminal_commit = authority_gradebook.commit_terminal_grade(
+            grade_id=authority_revision.grade_id,
+            revision_hash=authority_revision.revision_hash,
+            experiment_id="fixture-experiment",
+            task_id="fixture-task",
+            arm=Arm.A.value,
+            terminal_state="completed",
+            terminal_state_hash=str(terminal_event["state_hash"]),
+        )
+
     with GradeBook(gradebook_path) as gradebook:
         first = gradebook.append_grade(
             run=run,
             grade=grade,
             verifier_config_hash="4" * 64,
+        )
+        gradebook.commit_terminal_grade(
+            grade_id=first.grade_id,
+            revision_hash=first.revision_hash,
+            experiment_id="fixture-experiment",
+            task_id="fixture-task",
+            arm=Arm.A.value,
+            terminal_state="completed",
+            terminal_state_hash=str(terminal_event["state_hash"]),
         )
         second = gradebook.append_grade(
             run=run,
@@ -966,13 +1432,34 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
             verifier_config_hash="5" * 64,
             supersedes_grade_id=first.grade_id,
         )
+        gradebook.commit_terminal_grade(
+            grade_id=second.grade_id,
+            revision_hash=second.revision_hash,
+            experiment_id="fixture-experiment",
+            task_id="fixture-task",
+            arm=Arm.A.value,
+            terminal_state="completed",
+            terminal_state_hash=str(terminal_event["state_hash"]),
+        )
         revisions = gradebook.list_revisions(run)
         invalidations = gradebook.list_invalidations(first.grade_id)
+        terminal_commits = tuple(
+            commit
+            for revision in revisions
+            if (
+                commit := gradebook.get_terminal_commit(
+                    revision.grade_id
+                )
+            )
+            is not None
+        )
     history = EvidenceGradeHistory(
         execution_id="fixture-execution",
         run=run,
         revisions=revisions,
         invalidations=invalidations,
+        terminal_commits=terminal_commits,
+        source_terminal_commits=(source_terminal_commit,),
     )
 
     graph, promotion = _closed_graph(
@@ -1076,8 +1563,8 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
     emit(
         "tracer.claim.authorized",
         {
-            "max_claim_level": "L2",
-            "l3_refusal": "hermetic evidence is capped at L2",
+            "max_claim_level": "L1",
+            "l2_refusal": "fixture evidence has no independent verifier",
             "operational_efficacy_evidence": False,
             "improvement_claim_allowed": False,
         },
@@ -1086,21 +1573,13 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
         "tracer.completed",
         {
             "execution_count": 1,
-            "claim_cap": "L2",
+            "claim_cap": "L1",
             "mode": "hermetic",
             "external_provider_calls": 0,
         },
     )
 
-    report = {
-        "schema_version": "fixture-claim-report/v1",
-        "mode": "hermetic",
-        "operational_efficacy_evidence": False,
-        "improvement_claim_allowed": False,
-        "powered_improvement_claim_allowed": False,
-        "claim_gate": {"max_claim_level": "L2"},
-    }
-    artifacts = (
+    base_artifacts = (
         _json_artifact(
             "run_manifest",
             "artifacts/run-manifest.json",
@@ -1121,10 +1600,56 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
             "artifacts/hidden-verifier-result.json",
             {"passed": True, "operational_verifier": False},
         ),
+    )
+    artifact_bytes = {
+        artifact.relative_path: artifact.content
+        for artifact in base_artifacts
+    }
+    descriptors = {
+        artifact.role: {
+            "ref": artifact.relative_path,
+            "sha256": hashlib.sha256(artifact.content).hexdigest(),
+        }
+        for artifact in base_artifacts
+    }
+    evidence_bundle = {
+        "pins": {
+            "mode": "hermetic",
+            "fixture": "evidence-committer",
+        },
+        "hashes": {
+            "run_manifest_sha256": descriptors["run_manifest"]["sha256"],
+            "execution_results_sha256": descriptors[
+                "execution_results"
+            ]["sha256"],
+        },
+        "artifacts": list(descriptors.values()),
+        "traceable_detector": {
+            "detector_id": "fixture-trace-closure/v1",
+            "trace_ref": descriptors["trace_graph"]["ref"],
+            "trace_sha256": descriptors["trace_graph"]["sha256"],
+        },
+    }
+    report = ClaimGate.derive_report(
+        {
+            "schema_version": "fixture-claim-report/v1",
+            "mode": "hermetic",
+            "asserted_claim_level": "L1",
+            "claims": [
+                "CLAIM-HARNESS-L0-INTEGRITY",
+                "CLAIM-HARNESS-L1-PROCESS",
+            ],
+            "operational_efficacy_evidence": False,
+        },
+        evidence_bundle,
+        evidence_resolver=artifact_bytes.get,
+    )
+    artifacts = (
+        *base_artifacts,
         _json_artifact(
             "claim_evidence_bundle",
             "artifacts/claim-evidence-bundle.json",
-            {"mode": "hermetic"},
+            evidence_bundle,
         ),
         _json_artifact(
             "claim_report",
@@ -1137,7 +1662,7 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
         aggregate_run_id="aggregate-run",
         registered_run_ids=("aggregate-run", "runtime-run"),
         mode="hermetic",
-        claim_cap="L2",
+        claim_cap="L1",
         operational_efficacy_evidence=False,
         subject={
             "mode": "hermetic",
@@ -1182,6 +1707,196 @@ def _json_artifact(
         role=role,
         relative_path=relative_path,
         content=canonical_json_bytes(payload),
+    )
+
+
+def _tamper_experiment_terminal_authority(
+    fixture: _Fixture,
+    *,
+    tamper: str,
+) -> None:
+    experiment_path = fixture.committer_arguments["experiment_db_path"]
+    assert isinstance(experiment_path, Path)
+    with sqlite3.connect(experiment_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("DROP TRIGGER experiment_arm_states_no_update")
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM experiment_arm_state_events
+            ORDER BY arm_state_sequence
+            """
+        ).fetchall()
+        previous_state_hash: str | None = None
+        for row in rows:
+            payload = json.loads(str(row["payload_json"]))
+            task_id = str(row["task_id"])
+            if tamper == "row_identity":
+                task_id = "mismatched-fixture-task"
+            elif (
+                tamper == "terminal_state_hash"
+                and str(row["state"]) == "completed"
+            ):
+                payload["tampered"] = True
+            body = {
+                "experiment_id": str(row["experiment_id"]),
+                "task_id": task_id,
+                "block_attempt": int(row["block_attempt"]),
+                "arm": str(row["arm"]),
+                "state": str(row["state"]),
+                "payload": payload,
+                "previous_state_hash": previous_state_hash,
+                "recorded_at_ms": int(row["recorded_at_ms"]),
+            }
+            state_hash = canonical_revision_hash(body)
+            connection.execute(
+                """
+                UPDATE experiment_arm_state_events
+                SET task_id=?, payload_json=?, previous_state_hash=?,
+                    state_hash=?
+                WHERE arm_state_sequence=?
+                """,
+                (
+                    task_id,
+                    canonical_json_bytes(payload).decode("utf-8"),
+                    previous_state_hash,
+                    state_hash,
+                    int(row["arm_state_sequence"]),
+                ),
+            )
+            previous_state_hash = state_hash
+
+
+def _load_fixture_source_terminal_commit(
+    fixture: _Fixture,
+) -> GradeTerminalCommit:
+    experiment_path = fixture.committer_arguments["experiment_db_path"]
+    assert isinstance(experiment_path, Path)
+    [terminal_event] = SqliteExperimentStore(
+        experiment_path
+    ).list_terminal_arm_events()
+    grade_reference = terminal_event["payload"]["outcome"][
+        "grade_revision"
+    ]
+    with GradeBook(experiment_path) as gradebook:
+        commit = gradebook.get_terminal_commit(
+            str(grade_reference["grade_id"])
+        )
+    assert commit is not None
+    return commit
+
+
+def _recommit_terminal_authority(
+    raw_path: object,
+    original: GradeTerminalCommit,
+) -> GradeTerminalCommit:
+    assert isinstance(raw_path, Path)
+    with sqlite3.connect(raw_path) as connection:
+        connection.execute("DROP TRIGGER grade_terminal_commits_no_delete")
+        connection.execute(
+            "DELETE FROM grade_terminal_commits WHERE grade_id=?",
+            (original.grade_id,),
+        )
+    with GradeBook(raw_path) as gradebook:
+        recommitted = gradebook.commit_terminal_grade(
+            grade_id=original.grade_id,
+            revision_hash=original.grade_revision_hash,
+            experiment_id=original.experiment_id,
+            task_id=original.task_id,
+            arm=original.arm,
+            terminal_state=original.terminal_state,
+            terminal_state_hash=original.terminal_state_hash,
+        )
+    assert recommitted.commit_id != original.commit_id
+    assert recommitted.commit_hash != original.commit_hash
+    return recommitted
+
+
+def _assert_same_terminal_semantics(
+    first: GradeTerminalCommit,
+    second: GradeTerminalCommit,
+) -> None:
+    assert (
+        second.grade_id,
+        second.grade_revision_hash,
+        second.experiment_id,
+        second.task_id,
+        second.arm,
+        second.terminal_state,
+        second.terminal_state_hash,
+    ) == (
+        first.grade_id,
+        first.grade_revision_hash,
+        first.experiment_id,
+        first.task_id,
+        first.arm,
+        first.terminal_state,
+        first.terminal_state_hash,
+    )
+
+
+def _rebind_fixture_claim_authority(
+    artifacts: tuple[EvidenceArtifact, ...],
+) -> tuple[EvidenceArtifact, ...]:
+    bundle_artifact = next(
+        artifact
+        for artifact in artifacts
+        if artifact.role == "claim_evidence_bundle"
+    )
+    report_artifact = next(
+        artifact
+        for artifact in artifacts
+        if artifact.role == "claim_report"
+    )
+    bundle = json.loads(bundle_artifact.content)
+    report_body = json.loads(report_artifact.content)
+    report_body.pop("claim_gate", None)
+    report_body.pop("improvement_claim_allowed", None)
+    report_body.pop("powered_improvement_claim_allowed", None)
+    artifact_bytes = {
+        artifact.relative_path: artifact.content
+        for artifact in artifacts
+        if artifact.role not in {"claim_evidence_bundle", "claim_report"}
+    }
+    digest_replacements: dict[str, str] = {}
+    for descriptor in bundle["artifacts"]:
+        reference = str(descriptor["ref"])
+        payload = artifact_bytes[reference]
+        updated_digest = hashlib.sha256(payload).hexdigest()
+        digest_replacements[str(descriptor["sha256"])] = updated_digest
+        descriptor["sha256"] = updated_digest
+
+    def replace_digests(value):
+        if isinstance(value, dict):
+            return {
+                key: replace_digests(nested)
+                for key, nested in value.items()
+            }
+        if isinstance(value, list):
+            return [replace_digests(nested) for nested in value]
+        if isinstance(value, str):
+            return digest_replacements.get(value, value)
+        return value
+
+    bundle = replace_digests(bundle)
+    report = ClaimGate.derive_report(
+        report_body,
+        bundle,
+        evidence_resolver=artifact_bytes.get,
+    )
+    return tuple(
+        replace(
+            artifact,
+            content=canonical_json_bytes(bundle),
+        )
+        if artifact.role == "claim_evidence_bundle"
+        else replace(
+            artifact,
+            content=canonical_json_bytes(report),
+        )
+        if artifact.role == "claim_report"
+        else artifact
+        for artifact in artifacts
     )
 
 
@@ -1245,7 +1960,7 @@ def _closed_graph(
         for invalidation in invalidations
     }
     current_grade = grade_nodes[revisions[-1].grade_id]
-    analysis = _node(NodeType.ANL, "ANL", {"claim_cap": "L2"})
+    analysis = _node(NodeType.ANL, "ANL", {"claim_cap": "L1"})
     decision = _node(
         NodeType.DEC,
         "DEC",

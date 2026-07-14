@@ -981,6 +981,17 @@ _RUN_BASE_ENV_KEYS = (
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
+    "SSH_AUTH_SOCK",
+    "GIT_SSH_COMMAND",
+    "GIT_SSH_VARIANT",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
 )
 _RUN_TIMEOUT_S = 600.0
 
@@ -996,9 +1007,9 @@ def _run(
         for key in _RUN_BASE_ENV_KEYS
         if key in os.environ
     }
-    run_env["GIT_TERMINAL_PROMPT"] = "0"
     if env is not None:
         run_env.update(env)
+    run_env["GIT_TERMINAL_PROMPT"] = "0"
     return subprocess.run(
         argv,
         cwd=cwd,

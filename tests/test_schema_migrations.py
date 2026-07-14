@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import runpy
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 import supervisor.schema_migrations as schema_migrations
-from supervisor.evidence_ledger import verify_event_chain_structure
+from supervisor.evidence_ledger import (
+    LEGACY_EVENT_HASH_SCHEMA_VERSION,
+    NATIVE_GENESIS,
+    build_ledger_fields,
+    verify_event_chain_structure,
+)
 from supervisor.quality_projection import (
     QUALITY_TREND_PROJECTION_EVENT,
+    quality_trend_projection_event_payload,
     rebuild_quality_trend_projection,
 )
 from supervisor.schema_migrations import (
@@ -37,6 +44,7 @@ EXPECTED_MIGRATIONS = [
     {"version": 13, "name": "storage.integrity_v2"},
     {"version": 14, "name": "dual_agent_workflow_jobs.process_identity"},
     {"version": 15, "name": "historical_operation_claims"},
+    {"version": 16, "name": "event_idempotency_claims"},
 ]
 
 
@@ -262,6 +270,51 @@ def test_legacy_event_import_authenticates_exact_payload_json_bytes(tmp_path):
     assert verification.failure_code == "legacy_raw_payload_commitment_mismatch"
 
 
+def test_legacy_event_import_rejects_duplicate_payload_keys(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    payload_json = (
+        '{"token":"sk-proj-super-secret-value","token":"safe"}'
+    )
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 101, 'test', 'event_msg', ?)""",
+        (payload_json,),
+    )
+    conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="duplicate JSON object key: 'token'",
+    ):
+        run_forward_migrations(conn)
+
+    assert conn.execute(
+        "SELECT payload_json FROM events"
+    ).fetchone()["payload_json"] == payload_json
+    assert {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(events)").fetchall()
+    } == {
+        "event_id",
+        "run_id",
+        "ts",
+        "source",
+        "kind",
+        "payload_json",
+    }
+
+
 def test_large_legacy_event_import_fails_fast_then_runs_offline(
     tmp_path,
     monkeypatch,
@@ -413,6 +466,71 @@ def test_ledger_migration_rejects_forged_prepopulated_hashes(tmp_path):
         "canonical_payload_hash": forged_hash,
         "artifact_manifest_hash": forged_hash,
     }
+
+
+def test_ledger_migration_preserves_valid_prepopulated_v2_hashes(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             event_sequence INTEGER,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL,
+             previous_event_hash TEXT,
+             event_hash TEXT,
+             canonical_payload_hash TEXT,
+             artifact_manifest_hash TEXT,
+             ledger_genesis_kind TEXT
+           )"""
+    )
+    payload = {"value": 1}
+    fields = build_ledger_fields(
+        run_id="v2-run",
+        event_sequence=1,
+        ts=101,
+        source="test",
+        kind="event_msg",
+        payload=payload,
+        previous_event_hash=None,
+        ledger_genesis_kind=NATIVE_GENESIS,
+        event_hash_schema_version=LEGACY_EVENT_HASH_SCHEMA_VERSION,
+    )
+    conn.execute(
+        """INSERT INTO events(
+             run_id, event_sequence, ts, source, kind, payload_json,
+             previous_event_hash, event_hash, canonical_payload_hash,
+             artifact_manifest_hash, ledger_genesis_kind)
+           VALUES(
+             'v2-run', 1, 101, 'test', 'event_msg', '{"value":1}',
+             NULL, ?, ?, ?, ?
+           )""",
+        (
+            fields.event_hash,
+            fields.canonical_payload_hash,
+            fields.artifact_manifest_hash,
+            fields.ledger_genesis_kind,
+        ),
+    )
+    conn.commit()
+
+    run_forward_migrations(conn)
+
+    [event] = conn.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events"""
+    ).fetchall()
+    assert event["event_hash"] == fields.event_hash
+    assert verify_event_chain_structure(
+        [event],
+        expected_run_id="v2-run",
+    ).valid is True
 
 
 def test_forward_migration_name_mismatch_fails_closed(tmp_path):
@@ -1202,6 +1320,206 @@ def test_migration_backfills_canonical_quality_projection_evidence(tmp_path):
     ) == state.quality_trend_projection_snapshot()
 
 
+def test_sqlite_quality_projection_migration_writer_redacts_before_hashing(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    payload = quality_trend_projection_event_payload(
+        {
+            "run_id": "migration-redaction-run",
+            "task_id": "task",
+            "task_class": "source_change",
+            "gate": "outcome_review",
+            "accepted": True,
+            "first_pass_accepted": False,
+            "revision_rounds": 1,
+            "time_to_accepted_outcome_s": 1.5,
+            "p11_audit_sample_size": 0,
+            "false_accept_count": 0,
+            "false_accept_denominator": 0,
+            "false_accept_rate": 0.0,
+            "policy_overlay_hash": "",
+            "policy_proposal_id": "",
+            "details": {
+                "credential": (
+                    "OPENAI_API_KEY=sk-proj-super-secret-value"
+                )
+            },
+            "computed_at": 123,
+        }
+    )
+
+    schema_migrations._append_legacy_quality_projection_event(
+        state._conn,
+        run_id="migration-redaction-run",
+        payload=payload,
+    )
+    state._conn.commit()
+
+    [event] = state._conn.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events
+            WHERE run_id='migration-redaction-run'"""
+    ).fetchall()
+    persisted_payload = json.loads(event["payload_json"])
+
+    assert "sk-proj-super-secret-value" not in event["payload_json"]
+    assert (
+        persisted_payload["projection_row"]["details"]["credential"]
+        == "OPENAI_API_KEY=[REDACTED]"
+    )
+    assert verify_event_chain_structure(
+        [event],
+        expected_run_id="migration-redaction-run",
+    ).valid is True
+
+
+def test_postgres_quality_projection_migration_writer_redacts_before_hashing():
+    class _Result:
+        def __init__(self, *, scalar=None, rows=(), first=None):
+            self._scalar = scalar
+            self._rows = list(rows)
+            self._first = first
+
+        def scalar_one(self):
+            return self._scalar
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def first(self):
+            return self._first
+
+    class _Bind:
+        def __init__(self):
+            self.inserted_event = None
+
+        def execute(self, statement, params=None):
+            sql = " ".join(str(statement).split())
+            if "EXTRACT(EPOCH FROM clock_timestamp())" in sql:
+                return _Result(scalar=200)
+            if "FROM supervisor_quality_trends" in sql:
+                return _Result(
+                    rows=[
+                        {
+                            "run_id": "postgres-migration-redaction",
+                            "task_id": "task",
+                            "task_class": "source_change",
+                            "gate": "outcome_review",
+                            "accepted": True,
+                            "first_pass_accepted": False,
+                            "revision_rounds": 1,
+                            "time_to_accepted_outcome_s": 1.5,
+                            "p11_audit_sample_size": 0,
+                            "false_accept_count": 0,
+                            "false_accept_denominator": 0,
+                            "false_accept_rate": 0.0,
+                            "policy_overlay_hash": "",
+                            "policy_proposal_id": "",
+                            "details_json": {
+                                "credential": (
+                                    "OPENAI_API_KEY="
+                                    "sk-proj-super-secret-value"
+                                )
+                            },
+                            "computed_at": 123,
+                        }
+                    ]
+                )
+            if "SELECT payload_json FROM events" in sql:
+                return _Result(first=None)
+            if "SELECT event_id, event_sequence, event_hash" in sql:
+                return _Result(first=None)
+            if "INSERT INTO events" in sql:
+                self.inserted_event = dict(params or {})
+                return _Result()
+            if "INSERT INTO event_stream_sequences" in sql:
+                return _Result()
+            raise AssertionError(f"unexpected migration SQL: {sql}")
+
+    migration = runpy.run_path(
+        str(Path("migrations/versions/20260712_0001_evidence_ledger.py"))
+    )
+    bind = _Bind()
+
+    migration["_backfill_quality_projection_evidence"](bind)
+
+    assert bind.inserted_event is not None
+    payload_json = bind.inserted_event["payload_json"]
+    payload = json.loads(payload_json)
+    event = {
+        "event_id": bind.inserted_event["event_id"],
+        "event_sequence": bind.inserted_event["event_sequence"],
+        "run_id": bind.inserted_event["run_id"],
+        "ts": bind.inserted_event["ts"],
+        "source": bind.inserted_event["source"],
+        "kind": bind.inserted_event["kind"],
+        "payload_json": payload_json,
+        "previous_event_hash": bind.inserted_event["previous_event_hash"],
+        "event_hash": bind.inserted_event["event_hash"],
+        "canonical_payload_hash": bind.inserted_event[
+            "canonical_payload_hash"
+        ],
+        "artifact_manifest_hash": bind.inserted_event[
+            "artifact_manifest_hash"
+        ],
+        "ledger_genesis_kind": bind.inserted_event[
+            "ledger_genesis_kind"
+        ],
+    }
+
+    assert "sk-proj-super-secret-value" not in payload_json
+    assert (
+        payload["projection_row"]["details"]["credential"]
+        == "OPENAI_API_KEY=[REDACTED]"
+    )
+    assert verify_event_chain_structure(
+        [event],
+        expected_run_id="postgres-migration-redaction",
+    ).valid is True
+
+
+def test_postgres_ledger_migration_recognizes_prepopulated_v2_hashes():
+    migration = runpy.run_path(
+        str(Path("migrations/versions/20260712_0001_evidence_ledger.py"))
+    )
+    payload = {"value": 1}
+    expected = build_ledger_fields(
+        run_id="postgres-v2-run",
+        event_sequence=1,
+        ts=101,
+        source="test",
+        kind="event_msg",
+        payload=payload,
+        previous_event_hash=None,
+        ledger_genesis_kind=NATIVE_GENESIS,
+        event_hash_schema_version=LEGACY_EVENT_HASH_SCHEMA_VERSION,
+    )
+
+    schema_version, observed = migration[
+        "_ledger_fields_for_existing_event"
+    ](
+        run_id="postgres-v2-run",
+        event_sequence=1,
+        ts=101,
+        source="test",
+        kind="event_msg",
+        payload=payload,
+        previous_event_hash=None,
+        genesis_kind=NATIVE_GENESIS,
+        observed_event_hash=expected.event_hash,
+    )
+
+    assert schema_version == LEGACY_EVENT_HASH_SCHEMA_VERSION
+    assert observed == expected
+
+
 @pytest.mark.parametrize(
     ("false_accept_count", "denominator", "rate"),
     (
@@ -1526,6 +1844,9 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     historical_migration = Path(
         "migrations/versions/20260712_0003_historical_operation_claims.py"
     ).read_text(encoding="utf-8")
+    idempotency_migration = Path(
+        "migrations/versions/20260712_0004_event_idempotency_claims.py"
+    ).read_text(encoding="utf-8")
 
     assert "LOCK TABLE events IN SHARE ROW EXCLUSIVE MODE" in evidence_migration
     assert "payload_json=CAST(:payload_json AS jsonb)" not in evidence_migration
@@ -1561,3 +1882,7 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     assert "historical_operation_claims" in historical_migration
     assert "operation_id TEXT PRIMARY KEY" in historical_migration
     assert "forward-only migration" in historical_migration
+    assert "event_idempotency_claims" in idempotency_migration
+    assert "production-trace:" in idempotency_migration
+    assert "duplicate production trace events" in idempotency_migration
+    assert "forward-only migration" in idempotency_migration

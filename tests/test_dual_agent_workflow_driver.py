@@ -489,8 +489,11 @@ def _codex_runtime_runner_from_subprocess_runner(runner):
     still composes the real ``CodexRuntime``; this adapter keeps the test seam
     explicit now that independent reviewers execute through ``AgentRuntime``.
     """
+    invocation_count = 0
 
     def run(task: AgentTask) -> RuntimeExecution:
+        nonlocal invocation_count
+        invocation_count += 1
         started_at_ms = int(time.time() * 1000)
         argv = [
             "codex",
@@ -534,21 +537,42 @@ def _codex_runtime_runner_from_subprocess_runner(runner):
             and str(event.payload.get("item", {}).get("text") or "").strip()
         )
         if not output:
+            output = "\n".join(
+                str(raw.get("result") or "").strip()
+                for raw in raw_events
+                if isinstance(raw.get("result"), str)
+                and str(raw.get("result") or "").strip()
+            )
+        if not output:
             output = str(completed.stdout or "")
         ended_at_ms = int(time.time() * 1000)
-        run_id = session_id or f"codex-test-{sha256(output.encode()).hexdigest()[:16]}"
+        reported_session_id = session_id
+        session_id = (
+            f"{reported_session_id}-invocation-{invocation_count}"
+            if reported_session_id
+            else (
+                "codex-test-session-"
+                f"{sha256(output.encode()).hexdigest()[:16]}"
+                f"-{invocation_count}"
+            )
+        )
+        run_id = (
+            "codex-test-run-"
+            f"{sha256((task.task_id + task.instruction).encode()).hexdigest()[:16]}"
+            f"-{invocation_count}"
+        )
         handle = AgentRunHandle(
             run_id=run_id,
             task_id=task.task_id,
             runtime="codex",
-            session_id=run_id,
+            session_id=session_id,
             capabilities={"resume": True, "cancel": True, "stream": True},
         )
         result = AgentRunResult(
             run_id=run_id,
             task_id=task.task_id,
             runtime="codex",
-            session_id=run_id,
+            session_id=session_id,
             status="completed" if completed.returncode == 0 else "failed",
             output=output,
             events=tuple(events),
@@ -565,6 +589,7 @@ def _codex_runtime_runner_from_subprocess_runner(runner):
                 "returncode": completed.returncode,
                 "stderr": str(completed.stderr or ""),
                 "raw_event_count": len(raw_events),
+                "reported_fixture_session_id": reported_session_id,
             },
         )
         return RuntimeExecution(
@@ -2043,7 +2068,14 @@ async def test_runtime_evidence_is_exported_before_cursor_review(tmp_path):
 
     def checking_cursor_runner(request) -> CursorInvocationResult:
         observed["review_called"] = True
-        transcript_path = tmp_path / "docs" / "dual-agent" / "workflow-1" / "transcript.jsonl"
+        transcript_path = (
+            tmp_path
+            / "docs"
+            / "dual-agent"
+            / "workflow-1"
+            / "release"
+            / "transcript.jsonl"
+        )
         assert transcript_path.exists()
         assert "dual_agent_runtime_evidence" in transcript_path.read_text(encoding="utf-8")
         return _accepting_cursor_runner(request)
@@ -2829,17 +2861,21 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     ]
     assert all(step["status"] == "accepted" for step in result["steps"])
     assert result["mandatory_artifacts"]["status"] == "ok"
+    task_dir = tmp_path / "docs" / "dual-agent" / "workflow-1"
     for relative in [
         "source/prd.md",
         "source/grill-findings.md",
         "source/issues.md",
         "source/tdd.md",
         "source/implementation-plan.md",
+    ]:
+        assert (task_dir / relative).exists()
+    for relative in [
         "interactions.md",
         "outcome-review.md",
         "transcript.md",
     ]:
-        assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / relative).exists()
+        assert (task_dir / "release" / relative).exists()
 
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
@@ -2995,7 +3031,14 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
     assert runner_calls
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
-    assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / "outcome-review.md").exists()
+    assert (
+        tmp_path
+        / "docs"
+        / "dual-agent"
+        / "workflow-1"
+        / "release"
+        / "outcome-review.md"
+    ).exists()
 
 
 @pytest.mark.asyncio
@@ -5519,7 +5562,11 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
     }
 
     def fake_runner(argv, **kwargs):
-        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        prompt = (
+            argv[argv.index("-p") + 1]
+            if "-p" in argv
+            else str(argv[-1])
+        )
         if "Agentic worker roster planning" in prompt:
             planner_calls.append(argv)
             return subprocess.CompletedProcess(
@@ -5549,6 +5596,9 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        lead_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            fake_runner
+        ),
         codex_runner=_accepting_codex_reviewer_runner,
         codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
             _accepting_codex_reviewer_runner
@@ -5586,6 +5636,16 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
     assert productions
     assert productions[-1]["status"] == "passed"
     assert productions[-1]["receipts"][0]["transcript_ref"].startswith(".handoff/agentic-workers/")
+    agentic_registrations = productions[-1]["target_run_registrations"]
+    assert len(agentic_registrations) == 2
+    assert {
+        registration["gate"]
+        for registration in agentic_registrations
+    } == {"workflow_start"}
+    assert all(
+        state.get_run(registration["target_run_id"]) is not None
+        for registration in agentic_registrations
+    )
 
     validations = [
         json.loads(row["payload_json"])
@@ -6099,6 +6159,17 @@ async def test_run_dual_agent_workflow_emits_review_packet_roster_and_worker_eve
     )
     assert cross_vendor["implementation_provider_family"] == "anthropic"
     assert cross_vendor["selected_provider_family"] != "anthropic"
+    reviewer_event = next(
+        payload
+        for kind, payload in events
+        if kind == "independent_reviewer_review"
+    )
+    reviewer_registrations = reviewer_event["target_run_registrations"]
+    assert reviewer_registrations
+    assert all(
+        state.get_run(registration["target_run_id"]) is not None
+        for registration in reviewer_registrations
+    )
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
@@ -8308,9 +8379,10 @@ async def test_run_dual_agent_workflow_auto_visual_policy_accepts_computer_use_e
     assert result["status"] == "accepted"
     assert result["visual_evidence_policy"]["required"] is True
     assert result["final_gate_result"]["artifact_rigor"]["visual_validation"]["status"] == "ok"
-    assert "docs/dual-agent/workflow-1/screenshots/01-vela-slack-final-state.png" in (
-        result["artifact_export"]["files"]
-    )
+    assert (
+        "docs/dual-agent/workflow-1/release/screenshots/"
+        "01-vela-slack-final-state.png"
+    ) in result["artifact_export"]["files"]
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["user_facing"] == 1
 

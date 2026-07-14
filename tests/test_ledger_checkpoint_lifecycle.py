@@ -317,6 +317,50 @@ def test_terminal_workflow_completion_forces_and_retries_pin_publication(
     assert verification.authoritative_head_verified is True
 
 
+def test_write_event_once_retry_publishes_checkpoint_after_pin_failure(
+    tmp_path,
+):
+    pins = _IndependentTrustedPins(fail_pin_calls=1)
+    state, key, store, _pins = _authoritative_state(
+        tmp_path,
+        interval=1,
+        pins=pins,
+    )
+    kwargs = {
+        "run_id": "idempotent-checkpoint-retry",
+        "source": "test",
+        "kind": "event_msg",
+        "payload": {"value": "durable-before-pin"},
+        "idempotency_key": "event-msg:durable-before-pin",
+        "ts": 240,
+    }
+
+    with pytest.raises(
+        CheckpointPersistenceError,
+        match="trusted_pin_persistence",
+    ):
+        state.write_event_once(**kwargs)
+
+    events_after_failure = state.read_events_since(
+        "idempotent-checkpoint-retry"
+    )
+    assert len(events_after_failure) == 1
+    event_id = events_after_failure[0]["event_id"]
+    assert store.load_latest("idempotent-checkpoint-retry") is not None
+    assert pins.latest("idempotent-checkpoint-retry") is None
+
+    assert state.write_event_once(**kwargs) == event_id
+
+    assert len(
+        state.read_events_since("idempotent-checkpoint-retry")
+    ) == 1
+    latest = pins.latest("idempotent-checkpoint-retry")
+    assert latest is not None
+    assert latest["head_event_id"] == event_id
+    assert latest["event_count"] == 1
+    assert key.sign_calls == 1
+
+
 def test_state_startup_reconciles_commit_before_checkpoint_failure(tmp_path):
     pins = _IndependentTrustedPins(fail_pin_calls=1)
     state, _key, store, _pins = _authoritative_state(

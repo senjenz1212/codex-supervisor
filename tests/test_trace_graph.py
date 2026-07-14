@@ -173,6 +173,19 @@ def _gradebook_revision(
         ),
         supersedes_grade_id=supersedes_grade_id,
     )
+    authority.commit_terminal_grade(
+        grade_id=revision.grade_id,
+        revision_hash=revision.revision_hash,
+        experiment_id="trace-graph-fixture",
+        task_id="trace-task",
+        arm="supervisor",
+        # A regrade may change the verifier result, but it still cites the
+        # same already-frozen terminal run identity.
+        terminal_state="completed",
+        terminal_state_hash=canonical_revision_hash(
+            "trace-terminal-state"
+        ),
+    )
     return authority, revision
 
 
@@ -365,6 +378,36 @@ def test_closure_rejects_closed_graph_bound_to_an_unrelated_workflow():
             and finding.node == nodes[NodeType.DEC].identity
             for finding in result.findings
         )
+
+
+def test_every_decision_must_match_the_requested_workflow_context():
+    graph, nodes = _closed_graph()
+    binding = _binding()
+    graph = _bind_decision(graph, nodes, binding)
+    decoy = _node(NodeType.DEC, "DEC-DECOY-001", 31)
+    graph = TraceGraph(
+        nodes=(*graph.nodes, decoy),
+        edges=(
+            *graph.edges,
+            TraceEdge(
+                decoy.identity,
+                EdgeType.DERIVED_FROM,
+                nodes[NodeType.ANL].identity,
+            ),
+        ),
+        decision_grade_validator=graph.decision_grade_validator,
+    )
+
+    result = graph.validate_closure(
+        now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc),
+        expected_binding=binding,
+    )
+
+    assert any(
+        finding.rule is ClosureRule.DECISION_CONTEXT_MATCHES
+        and finding.node == decoy.identity
+        for finding in result.findings
+    )
 
 
 def test_closure_uses_injected_validator_to_reject_superseded_grade_citation():

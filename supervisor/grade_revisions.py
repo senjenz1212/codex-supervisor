@@ -32,6 +32,9 @@ from .trace_graph import (
 
 GRADE_REVISION_SCHEMA_VERSION = "supervisor-grade-revision/v1"
 GRADE_INVALIDATION_SCHEMA_VERSION = "supervisor-grade-invalidation/v1"
+GRADE_TERMINAL_COMMIT_SCHEMA_VERSION = (
+    "supervisor-grade-terminal-commit/v1"
+)
 DECISION_GRADE_VALIDATION_SCHEMA_VERSION = (
     "supervisor-decision-grade-validation/v1"
 )
@@ -277,6 +280,85 @@ class GradeInvalidation:
                 recorded_at_ms=self.recorded_at_ms,
             ),
             "invalidation_hash": self.invalidation_hash,
+        }
+
+
+@dataclass(frozen=True)
+class GradeTerminalCommit:
+    commit_id: str
+    commit_hash: str
+    grade_id: str
+    grade_revision_hash: str
+    experiment_id: str
+    task_id: str
+    arm: str
+    terminal_state: str
+    terminal_state_hash: str
+    recorded_at_ms: int
+    schema_version: str = GRADE_TERMINAL_COMMIT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "commit_id",
+            _require_text("commit_id", self.commit_id),
+        )
+        object.__setattr__(
+            self,
+            "commit_hash",
+            _require_sha256("commit_hash", self.commit_hash),
+        )
+        object.__setattr__(
+            self,
+            "grade_id",
+            _require_text("grade_id", self.grade_id),
+        )
+        object.__setattr__(
+            self,
+            "grade_revision_hash",
+            _require_sha256(
+                "grade_revision_hash",
+                self.grade_revision_hash,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "experiment_id",
+            _require_text("experiment_id", self.experiment_id),
+        )
+        object.__setattr__(
+            self,
+            "task_id",
+            _require_text("task_id", self.task_id),
+        )
+        object.__setattr__(self, "arm", _require_text("arm", self.arm))
+        if self.terminal_state not in {"completed", "failed"}:
+            raise GradeValidationError(
+                "grade terminal commit must bind completed or failed state"
+            )
+        object.__setattr__(
+            self,
+            "terminal_state_hash",
+            _require_sha256(
+                "terminal_state_hash",
+                self.terminal_state_hash,
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **_grade_terminal_commit_payload(
+                commit_id=self.commit_id,
+                grade_id=self.grade_id,
+                grade_revision_hash=self.grade_revision_hash,
+                experiment_id=self.experiment_id,
+                task_id=self.task_id,
+                arm=self.arm,
+                terminal_state=self.terminal_state,
+                terminal_state_hash=self.terminal_state_hash,
+                recorded_at_ms=self.recorded_at_ms,
+            ),
+            "commit_hash": self.commit_hash,
         }
 
 
@@ -694,6 +776,225 @@ class GradeBook:
             ).fetchall()
         return tuple(_invalidation_from_row(row) for row in rows)
 
+    def commit_terminal_grade(
+        self,
+        *,
+        grade_id: str,
+        revision_hash: str,
+        experiment_id: str,
+        task_id: str,
+        arm: str,
+        terminal_state: str,
+        terminal_state_hash: str,
+    ) -> GradeTerminalCommit:
+        """Authorize one revision from its durable terminal state."""
+        target_id = _require_text("grade_id", grade_id)
+        target_hash = _require_sha256("revision_hash", revision_hash)
+        normalized_experiment_id = _require_text(
+            "experiment_id",
+            experiment_id,
+        )
+        normalized_task_id = _require_text("task_id", task_id)
+        normalized_arm = _require_text("arm", arm)
+        normalized_terminal_state = _require_text(
+            "terminal_state",
+            terminal_state,
+        )
+        if normalized_terminal_state not in {"completed", "failed"}:
+            raise GradeValidationError(
+                "grade terminal commit must bind completed or failed state"
+            )
+        normalized_terminal_hash = _require_sha256(
+            "terminal_state_hash",
+            terminal_state_hash,
+        )
+        recorded_at_ms = int(time.time_ns() // 1_000_000)
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    "SELECT * FROM grade_revisions WHERE grade_id=?",
+                    (target_id,),
+                ).fetchone()
+                if row is None:
+                    raise GradeNotFoundError(
+                        f"cannot commit unknown grade: {target_id}"
+                    )
+                revision = _revision_from_row(row)
+                if revision.revision_hash != target_hash:
+                    raise GradeValidationError(
+                        "terminal commit does not pin the stored grade revision"
+                    )
+                if revision.passed and normalized_terminal_state != "completed":
+                    raise GradeValidationError(
+                        "passing grade terminal commit must bind completed state"
+                    )
+                expected_lineage_identity = (
+                    normalized_experiment_id,
+                    normalized_task_id,
+                    normalized_arm,
+                    normalized_terminal_state,
+                    normalized_terminal_hash,
+                )
+                lineage_rows = self._conn.execute(
+                    """
+                    SELECT grade_terminal_commits.*
+                    FROM grade_terminal_commits
+                    JOIN grade_revisions
+                      ON grade_revisions.grade_id
+                       = grade_terminal_commits.grade_id
+                    WHERE grade_revisions.run_id=?
+                      AND grade_revisions.run_envelope_hash=?
+                      AND grade_revisions.frozen_result_hash=?
+                      AND grade_terminal_commits.grade_id<>?
+                    """,
+                    (
+                        revision.run_envelope.run_id,
+                        revision.run_envelope.run_envelope_hash,
+                        revision.run_envelope.frozen_result_hash,
+                        target_id,
+                    ),
+                ).fetchall()
+                for lineage_row in lineage_rows:
+                    lineage_commit = _terminal_commit_from_row(lineage_row)
+                    lineage_identity = (
+                        lineage_commit.experiment_id,
+                        lineage_commit.task_id,
+                        lineage_commit.arm,
+                        lineage_commit.terminal_state,
+                        lineage_commit.terminal_state_hash,
+                    )
+                    if lineage_identity != expected_lineage_identity:
+                        raise GradeValidationError(
+                            "grade supersession terminal identity discrepancy"
+                        )
+                existing = self._conn.execute(
+                    """
+                    SELECT * FROM grade_terminal_commits
+                    WHERE grade_id=?
+                    """,
+                    (target_id,),
+                ).fetchone()
+                if existing is not None:
+                    commit = _terminal_commit_from_row(existing)
+                    expected = (
+                        target_hash,
+                        normalized_experiment_id,
+                        normalized_task_id,
+                        normalized_arm,
+                        normalized_terminal_state,
+                        normalized_terminal_hash,
+                    )
+                    actual = (
+                        commit.grade_revision_hash,
+                        commit.experiment_id,
+                        commit.task_id,
+                        commit.arm,
+                        commit.terminal_state,
+                        commit.terminal_state_hash,
+                    )
+                    if actual != expected:
+                        raise GradeValidationError(
+                            "persisted grade terminal commit discrepancy"
+                        )
+                    self._conn.execute("COMMIT")
+                    return commit
+                commit_id = f"terminal_commit_{uuid.uuid4().hex}"
+                payload = _grade_terminal_commit_payload(
+                    commit_id=commit_id,
+                    grade_id=target_id,
+                    grade_revision_hash=target_hash,
+                    experiment_id=normalized_experiment_id,
+                    task_id=normalized_task_id,
+                    arm=normalized_arm,
+                    terminal_state=normalized_terminal_state,
+                    terminal_state_hash=normalized_terminal_hash,
+                    recorded_at_ms=recorded_at_ms,
+                )
+                commit_hash = _sha256_json(payload)
+                self._conn.execute(
+                    """
+                    INSERT INTO grade_terminal_commits(
+                      commit_id, commit_hash,
+                      grade_id, grade_revision_hash,
+                      experiment_id, task_id, arm,
+                      terminal_state, terminal_state_hash,
+                      recorded_at_ms
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        commit_id,
+                        commit_hash,
+                        target_id,
+                        target_hash,
+                        normalized_experiment_id,
+                        normalized_task_id,
+                        normalized_arm,
+                        normalized_terminal_state,
+                        normalized_terminal_hash,
+                        recorded_at_ms,
+                    ),
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+        commit = self.get_terminal_commit(target_id)
+        if commit is None:
+            raise GradeIntegrityError(
+                f"grade terminal commit disappeared for {target_id}"
+            )
+        return commit
+
+    def get_terminal_commit(
+        self,
+        grade_id: str,
+    ) -> GradeTerminalCommit | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT * FROM grade_terminal_commits
+                WHERE grade_id=?
+                """,
+                (_require_text("grade_id", grade_id),),
+            ).fetchone()
+        return None if row is None else _terminal_commit_from_row(row)
+
+    def list_uncommitted_passing_revisions(
+        self,
+    ) -> tuple[GradeRevision, ...]:
+        """Return passing revisions that lack positive terminal authority."""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT grade_revisions.*
+                FROM grade_revisions
+                LEFT JOIN grade_terminal_commits
+                  ON grade_terminal_commits.grade_id
+                   = grade_revisions.grade_id
+                WHERE grade_revisions.passed = 1
+                  AND grade_terminal_commits.grade_id IS NULL
+                ORDER BY grade_revisions.recorded_at_ms, grade_revisions.grade_id
+                """
+            ).fetchall()
+        return tuple(_revision_from_row(row) for row in rows)
+
+    def list_uncommitted_revisions(self) -> tuple[GradeRevision, ...]:
+        """Return every revision that lacks positive terminal authority."""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT grade_revisions.*
+                FROM grade_revisions
+                LEFT JOIN grade_terminal_commits
+                  ON grade_terminal_commits.grade_id
+                   = grade_revisions.grade_id
+                WHERE grade_terminal_commits.grade_id IS NULL
+                ORDER BY grade_revisions.recorded_at_ms, grade_revisions.grade_id
+                """
+            ).fetchall()
+        return tuple(_revision_from_row(row) for row in rows)
+
     def to_trace_graph(
         self,
         run: RunEnvelopeRef,
@@ -723,6 +1024,32 @@ class GradeBook:
         reason: str,
     ) -> GradeInvalidation:
         """Append a non-supersession invalidation without altering the grade."""
+        return self._append_standalone_invalidation(
+            grade_id,
+            kind="invalidated",
+            reason=reason,
+        )
+
+    def quarantine_grade(
+        self,
+        grade_id: str,
+        *,
+        reason: str,
+    ) -> GradeInvalidation:
+        """Durably quarantine a revision after compensation fails."""
+        return self._append_standalone_invalidation(
+            grade_id,
+            kind="quarantined",
+            reason=reason,
+        )
+
+    def _append_standalone_invalidation(
+        self,
+        grade_id: str,
+        *,
+        kind: str,
+        reason: str,
+    ) -> GradeInvalidation:
         target_id = _require_text("grade_id", grade_id)
         invalidation_reason = _require_text("reason", reason)
         recorded_at_ms = int(time.time_ns() // 1_000_000)
@@ -744,7 +1071,7 @@ class GradeBook:
                 invalidation = self._insert_invalidation(
                     grade_id=target_id,
                     grade_revision_hash=str(target["revision_hash"]),
-                    kind="invalidated",
+                    kind=_require_text("kind", kind),
                     reason=invalidation_reason,
                     replacement_grade_id=None,
                     replacement_revision_hash=None,
@@ -815,6 +1142,12 @@ class GradeBook:
                         detail="a scored grade must pin verifier provenance",
                     )
                 )
+            terminal_blocker = self._terminal_commit_blocker(
+                revision
+            )
+            if terminal_blocker is not None:
+                blockers.append(terminal_blocker)
+                continue
 
             try:
                 invalidations = self.list_invalidations(citation.grade_id)
@@ -956,10 +1289,48 @@ class GradeBook:
                         ),
                     )
                 )
+                continue
+            resolution_terminal_blocker = (
+                self._terminal_commit_blocker(resolution)
+            )
+            if resolution_terminal_blocker is not None:
+                blockers.append(resolution_terminal_blocker)
         return DecisionGradeValidation(
             accepted=not blockers,
             blockers=tuple(blockers),
         )
+
+    def _terminal_commit_blocker(
+        self,
+        revision: GradeRevision,
+    ) -> DecisionGradeBlocker | None:
+        try:
+            commit = self.get_terminal_commit(revision.grade_id)
+        except (GradeIntegrityError, GradeValidationError) as exc:
+            return DecisionGradeBlocker(
+                code="grade_terminal_commit_integrity_failure",
+                grade_id=revision.grade_id,
+                detail=str(exc),
+            )
+        if commit is None:
+            return DecisionGradeBlocker(
+                code="grade_terminal_commit_missing",
+                grade_id=revision.grade_id,
+                detail="grade lacks a durable terminal commit",
+            )
+        if commit.grade_revision_hash != revision.revision_hash:
+            return DecisionGradeBlocker(
+                code="grade_terminal_commit_revision_mismatch",
+                grade_id=revision.grade_id,
+                detail="terminal commit does not pin the grade revision",
+            )
+        if revision.passed and commit.terminal_state != "completed":
+            return DecisionGradeBlocker(
+                code="grade_terminal_commit_state_mismatch",
+                grade_id=revision.grade_id,
+                detail="passing grade terminal commit is not completed",
+            )
+        return None
 
     def record_decision(
         self,
@@ -1179,6 +1550,7 @@ class GradeBook:
 
     def _initialise_schema(self) -> None:
         with self._lock:
+            self._upgrade_grade_terminal_commit_schema()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS grade_revisions (
@@ -1220,6 +1592,22 @@ class GradeBook:
                   reason TEXT NOT NULL CHECK(length(reason) > 0),
                   replacement_grade_id TEXT REFERENCES grade_revisions(grade_id),
                   replacement_revision_hash TEXT,
+                  recorded_at_ms INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS grade_terminal_commits (
+                  commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                  commit_id TEXT NOT NULL UNIQUE,
+                  commit_hash TEXT NOT NULL UNIQUE,
+                  grade_id TEXT NOT NULL UNIQUE
+                    REFERENCES grade_revisions(grade_id),
+                  grade_revision_hash TEXT NOT NULL,
+                  experiment_id TEXT NOT NULL,
+                  task_id TEXT NOT NULL,
+                  arm TEXT NOT NULL,
+                  terminal_state TEXT NOT NULL
+                    CHECK(terminal_state IN ('completed', 'failed')),
+                  terminal_state_hash TEXT NOT NULL,
                   recorded_at_ms INTEGER NOT NULL
                 );
 
@@ -1308,6 +1696,72 @@ class GradeBook:
                   SELECT RAISE(ABORT, 'grade invalidations are immutable');
                 END;
 
+                CREATE TRIGGER IF NOT EXISTS grade_terminal_commits_no_replace
+                BEFORE INSERT ON grade_terminal_commits
+                WHEN EXISTS (
+                  SELECT 1
+                    FROM grade_terminal_commits
+                   WHERE commit_id = NEW.commit_id
+                      OR commit_hash = NEW.commit_hash
+                      OR grade_id = NEW.grade_id
+                )
+                BEGIN
+                  SELECT RAISE(
+                    ABORT,
+                    'grade terminal commits are immutable'
+                  );
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS
+                  grade_terminal_commits_lineage_identity
+                BEFORE INSERT ON grade_terminal_commits
+                WHEN EXISTS (
+                  SELECT 1
+                    FROM grade_terminal_commits AS existing_commit
+                    JOIN grade_revisions AS existing_revision
+                      ON existing_revision.grade_id
+                       = existing_commit.grade_id
+                    JOIN grade_revisions AS new_revision
+                      ON new_revision.grade_id = NEW.grade_id
+                   WHERE existing_revision.run_id = new_revision.run_id
+                     AND existing_revision.run_envelope_hash
+                         = new_revision.run_envelope_hash
+                     AND existing_revision.frozen_result_hash
+                         = new_revision.frozen_result_hash
+                     AND (
+                          existing_commit.experiment_id != NEW.experiment_id
+                       OR existing_commit.task_id != NEW.task_id
+                       OR existing_commit.arm != NEW.arm
+                       OR existing_commit.terminal_state != NEW.terminal_state
+                       OR existing_commit.terminal_state_hash
+                          != NEW.terminal_state_hash
+                     )
+                )
+                BEGIN
+                  SELECT RAISE(
+                    ABORT,
+                    'grade supersession terminal identity discrepancy'
+                  );
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS grade_terminal_commits_no_update
+                BEFORE UPDATE ON grade_terminal_commits
+                BEGIN
+                  SELECT RAISE(
+                    ABORT,
+                    'grade terminal commits are immutable'
+                  );
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS grade_terminal_commits_no_delete
+                BEFORE DELETE ON grade_terminal_commits
+                BEGIN
+                  SELECT RAISE(
+                    ABORT,
+                    'grade terminal commits are immutable'
+                  );
+                END;
+
                 CREATE TRIGGER IF NOT EXISTS grade_decisions_no_update
                 BEFORE UPDATE ON grade_decisions
                 BEGIN
@@ -1321,6 +1775,138 @@ class GradeBook:
                 END;
                 """
             )
+            self._validate_terminal_commit_lineages()
+
+    def _validate_terminal_commit_lineages(self) -> None:
+        rows = self._conn.execute(
+            """
+            SELECT grade_terminal_commits.*,
+                   grade_revisions.run_id,
+                   grade_revisions.run_envelope_hash,
+                   grade_revisions.frozen_result_hash
+            FROM grade_terminal_commits
+            JOIN grade_revisions
+              ON grade_revisions.grade_id
+               = grade_terminal_commits.grade_id
+            ORDER BY grade_terminal_commits.commit_sequence
+            """
+        ).fetchall()
+        identities: dict[
+            tuple[str, str, str],
+            tuple[str, str, str, str, str],
+        ] = {}
+        for row in rows:
+            commit = _terminal_commit_from_row(row)
+            lineage = (
+                str(row["run_id"]),
+                str(row["run_envelope_hash"]),
+                str(row["frozen_result_hash"]),
+            )
+            identity = (
+                commit.experiment_id,
+                commit.task_id,
+                commit.arm,
+                commit.terminal_state,
+                commit.terminal_state_hash,
+            )
+            existing = identities.setdefault(lineage, identity)
+            if existing != identity:
+                raise GradeIntegrityError(
+                    "grade supersession terminal identity discrepancy "
+                    "in persisted lineage"
+                )
+
+    def _upgrade_grade_terminal_commit_schema(self) -> None:
+        table = self._conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type='table' AND name='grade_terminal_commits'
+            """
+        ).fetchone()
+        if table is None:
+            return
+        table_sql = str(table["sql"] or "").casefold()
+        terminal_hash_is_unique = False
+        for index in self._conn.execute(
+            "PRAGMA index_list('grade_terminal_commits')"
+        ).fetchall():
+            if not bool(index["unique"]):
+                continue
+            index_name = str(index["name"]).replace('"', '""')
+            columns = self._conn.execute(
+                f'PRAGMA index_info("{index_name}")'
+            ).fetchall()
+            if [str(column["name"]) for column in columns] == [
+                "terminal_state_hash"
+            ]:
+                terminal_hash_is_unique = True
+                break
+        if "'failed'" in table_sql and not terminal_hash_is_unique:
+            return
+
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for trigger_name in (
+                "grade_terminal_commits_no_replace",
+                "grade_terminal_commits_lineage_identity",
+                "grade_terminal_commits_no_update",
+                "grade_terminal_commits_no_delete",
+            ):
+                self._conn.execute(
+                    f'DROP TRIGGER IF EXISTS "{trigger_name}"'
+                )
+            self._conn.execute(
+                """
+                ALTER TABLE grade_terminal_commits
+                RENAME TO grade_terminal_commits_legacy
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE grade_terminal_commits (
+                  commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                  commit_id TEXT NOT NULL UNIQUE,
+                  commit_hash TEXT NOT NULL UNIQUE,
+                  grade_id TEXT NOT NULL UNIQUE
+                    REFERENCES grade_revisions(grade_id),
+                  grade_revision_hash TEXT NOT NULL,
+                  experiment_id TEXT NOT NULL,
+                  task_id TEXT NOT NULL,
+                  arm TEXT NOT NULL,
+                  terminal_state TEXT NOT NULL
+                    CHECK(terminal_state IN ('completed', 'failed')),
+                  terminal_state_hash TEXT NOT NULL,
+                  recorded_at_ms INTEGER NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                INSERT INTO grade_terminal_commits(
+                  commit_sequence, commit_id, commit_hash,
+                  grade_id, grade_revision_hash,
+                  experiment_id, task_id, arm,
+                  terminal_state, terminal_state_hash,
+                  recorded_at_ms
+                )
+                SELECT
+                  commit_sequence, commit_id, commit_hash,
+                  grade_id, grade_revision_hash,
+                  experiment_id, task_id, arm,
+                  terminal_state, terminal_state_hash,
+                  recorded_at_ms
+                FROM grade_terminal_commits_legacy
+                """
+            )
+            self._conn.execute(
+                "DROP TABLE grade_terminal_commits_legacy"
+            )
+            self._validate_terminal_commit_lineages()
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
 
 
 def project_gradebook_to_trace(
@@ -1584,6 +2170,39 @@ def _invalidation_from_row(row: sqlite3.Row) -> GradeInvalidation:
     return invalidation
 
 
+def _terminal_commit_from_row(row: sqlite3.Row) -> GradeTerminalCommit:
+    commit = GradeTerminalCommit(
+        commit_id=str(row["commit_id"]),
+        commit_hash=str(row["commit_hash"]),
+        grade_id=str(row["grade_id"]),
+        grade_revision_hash=str(row["grade_revision_hash"]),
+        experiment_id=str(row["experiment_id"]),
+        task_id=str(row["task_id"]),
+        arm=str(row["arm"]),
+        terminal_state=str(row["terminal_state"]),
+        terminal_state_hash=str(row["terminal_state_hash"]),
+        recorded_at_ms=int(row["recorded_at_ms"]),
+    )
+    expected_hash = _sha256_json(
+        _grade_terminal_commit_payload(
+            commit_id=commit.commit_id,
+            grade_id=commit.grade_id,
+            grade_revision_hash=commit.grade_revision_hash,
+            experiment_id=commit.experiment_id,
+            task_id=commit.task_id,
+            arm=commit.arm,
+            terminal_state=commit.terminal_state,
+            terminal_state_hash=commit.terminal_state_hash,
+            recorded_at_ms=commit.recorded_at_ms,
+        )
+    )
+    if expected_hash != commit.commit_hash:
+        raise GradeIntegrityError(
+            f"grade terminal commit hash mismatch for {commit.commit_id}"
+        )
+    return commit
+
+
 def _decision_from_row(row: sqlite3.Row) -> GradeDecisionRecord:
     try:
         decision = json.loads(str(row["decision_json"]))
@@ -1689,6 +2308,32 @@ def _grade_invalidation_payload(
         "reason": reason,
         "replacement_grade_id": replacement_grade_id,
         "replacement_revision_hash": replacement_revision_hash,
+        "recorded_at_ms": int(recorded_at_ms),
+    }
+
+
+def _grade_terminal_commit_payload(
+    *,
+    commit_id: str,
+    grade_id: str,
+    grade_revision_hash: str,
+    experiment_id: str,
+    task_id: str,
+    arm: str,
+    terminal_state: str,
+    terminal_state_hash: str,
+    recorded_at_ms: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": GRADE_TERMINAL_COMMIT_SCHEMA_VERSION,
+        "commit_id": commit_id,
+        "grade_id": grade_id,
+        "grade_revision_hash": grade_revision_hash,
+        "experiment_id": experiment_id,
+        "task_id": task_id,
+        "arm": arm,
+        "terminal_state": terminal_state,
+        "terminal_state_hash": terminal_state_hash,
         "recorded_at_ms": int(recorded_at_ms),
     }
 

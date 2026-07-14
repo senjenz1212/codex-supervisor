@@ -6,6 +6,7 @@ import contextlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections import defaultdict
@@ -1001,33 +1002,100 @@ def _materialized_recorded_checkout(
     finally:
         cleanup_error: RecordedCheckoutError | None = None
         if added:
-            removal = runner(
-                ["git", "worktree", "remove", "--force", str(checkout)],
-                cwd=str(repo),
-                capture_output=True,
-                text=True,
-            )
-            if removal.returncode != 0:
-                shutil.rmtree(temp_parent, ignore_errors=True)
-                prune = runner(
-                    ["git", "worktree", "prune"],
+            removal = None
+            removal_error = ""
+            try:
+                removal = runner(
+                    [
+                        "git",
+                        "worktree",
+                        "remove",
+                        "--force",
+                        str(checkout),
+                    ],
                     cwd=str(repo),
                     capture_output=True,
                     text=True,
                 )
-                if prune.returncode != 0:
+            except Exception as exc:
+                removal_error = f"{type(exc).__name__}: {exc}"
+            if removal_error or (
+                removal is not None and removal.returncode != 0
+            ):
+                rmtree_error = ""
+                try:
+                    shutil.rmtree(temp_parent)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    rmtree_error = f"{type(exc).__name__}: {exc}"
+                prune = None
+                prune_error = ""
+                try:
+                    prune = runner(
+                        ["git", "worktree", "prune"],
+                        cwd=str(repo),
+                        capture_output=True,
+                        text=True,
+                    )
+                except Exception as exc:
+                    prune_error = f"{type(exc).__name__}: {exc}"
+                if (
+                    removal_error
+                    or prune_error
+                    or (prune is not None and prune.returncode != 0)
+                    or checkout.exists()
+                    or rmtree_error
+                ):
                     cleanup_error = RecordedCheckoutError(
                         "recorded_checkout_cleanup_failed",
                         details={
                             "repo": str(repo),
                             "checkout": str(checkout),
-                            "remove_stderr": removal.stderr.strip(),
-                            "prune_stderr": prune.stderr.strip(),
+                            "remove_stderr": (
+                                ""
+                                if removal is None
+                                else removal.stderr.strip()
+                            ),
+                            "remove_error": removal_error,
+                            "prune_stderr": (
+                                ""
+                                if prune is None
+                                else prune.stderr.strip()
+                            ),
+                            "prune_error": prune_error,
+                            "rmtree_error": rmtree_error,
+                            "checkout_still_exists": checkout.exists(),
                         },
                     )
-        shutil.rmtree(temp_parent, ignore_errors=True)
+        try:
+            shutil.rmtree(temp_parent)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            cleanup_error = cleanup_error or RecordedCheckoutError(
+                "recorded_checkout_cleanup_failed",
+                details={
+                    "repo": str(repo),
+                    "checkout": str(checkout),
+                    "rmtree_error": f"{type(exc).__name__}: {exc}",
+                    "checkout_still_exists": checkout.exists(),
+                },
+            )
         if cleanup_error is not None:
-            raise cleanup_error
+            active_exception = sys.exc_info()[1]
+            if active_exception is not None:
+                add_note = getattr(active_exception, "add_note", None)
+                if callable(add_note):
+                    add_note(str(cleanup_error))
+                else:
+                    setattr(
+                        active_exception,
+                        "supervisor_cleanup_error",
+                        str(cleanup_error),
+                    )
+            else:
+                raise cleanup_error
 
 
 def _apply_immutable_snapshot(
@@ -1123,6 +1191,17 @@ def _apply_snapshot_entry(checkout: Path, entry: dict[str, Any]) -> None:
         raise RecordedCheckoutError(
             "recorded_snapshot_entry_kind_unknown",
             details={"path": relative.as_posix(), "kind": kind},
+        )
+    if entry.get("content_omitted"):
+        raise RecordedCheckoutError(
+            "recorded_snapshot_content_omitted",
+            details={
+                "path": relative.as_posix(),
+                "reason": str(entry.get("content_omitted") or ""),
+                "content_limit_bytes": entry.get("content_limit_bytes"),
+                "size": entry.get("size"),
+                "sha256": entry.get("sha256"),
+            },
         )
     try:
         data = base64.b64decode(

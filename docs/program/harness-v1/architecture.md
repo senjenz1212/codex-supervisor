@@ -33,6 +33,17 @@ Levels are cumulative. The implementation evaluates predicates in order and
 returns immediately at the first missing or malformed level. A bundle without
 L0 evidence has no authorized claim level.
 
+### L3: preregistered assignment authority
+
+The powered B-vs-C design commits the assignment-key hash, assignment
+protocol version, exact experiment-spec hash, distinct A/B/C treatment hashes,
+and a canonical task-to-stratum manifest hash before execution. ClaimGate
+recomputes every assignment from the revealed key and rejects a document whose
+version, spec, treatment, roster, stratum, position, or HMAC-derived order
+differs from those commitments. Rewriting all assignments self-consistently
+after results exist is therefore insufficient: the rewritten protocol no
+longer matches the preregistered powered design.
+
 ### L4: semantic replication
 
 Portability requires a
@@ -106,10 +117,13 @@ rules so installed runtime packages do not depend on a repository-relative
 documentation path. Focused tests compare the YAML registry and runtime rules
 to prevent drift.
 
-Unknown entries in a governed report `claims` list fail closed. Ordinary
-diagnostic prose is scanned only for the registered regular-expression
-patterns. This is a narrow claim guard, not a semantic paraphrase classifier;
-unmatched prose is not silently promoted into a registered claim.
+Governed `claims` entries and explicit claim-bearing fields such as
+`claim_text`, `outcome_claim`, and `roi_claim` accept registered claim IDs
+only. Display text comes from the registry's canonical text, so a producer
+cannot attach stronger prose to a weaker ID. Ordinary diagnostic prose is
+still scanned for registered regular-expression tripwires, but remains
+untrusted narrative rather than claim authority; it is not a semantic
+paraphrase classifier and must never be rendered as an authorized claim.
 
 ## Trust Boundaries
 
@@ -122,5 +136,11 @@ unmatched prose is not silently promoted into a registered claim.
   operationally separate from ClaimGate.
 - Timestamps and identities are validated inside pinned receipts; stronger
   non-repudiation still depends on the evidence ledger and external anchors.
+- Each event-hash schema resolves to exactly one frozen redaction ruleset.
+  Historical verification never accepts a payload merely because any newer or
+  older known redactor leaves it unchanged.
+- If terminal persistence fails after a passing grade is appended, the
+  passing revision is replaced, invalidated, or emergency-quarantined before
+  it can authorize a decision.
 - Later TRACE, LEDGER, and GRADE slices make evidence lineage immutable and
   queryable; PROGRAM-001 establishes the claim semantics they enforce.

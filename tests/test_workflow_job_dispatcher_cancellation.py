@@ -1267,3 +1267,140 @@ def test_process_identity_access_denied_fails_closed_without_signalling(
     assert result["status"] == "worker_identity_probe_failed"
     assert result["safe_to_finalize"] is False
     assert signalled == []
+
+
+def test_scan_fails_closed_for_unreadable_reparented_child_outside_root_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    class UnreadableDetachedChild:
+        pid = 50003
+        info = {
+            "pid": 50003,
+            "ppid": 1,
+            "username": "test-user",
+            "create_time": 200.0,
+        }
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda *_args, **_kwargs: CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableDetachedChild()],
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "same_process",
+        lambda _identity: False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpid",
+        lambda: 99999,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda pid: (
+            70004
+            if int(pid) == 50003
+            else (_ for _ in ()).throw(ProcessLookupError())
+        ),
+    )
+
+    snapshot = process_containment_module.scan_containment(
+        "containment-root-exited",
+        root_identity=process_containment_module.ProcessIdentity(
+            pid=41003,
+            started_at=100.0,
+        ),
+    )
+
+    assert snapshot.processes == ()
+    assert snapshot.scan_complete is False
+    assert snapshot.errors == ("access_denied:50003",)
+
+
+def test_terminate_never_certifies_unreadable_reparented_child_outside_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    class UnreadableDetachedChild:
+        pid = 50004
+        info = {
+            "pid": 50004,
+            "ppid": 1,
+            "username": "test-user",
+            "create_time": 200.0,
+        }
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda *_args, **_kwargs: CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableDetachedChild()],
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "same_process",
+        lambda _identity: False,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda _pid: None,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpid",
+        lambda: 99999,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda pid: (
+            70005
+            if int(pid) == 50004
+            else (_ for _ in ()).throw(ProcessLookupError())
+        ),
+    )
+
+    result = terminate_containment(
+        root_pid=41004,
+        expected_root_started_at=100.0,
+        expected_process_group_id=70004,
+        containment_id="containment-detached-unreadable",
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["scan_errors"] == ["access_denied:50004"]

@@ -12,10 +12,14 @@ import sqlalchemy as sa
 from alembic import op
 
 from supervisor.evidence_ledger import (
+    EVENT_HASH_SCHEMA_VERSION,
     GENESIS_KINDS,
     LEGACY_IMPORT_GENESIS,
     build_ledger_fields,
+    event_hash_schema_transition_allowed,
     prepare_event_payload,
+    strict_json_object_loads,
+    supported_event_hash_schema_versions,
 )
 from supervisor.quality_projection import (
     QUALITY_TREND_PROJECTION_EVENT,
@@ -28,6 +32,46 @@ revision = "20260712_0001"
 down_revision = "20260610_0004"
 branch_labels = None
 depends_on = None
+
+
+def _ledger_fields_for_existing_event(
+    *,
+    run_id: str,
+    event_sequence: int,
+    ts: int,
+    source: str,
+    kind: str,
+    payload: dict[str, object],
+    previous_event_hash: str | None,
+    genesis_kind: str | None,
+    observed_event_hash: str | None,
+):
+    def build_for_schema(schema_version: str):
+        return build_ledger_fields(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=ts,
+            source=source,
+            kind=kind,
+            payload=payload,
+            previous_event_hash=previous_event_hash,
+            ledger_genesis_kind=genesis_kind,
+            event_hash_schema_version=schema_version,
+        )
+
+    if observed_event_hash is not None:
+        matches = [
+            (schema_version, fields)
+            for schema_version in supported_event_hash_schema_versions()
+            for fields in (build_for_schema(schema_version),)
+            if fields.event_hash == observed_event_hash
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return (
+        EVENT_HASH_SCHEMA_VERSION,
+        build_for_schema(EVENT_HASH_SCHEMA_VERSION),
+    )
 
 
 def upgrade() -> None:
@@ -243,6 +287,7 @@ def upgrade() -> None:
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None
+    previous_event_hash_schema_version: str | None = None
     first_genesis = LEGACY_IMPORT_GENESIS
     for row in rows:
         run_id = str(row["run_id"])
@@ -250,6 +295,7 @@ def upgrade() -> None:
             current_run_id = run_id
             event_sequence = 0
             previous_event_hash = None
+            previous_event_hash_schema_version = None
             observed_genesis = row["ledger_genesis_kind"]
             first_genesis = (
                 str(observed_genesis)
@@ -259,17 +305,60 @@ def upgrade() -> None:
         event_sequence += 1
         payload = row["payload_json"]
         if isinstance(payload, str):
-            payload = json.loads(payload)
+            try:
+                payload = strict_json_object_loads(payload)
+            except (TypeError, ValueError, UnicodeDecodeError) as exc:
+                raise RuntimeError(
+                    "event payload is invalid or ambiguous JSON during "
+                    "ledger migration: "
+                    f"run_id={run_id} event_id={row['event_id']}: {exc}"
+                ) from exc
         if not isinstance(payload, dict):
             raise RuntimeError(
                 "event payload must be an object during ledger migration: "
                 f"run_id={run_id} event_id={row['event_id']}"
+            )
+        genesis_kind = (
+            first_genesis if event_sequence == 1 else None
+        )
+        observed_event_hash = (
+            str(row["event_hash"])
+            if row["event_hash"] is not None
+            else None
+        )
+        event_hash_schema_version, fields = (
+            _ledger_fields_for_existing_event(
+                run_id=run_id,
+                event_sequence=event_sequence,
+                ts=int(row["ts"]),
+                source=str(row["source"]),
+                kind=str(row["kind"]),
+                payload=payload,
+                previous_event_hash=previous_event_hash,
+                genesis_kind=genesis_kind,
+                observed_event_hash=observed_event_hash,
+            )
+        )
+        if (
+            previous_event_hash_schema_version is not None
+            and not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
+            )
+        ):
+            raise RuntimeError(
+                "pre-populated event ledger has a disallowed event-hash "
+                "schema transition: "
+                f"run_id={run_id} event_id={row['event_id']} "
+                f"{previous_event_hash_schema_version} -> "
+                f"{event_hash_schema_version}"
             )
         normalized_payload = prepare_event_payload(
             run_id=run_id,
             source=str(row["source"]),
             kind=str(row["kind"]),
             payload=payload,
+            event_hash_schema_version=event_hash_schema_version,
         )
         if normalized_payload != payload:
             raise RuntimeError(
@@ -277,18 +366,6 @@ def upgrade() -> None:
                 "normalization; refusing to rewrite historical evidence: "
                 f"run_id={run_id} event_id={row['event_id']}"
             )
-        fields = build_ledger_fields(
-            run_id=run_id,
-            event_sequence=event_sequence,
-            ts=int(row["ts"]),
-            source=str(row["source"]),
-            kind=str(row["kind"]),
-            payload=payload,
-            previous_event_hash=previous_event_hash,
-            ledger_genesis_kind=(
-                first_genesis if event_sequence == 1 else None
-            ),
-        )
         expected_metadata = {
             "event_sequence": fields.event_sequence,
             "previous_event_hash": fields.previous_event_hash,
@@ -333,6 +410,7 @@ def upgrade() -> None:
             },
         )
         previous_event_hash = fields.event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
 
     _backfill_quality_projection_evidence(bind)
 
@@ -589,7 +667,12 @@ def _backfill_quality_projection_evidence(bind: sa.engine.Connection) -> None:
                 "computed_at": int(row["computed_at"] or 0),
             }
         )
-        payload = quality_trend_projection_event_payload(projection_row)
+        payload = prepare_event_payload(
+            run_id=projection_row["run_id"],
+            source="schema_migration",
+            kind=QUALITY_TREND_PROJECTION_EVENT,
+            payload=quality_trend_projection_event_payload(projection_row),
+        )
         payload_json = json.dumps(
             payload,
             sort_keys=True,

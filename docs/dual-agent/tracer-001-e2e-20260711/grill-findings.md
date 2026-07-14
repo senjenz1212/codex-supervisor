@@ -8,7 +8,7 @@ This is a retrospective integration trace, not a synthetic skill receipt.
    schema.
 3. **Accepted:** ledger, grade, trace, and ClaimGate checks are part of the same
    thread rather than separate demos.
-4. **Accepted:** two fixture tasks cannot support a causal claim; the gate must
-   cap the evidence at L2.
+4. **Corrected:** two same-principal fixture tasks support only L1 process
+   evidence; the gate must reject L2 and L3.
 5. **Residual gap:** hermetic transports and callback verifiers are not live
    provider, Unity, or SWE-bench evidence.

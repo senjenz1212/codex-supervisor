@@ -52,11 +52,16 @@ from .evidence_ledger import (
     sha256_hex,
     verify_event_chain,
 )
+from .claim_gate import ClaimGate, ClaimGateError
+from .experiment_kernel import GradeRevisionRef, SqliteExperimentStore
 from .grade_revisions import (
     DecisionGradeCitation,
     GradeBook,
+    GradeIntegrityError,
     GradeInvalidation,
+    GradeNotFoundError,
     GradeRevision,
+    GradeTerminalCommit,
     GradeValidationError,
     RunEnvelopeRef,
 )
@@ -75,6 +80,7 @@ from .trace_graph import (
     EdgeType,
     NodeType,
     TraceGraph,
+    TraceGraphError,
     TraceGraphStore,
     TraceIdentity,
     TraceNode,
@@ -171,6 +177,23 @@ class EvidenceGradeHistory:
     run: RunEnvelopeRef
     revisions: tuple[GradeRevision, ...]
     invalidations: tuple[GradeInvalidation, ...]
+    terminal_commits: tuple[GradeTerminalCommit, ...] = ()
+    source_terminal_commits: tuple[GradeTerminalCommit, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "execution_id", str(self.execution_id))
+        object.__setattr__(self, "revisions", tuple(self.revisions))
+        object.__setattr__(self, "invalidations", tuple(self.invalidations))
+        object.__setattr__(
+            self,
+            "terminal_commits",
+            tuple(self.terminal_commits),
+        )
+        object.__setattr__(
+            self,
+            "source_terminal_commits",
+            tuple(self.source_terminal_commits),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,6 +202,13 @@ class EvidenceGradeHistory:
             "revisions": [revision.to_dict() for revision in self.revisions],
             "invalidations": [
                 invalidation.to_dict() for invalidation in self.invalidations
+            ],
+            "terminal_commits": [
+                commit.to_dict() for commit in self.terminal_commits
+            ],
+            "source_terminal_commits": [
+                commit.to_dict()
+                for commit in self.source_terminal_commits
             ],
         }
 
@@ -219,6 +249,11 @@ class EvidenceCommitRequest:
             ],
             "trace_graph_sha256": sha256_hex(
                 self.trace_graph.canonical_bytes()
+            ),
+            "trace_expected_binding": (
+                None
+                if self.trace_graph.expected_binding is None
+                else self.trace_graph.expected_binding.to_dict()
             ),
             "promotion": self.promotion.to_dict(),
             "closure_time": self.closure_time.isoformat(),
@@ -638,10 +673,23 @@ class EvidenceCommitter:
             row["result_json"],
             field="result_json",
         )
-        graph = request.trace_graph
+        histories = self._verify_grade_histories(request)
+        try:
+            with TraceGraphStore(self.trace_store_path) as store:
+                graph = store.load()
+        except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "completed evidence persisted trace graph is unreadable"
+            ) from exc
+        if graph.canonical_bytes() != request.trace_graph.canonical_bytes():
+            raise EvidenceCommitIntegrityError(
+                "completed evidence persisted trace graph differs from "
+                "the immutable request"
+            )
         with GradeBook(self.gradebook_path) as gradebook:
             closure = graph.validate_closure(
                 now=request.closure_time,
+                expected_binding=request.trace_graph.expected_binding,
                 decision_grade_validator=gradebook,
             )
         if not closure.ok:
@@ -650,7 +698,7 @@ class EvidenceCommitter:
             )
         self._validate_trace_grade_links(
             graph,
-            request.grade_histories,
+            histories,
         )
         self._validate_trace_grade_decisions(
             graph,
@@ -858,24 +906,51 @@ class EvidenceCommitter:
         self,
         request: EvidenceCommitRequest,
     ) -> None:
-        artifact = next(
+        report_artifact = next(
             item for item in request.artifacts if item.role == "claim_report"
         )
+        bundle_artifact = next(
+            item
+            for item in request.artifacts
+            if item.role == "claim_evidence_bundle"
+        )
         try:
-            report = json.loads(artifact.content.decode("utf-8"))
+            report = json.loads(report_artifact.content.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("claim_report artifact is not valid JSON") from exc
         if not isinstance(report, Mapping):
             raise ValueError("claim_report artifact must be a JSON object")
-        claim_gate = report.get("claim_gate")
+        try:
+            evidence_bundle = json.loads(
+                bundle_artifact.content.decode("utf-8")
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                "claim_evidence_bundle artifact is not valid JSON"
+            ) from exc
+        if not isinstance(evidence_bundle, Mapping):
+            raise ValueError(
+                "claim_evidence_bundle artifact must be a JSON object"
+            )
+        artifact_bytes = {
+            item.relative_path: item.content for item in request.artifacts
+        }
+        try:
+            derived_level = ClaimGate.validate_derived_report(
+                report,
+                evidence_bundle,
+                evidence_resolver=artifact_bytes.get,
+            )
+        except ClaimGateError as exc:
+            raise EvidenceCommitConflict(
+                "claim report is not authorized by its bound evidence bundle"
+            ) from exc
         observed_cap = (
-            claim_gate.get("max_claim_level")
-            if isinstance(claim_gate, Mapping)
-            else None
+            None if derived_level is None else derived_level.value
         )
         if observed_cap != request.claim_cap:
             raise EvidenceCommitConflict(
-                "claim report cap does not match evidence commit cap"
+                "ClaimGate-derived report cap does not match evidence commit cap"
             )
         if (
             report.get("operational_efficacy_evidence") is not False
@@ -1014,6 +1089,7 @@ class EvidenceCommitter:
         request: EvidenceCommitRequest,
     ) -> tuple[EvidenceGradeHistory, ...]:
         verified: list[EvidenceGradeHistory] = []
+        terminal_events = self._load_terminal_arm_events()
         registered = set(request.registered_run_ids)
         for run_id in registered:
             if (
@@ -1023,8 +1099,24 @@ class EvidenceCommitter:
                 raise EvidenceCommitIntegrityError(
                     f"canonical State registration is missing for {run_id}"
                 )
-        with GradeBook(self.gradebook_path) as gradebook:
+        with (
+            GradeBook(self.experiment_db_path) as authority_gradebook,
+            GradeBook(self.gradebook_path) as gradebook,
+        ):
             for expected in request.grade_histories:
+                if not expected.terminal_commits:
+                    raise EvidenceCommitIntegrityError(
+                        "EvidenceGradeHistory terminal_commits are required "
+                        f"for execution {expected.execution_id}"
+                    )
+                if not expected.source_terminal_commits:
+                    raise EvidenceCommitIntegrityError(
+                        "EvidenceGradeHistory source_terminal_commits are "
+                        "required for execution "
+                        f"{expected.execution_id}"
+                    )
+                self._validate_terminal_commit_coverage(expected)
+                self._validate_source_terminal_commit_coverage(expected)
                 if expected.run.run_id not in registered:
                     raise EvidenceCommitIntegrityError(
                         "GradeBook history references an unregistered run: "
@@ -1038,19 +1130,30 @@ class EvidenceCommitter:
                         revision.grade_id
                     )
                 )
-                actual = EvidenceGradeHistory(
+                try:
+                    terminal_commits = tuple(
+                        commit
+                        for revision in revisions
+                        if (
+                            commit := gradebook.get_terminal_commit(
+                                revision.grade_id
+                            )
+                        )
+                        is not None
+                    )
+                except (GradeIntegrityError, GradeValidationError) as exc:
+                    raise EvidenceCommitIntegrityError(
+                        "GradeBook terminal grade authority is invalid for "
+                        f"execution {expected.execution_id}"
+                    ) from exc
+                published_history = EvidenceGradeHistory(
                     execution_id=expected.execution_id,
                     run=expected.run,
                     revisions=revisions,
                     invalidations=invalidations,
+                    terminal_commits=terminal_commits,
                 )
-                if canonical_json_bytes(actual.to_dict()) != canonical_json_bytes(
-                    expected.to_dict()
-                ):
-                    raise EvidenceCommitIntegrityError(
-                        "GradeBook history does not match the evidence request "
-                        f"for execution {expected.execution_id}"
-                    )
+                self._validate_terminal_commit_coverage(published_history)
                 if (
                     not revisions
                     or revisions[-1].run_envelope != expected.run
@@ -1059,8 +1162,225 @@ class EvidenceCommitter:
                         "GradeBook history has no current revision for "
                         f"execution {expected.execution_id}"
                     )
+                source_terminal_commits = (
+                    self._verify_terminal_grade_authority(
+                        history=published_history,
+                        terminal_events=terminal_events,
+                        authority_gradebook=authority_gradebook,
+                    )
+                )
+                actual = EvidenceGradeHistory(
+                    execution_id=expected.execution_id,
+                    run=expected.run,
+                    revisions=revisions,
+                    invalidations=invalidations,
+                    terminal_commits=terminal_commits,
+                    source_terminal_commits=source_terminal_commits,
+                )
+                self._validate_source_terminal_commit_coverage(actual)
+                if canonical_json_bytes(
+                    [
+                        commit.to_dict()
+                        for commit in actual.source_terminal_commits
+                    ]
+                ) != canonical_json_bytes(
+                    [
+                        commit.to_dict()
+                        for commit in expected.source_terminal_commits
+                    ]
+                ):
+                    raise EvidenceCommitIntegrityError(
+                        "source terminal authority does not match the "
+                        "immutable evidence request for execution "
+                        f"{expected.execution_id}"
+                    )
+                if canonical_json_bytes(actual.to_dict()) != (
+                    canonical_json_bytes(expected.to_dict())
+                ):
+                    raise EvidenceCommitIntegrityError(
+                        "GradeBook history does not match the evidence request "
+                        f"for execution {expected.execution_id}"
+                    )
                 verified.append(actual)
         return tuple(verified)
+
+    def _validate_terminal_commit_coverage(
+        self,
+        history: EvidenceGradeHistory,
+    ) -> None:
+        revision_ids = [
+            revision.grade_id for revision in history.revisions
+        ]
+        terminal_grade_ids = [
+            commit.grade_id for commit in history.terminal_commits
+        ]
+        if (
+            len(terminal_grade_ids) != len(revision_ids)
+            or len(set(terminal_grade_ids)) != len(terminal_grade_ids)
+            or set(terminal_grade_ids) != set(revision_ids)
+        ):
+            raise EvidenceCommitIntegrityError(
+                "EvidenceGradeHistory requires exactly one terminal commit "
+                "per published revision with no missing, extra, or duplicate "
+                f"grade IDs for execution {history.execution_id}"
+            )
+
+    def _validate_source_terminal_commit_coverage(
+        self,
+        history: EvidenceGradeHistory,
+    ) -> None:
+        source_grade_ids = [
+            commit.grade_id
+            for commit in history.source_terminal_commits
+        ]
+        if (
+            len(source_grade_ids) != 1
+            or len(set(source_grade_ids)) != len(source_grade_ids)
+        ):
+            raise EvidenceCommitIntegrityError(
+                "EvidenceGradeHistory requires exactly one immutable source "
+                "terminal commit for its terminal arm event for execution "
+                f"{history.execution_id}"
+            )
+
+    def _load_terminal_arm_events(
+        self,
+    ) -> tuple[Mapping[str, Any], ...]:
+        try:
+            store = SqliteExperimentStore(self.experiment_db_path)
+            return store.list_terminal_arm_events()
+        except (OSError, sqlite3.DatabaseError, ValueError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "experiment terminal arm authority is unreadable"
+            ) from exc
+
+    def _verify_terminal_grade_authority(
+        self,
+        *,
+        history: EvidenceGradeHistory,
+        terminal_events: tuple[Mapping[str, Any], ...],
+        authority_gradebook: GradeBook,
+    ) -> tuple[GradeTerminalCommit, ...]:
+        revisions_by_id = {
+            revision.grade_id: revision for revision in history.revisions
+        }
+        resolved_events: dict[str, Mapping[str, Any]] = {}
+        for commit in history.terminal_commits:
+            revision = revisions_by_id.get(commit.grade_id)
+            if (
+                revision is None
+                or commit.grade_revision_hash != revision.revision_hash
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "published terminal grade authority does not match its "
+                    "grade revision for execution "
+                    f"{history.execution_id}: {commit.grade_id}"
+                )
+            matching_events = [
+                event
+                for event in terminal_events
+                if (
+                    str(event.get("experiment_id") or "")
+                    == commit.experiment_id
+                    and str(event.get("task_id") or "") == commit.task_id
+                    and str(event.get("arm") or "") == commit.arm
+                    and str(event.get("state") or "")
+                    == commit.terminal_state
+                    and str(event.get("state_hash") or "")
+                    == commit.terminal_state_hash
+                )
+            ]
+            if len(matching_events) != 1:
+                raise EvidenceCommitIntegrityError(
+                    "terminal grade authority does not resolve to exactly "
+                    "one immutable terminal arm event for execution "
+                    f"{history.execution_id}: {commit.grade_id}"
+                )
+            resolved_events[commit.terminal_state_hash] = matching_events[0]
+
+        if len(resolved_events) != 1:
+            raise EvidenceCommitIntegrityError(
+                "published terminal grade authority must resolve to exactly "
+                "one terminal arm event for execution "
+                f"{history.execution_id}"
+            )
+
+        source_terminal_commits: list[GradeTerminalCommit] = []
+        for event in resolved_events.values():
+            payload = event.get("payload")
+            outcome = (
+                payload.get("outcome")
+                if isinstance(payload, Mapping)
+                else None
+            )
+            raw_reference = (
+                outcome.get("grade_revision")
+                if isinstance(outcome, Mapping)
+                else None
+            )
+            if not isinstance(raw_reference, Mapping):
+                raise EvidenceCommitIntegrityError(
+                    "terminal arm event grade reference is missing for "
+                    f"execution {history.execution_id}"
+                )
+            try:
+                reference = GradeRevisionRef.from_mapping(raw_reference)
+            except (TypeError, ValueError) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "terminal arm event grade reference is invalid for "
+                    f"execution {history.execution_id}"
+                ) from exc
+            try:
+                authority_revision = authority_gradebook.get_revision(
+                    reference.grade_id
+                )
+                authority_commit = (
+                    authority_gradebook.get_terminal_commit(
+                        reference.grade_id
+                    )
+                )
+            except (
+                GradeIntegrityError,
+                GradeNotFoundError,
+                GradeValidationError,
+            ) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "terminal arm event grade reference is unavailable from "
+                    "source authority for execution "
+                    f"{history.execution_id}"
+                ) from exc
+            if (
+                reference
+                != GradeRevisionRef.from_revision(authority_revision)
+                or authority_revision.run_envelope.frozen_result_hash
+                != history.run.frozen_result_hash
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "terminal arm event grade reference does not match source "
+                    "authority for execution "
+                    f"{history.execution_id}"
+                )
+            if (
+                authority_commit is None
+                or authority_commit.grade_revision_hash
+                != reference.revision_hash
+                or authority_commit.experiment_id
+                != str(event.get("experiment_id") or "")
+                or authority_commit.task_id
+                != str(event.get("task_id") or "")
+                or authority_commit.arm != str(event.get("arm") or "")
+                or authority_commit.terminal_state
+                != str(event.get("state") or "")
+                or authority_commit.terminal_state_hash
+                != str(event.get("state_hash") or "")
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "terminal arm event grade reference lacks matching grade "
+                    "source authority for execution "
+                    f"{history.execution_id}: {reference.grade_id}"
+                )
+            source_terminal_commits.append(authority_commit)
+        return tuple(source_terminal_commits)
 
     def _persist_trace(
         self,
@@ -1077,6 +1397,7 @@ class EvidenceCommitter:
         with GradeBook(self.gradebook_path) as gradebook:
             closure = graph.validate_closure(
                 now=request.closure_time,
+                expected_binding=request.trace_graph.expected_binding,
                 decision_grade_validator=gradebook,
             )
         if not closure.ok:

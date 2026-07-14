@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor import quality_trends as quality_trends_module
 from supervisor.quality_trends import (
     HistoricalOperation,
     historical_operation_contract,
@@ -81,6 +82,75 @@ def _git_head(path: Path) -> str:
     ).stdout.strip()
 
 
+def test_recorded_checkout_cleanup_does_not_mask_primary_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _init_git_repo(tmp_path)
+    materialized_root = tmp_path / "materialized"
+    materialized_root.mkdir()
+    monkeypatch.setattr(
+        quality_trends_module.tempfile,
+        "mkdtemp",
+        lambda **_kwargs: str(materialized_root),
+    )
+
+    def runner(command, **kwargs):
+        if command[:3] == ["git", "worktree", "remove"]:
+            raise OSError("remove invocation failed")
+        if command[:3] == ["git", "worktree", "prune"]:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="prune failed",
+            )
+        return subprocess.run(command, check=False, **kwargs)
+
+    primary = RuntimeError("primary replay failure")
+    with pytest.raises(RuntimeError, match="primary replay failure") as exc:
+        with quality_trends_module._materialized_recorded_checkout(
+            {
+                "repo": str(tmp_path),
+                "commit": _git_head(tmp_path),
+            },
+            runner=runner,
+        ):
+            raise primary
+
+    assert exc.value is primary
+    cleanup_note = (
+        "\n".join(getattr(primary, "__notes__", ()))
+        or str(getattr(primary, "supervisor_cleanup_error", ""))
+    )
+    assert "recorded_checkout_cleanup_failed" in cleanup_note
+
+
+def test_recorded_checkout_rejects_omitted_snapshot_content(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+
+    with pytest.raises(
+        quality_trends_module.RecordedCheckoutError,
+        match="recorded_snapshot_content_omitted",
+    ):
+        quality_trends_module._apply_snapshot_entry(
+            checkout,
+            {
+                "path": "oversized.bin",
+                "kind": "file",
+                "size": (1024 * 1024) + 1,
+                "sha256": "a" * 64,
+                "content_omitted": "size_limit_exceeded",
+                "content_limit_bytes": 1024 * 1024,
+            },
+        )
+
+    assert not (checkout / "oversized.bin").exists()
+
+
 def _commit_all(path: Path, message: str) -> str:
     subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(
@@ -147,6 +217,9 @@ def _write_recorded_replay_manifest(
                 "trace_envelope": "dual-agent-trace-envelope/v1",
                 "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
                 "interaction": "dual-agent-interaction/v1",
+                "production_trace_export": (
+                    "dual-agent-production-trace-export/v1"
+                ),
             },
             "workspace_snapshot": {
                 "status": "captured",

@@ -23,15 +23,33 @@
 5. Run real no-op tasks on installed Claude Code and Codex CLIs and compare
    schemas without comparing generated text.
 6. Cancel a runtime that forks a child and assert no process-group survivor.
+7. Run a real subprocess that emits one line beyond the stream limit and
+   prove collection raises, reaps the process tree, and returns before the
+   runtime timeout.
+8. Resolve installed-style executable symlinks, hash the final regular file,
+   and record the invocation path separately from the resolved target.
+9. Reject broken, unreadable, and task-relative symlink-escaping executable
+   targets without producing a complete operational manifest.
+10. Reject caller-supplied execution-environment attestation metadata; the
+    transport owns that evidence boundary.
+11. Run both concrete runtime classes through the local subprocess transport
+    with controlled provider events. Preserve source-backed model/cost/token
+    provenance, then prove `RepositoryArmExecutor` fails closed on each
+    unenforced operational pin.
 
 ## Verification
 
 ```text
 .venv/bin/python -m pytest -q \
   tests/test_agent_runtime.py \
+  tests/test_arm_executor.py \
   tests/test_model_client.py \
   tests/test_claude_sdk_runtime.py \
   tests/test_agent_invoker_review.py
 ```
 
 Fake transports prove contracts, not provider availability or live execution.
+Controlled local subprocess fixtures prove concrete class/transport wiring,
+not container-backed operational readiness. The local backend must remain
+pilot-blocking while its attestation reports an uninstantiated image or
+unenforced token/cost ceiling.

@@ -19,6 +19,7 @@ import stat
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence, TypeVar
 from urllib.parse import urlsplit
 
@@ -27,16 +28,44 @@ try:
 except ImportError:  # pragma: no cover - secure filesystem writes are POSIX-only
     fcntl = None  # type: ignore[assignment]
 
-from .redaction import redact
+from .redaction import redact, redact_v1, redact_v2
 from .run_manifest import capture_acceptance_evidence
 from .trace_envelope import stamp_trace_envelope
 
 
-EVENT_HASH_SCHEMA_VERSION = "evidence-ledger-event/v2"
-REDACTION_RULES_VERSION = "supervisor-redaction-rules/v1"
-REDACTION_RULES_BY_VERSION: dict[str, Callable[[Any], Any]] = {
-    REDACTION_RULES_VERSION: redact,
-}
+LEGACY_EVENT_HASH_SCHEMA_VERSION = "evidence-ledger-event/v2"
+EVENT_HASH_SCHEMA_VERSION = "evidence-ledger-event/v3"
+LEGACY_REDACTION_RULES_VERSION = "supervisor-redaction-rules/v1"
+REDACTION_RULES_VERSION = "supervisor-redaction-rules/v2"
+_FROZEN_REDACTION_RULES_BY_VERSION = MappingProxyType({
+    LEGACY_REDACTION_RULES_VERSION: redact_v1,
+    REDACTION_RULES_VERSION: redact_v2,
+})
+_FROZEN_EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA = MappingProxyType({
+    LEGACY_EVENT_HASH_SCHEMA_VERSION: LEGACY_REDACTION_RULES_VERSION,
+    EVENT_HASH_SCHEMA_VERSION: REDACTION_RULES_VERSION,
+})
+_FROZEN_EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA = MappingProxyType({
+    LEGACY_EVENT_HASH_SCHEMA_VERSION: frozenset({
+        LEGACY_EVENT_HASH_SCHEMA_VERSION,
+    }),
+    EVENT_HASH_SCHEMA_VERSION: frozenset({
+        LEGACY_EVENT_HASH_SCHEMA_VERSION,
+        EVENT_HASH_SCHEMA_VERSION,
+    }),
+})
+# Compatibility/extension registries remain mutable for additive future
+# schemas. Frozen historical entries always take precedence during resolution.
+REDACTION_RULES_BY_VERSION: dict[str, Callable[[Any], Any]] = dict(
+    _FROZEN_REDACTION_RULES_BY_VERSION
+)
+EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA: dict[str, str] = dict(
+    _FROZEN_EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA
+)
+EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA: dict[
+    str,
+    frozenset[str],
+] = dict(_FROZEN_EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA)
 EVENT_IDENTITY_SCHEMA_VERSION = "evidence-ledger-event-identity/v1"
 EVENT_IDENTITY_CHAIN_SCOPE = "event-id-chain/v1"
 EVENT_IDENTITY_HEAD_SCOPE = "head-event/v1"
@@ -144,6 +173,34 @@ def canonical_json_text(value: Any) -> str:
     return canonical_json_bytes(value).decode("utf-8")
 
 
+def _json_object_without_duplicate_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON object key: {key!r}")
+        value[key] = item
+    return value
+
+
+def strict_json_object_loads(raw_json: str | bytes) -> dict[str, Any]:
+    """Decode one JSON object while rejecting duplicate keys at every depth."""
+    if isinstance(raw_json, bytes):
+        raw_text = raw_json.decode("utf-8")
+    elif isinstance(raw_json, str):
+        raw_text = raw_json
+    else:
+        raise TypeError("JSON payload must be text or bytes")
+    loaded = json.loads(
+        raw_text,
+        object_pairs_hook=_json_object_without_duplicate_keys,
+    )
+    if not isinstance(loaded, dict):
+        raise TypeError("JSON payload must be an object")
+    return loaded
+
+
 def sha256_hex(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -224,12 +281,89 @@ def canonical_payload_hash(payload: Mapping[str, Any]) -> str:
     return sha256_hex(canonical_json_bytes(dict(payload)))
 
 
+def _redactor_for_event_hash_schema(
+    schema_version: str,
+    _frozen_schema_rules: Mapping[str, str] = (
+        _FROZEN_EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA
+    ),
+    _frozen_redactors: Mapping[str, Callable[[Any], Any]] = (
+        _FROZEN_REDACTION_RULES_BY_VERSION
+    ),
+) -> Callable[[Any], Any]:
+    rules_version = _frozen_schema_rules.get(schema_version)
+    if rules_version is None:
+        rules_version = EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA.get(
+            schema_version
+        )
+    if rules_version is None:
+        raise ValueError(
+            f"unsupported event-hash schema: {schema_version}"
+        )
+    redactor = _frozen_redactors.get(rules_version)
+    if redactor is None:
+        redactor = REDACTION_RULES_BY_VERSION.get(rules_version)
+    if redactor is None:
+        raise ValueError(
+            "event-hash schema references unsupported redaction rules: "
+            f"{schema_version} -> {rules_version}"
+        )
+    return redactor
+
+
+def _supported_event_hash_schema_versions(
+    _frozen_versions: tuple[str, ...] = tuple(
+        _FROZEN_EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA
+    ),
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            (
+                *_frozen_versions,
+                *EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA,
+            )
+        )
+    )
+
+
+def _allowed_event_hash_schema_predecessors(
+    schema_version: str,
+    _frozen_transitions: Mapping[str, frozenset[str]] = (
+        _FROZEN_EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA
+    ),
+) -> frozenset[str] | None:
+    frozen = _frozen_transitions.get(schema_version)
+    if frozen is not None:
+        return frozen
+    return EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA.get(
+        schema_version
+    )
+
+
+def supported_event_hash_schema_versions() -> tuple[str, ...]:
+    """Return frozen historical schemas followed by additive extensions."""
+    return _supported_event_hash_schema_versions()
+
+
+def event_hash_schema_transition_allowed(
+    previous_schema_version: str,
+    current_schema_version: str,
+) -> bool:
+    allowed = _allowed_event_hash_schema_predecessors(
+        current_schema_version
+    )
+    return (
+        allowed is not None
+        and previous_schema_version in allowed
+    )
+
+
 def prepare_event_payload(
     *,
     run_id: str,
     source: str,
     kind: str,
     payload: Mapping[str, Any],
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
 ) -> dict[str, Any]:
     """Stamp trace context, then redact before any payload hash or write."""
     event_payload = dict(payload)
@@ -240,7 +374,10 @@ def prepare_event_payload(
         acceptance_evidence = capture_acceptance_evidence(event_payload)
         if acceptance_evidence is not None:
             event_payload["acceptance_evidence"] = acceptance_evidence
-    return redact(
+    redactor = _redactor_for_event_hash_schema(
+        event_hash_schema_version
+    )
+    return redactor(
         stamp_trace_envelope(
             run_id=run_id,
             source=source,
@@ -349,6 +486,7 @@ def compute_event_hash(
     canonical_payload_hash_value: str,
     artifact_manifest_hash_value: str,
     ledger_genesis_kind: str | None,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
 ) -> str:
     sequence = _normalize_event_sequence(event_sequence)
     previous = (
@@ -362,7 +500,7 @@ def compute_event_hash(
     if previous is not None and genesis is not None:
         raise ValueError("non-genesis event cannot declare a genesis kind")
     preimage = {
-        "schema_version": EVENT_HASH_SCHEMA_VERSION,
+        "schema_version": str(event_hash_schema_version),
         "run_id": str(run_id),
         "event_sequence": sequence,
         "ts": int(ts),
@@ -386,6 +524,7 @@ def build_ledger_fields(
     payload: Mapping[str, Any],
     previous_event_hash: str | None,
     ledger_genesis_kind: str | None,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
 ) -> LedgerFields:
     sequence = _normalize_event_sequence(event_sequence)
     payload_hash = canonical_payload_hash(payload)
@@ -400,6 +539,7 @@ def build_ledger_fields(
         canonical_payload_hash_value=payload_hash,
         artifact_manifest_hash_value=manifest_hash,
         ledger_genesis_kind=ledger_genesis_kind,
+        event_hash_schema_version=event_hash_schema_version,
     )
     return LedgerFields(
         event_sequence=sequence,
@@ -422,11 +562,17 @@ def build_legacy_import_ledger_fields(
     raw_payload_json: str | bytes,
     previous_event_hash: str | None,
     ledger_genesis_kind: str | None,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
 ) -> LedgerFields:
     """Build fields for an imported row without rewriting its JSON text."""
     if ledger_genesis_kind not in {None, LEGACY_IMPORT_GENESIS}:
         raise ValueError(
             "legacy import rows may only use legacy-import genesis"
+        )
+    decoded_raw_payload = strict_json_object_loads(raw_payload_json)
+    if decoded_raw_payload != dict(payload):
+        raise ValueError(
+            "legacy raw payload_json does not match the decoded payload"
         )
     sequence = _normalize_event_sequence(event_sequence)
     payload_hash = canonical_payload_hash(payload)
@@ -445,6 +591,7 @@ def build_legacy_import_ledger_fields(
         canonical_payload_hash_value=payload_hash,
         artifact_manifest_hash_value=manifest_hash,
         ledger_genesis_kind=ledger_genesis_kind,
+        event_hash_schema_version=event_hash_schema_version,
     )
     return LedgerFields(
         event_sequence=sequence,
@@ -484,6 +631,7 @@ def _verify_event_chain(
     head_hash: str | None = None
     head_identity_hash: str | None = None
     payload_commitment_mode: str | None = None
+    previous_event_hash_schema_version: str | None = None
 
     def failure(
         code: str,
@@ -674,15 +822,6 @@ def _verify_event_chain(
                 detail="event payload_json is not canonically encoded",
             )
         payload = decoded_payload.payload
-        if not any(
-            rules(payload) == payload
-            for rules in REDACTION_RULES_BY_VERSION.values()
-        ):
-            return failure(
-                "payload_not_redacted",
-                event_id=event_id,
-                detail="persisted payload contains data that redaction would change",
-            )
         try:
             observed_payload_hash = _require_canonical_sha256(
                 _event_value(row, "canonical_payload_hash")
@@ -778,33 +917,86 @@ def _verify_event_chain(
                     f"observed={observed_manifest_hash}"
                 ),
             )
-        try:
-            computed_event_hash = compute_event_hash(
-                run_id=run_id or "",
-                event_sequence=event_sequence,
-                ts=event_ts,
-                source=source,
-                kind=kind,
-                previous_event_hash=(
-                    None if index == 0 else normalized_previous
-                ),
-                canonical_payload_hash_value=computed_payload_hash,
-                artifact_manifest_hash_value=computed_manifest_hash,
-                ledger_genesis_kind=observed_genesis,
-            )
-        except (TypeError, ValueError) as exc:
+        matching_event_hashes: dict[str, str] = {}
+        for schema_version in _supported_event_hash_schema_versions():
+            try:
+                candidate_hash = compute_event_hash(
+                    run_id=run_id or "",
+                    event_sequence=event_sequence,
+                    ts=event_ts,
+                    source=source,
+                    kind=kind,
+                    previous_event_hash=(
+                        None if index == 0 else normalized_previous
+                    ),
+                    canonical_payload_hash_value=computed_payload_hash,
+                    artifact_manifest_hash_value=computed_manifest_hash,
+                    ledger_genesis_kind=observed_genesis,
+                    event_hash_schema_version=schema_version,
+                )
+            except (TypeError, ValueError):
+                continue
+            if secrets.compare_digest(
+                observed_event_hash,
+                candidate_hash,
+            ):
+                matching_event_hashes[schema_version] = candidate_hash
+        if len(matching_event_hashes) != 1:
             return failure(
-                "invalid_event_hash",
+                "unsupported_event_hash_schema",
+                event_id=event_id,
+                detail=(
+                    "event hash does not identify exactly one supported "
+                    "event-hash schema"
+                ),
+            )
+        event_hash_schema_version, computed_event_hash = next(
+            iter(matching_event_hashes.items())
+        )
+        if previous_event_hash_schema_version is not None:
+            if not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
+            ):
+                return failure(
+                    "event_hash_schema_transition_not_allowed",
+                    event_id=event_id,
+                    detail=(
+                        "event-hash schema transition is not allowed: "
+                        f"{previous_event_hash_schema_version} -> "
+                        f"{event_hash_schema_version}"
+                    ),
+                )
+        try:
+            redactor = _redactor_for_event_hash_schema(
+                event_hash_schema_version
+            )
+        except ValueError as exc:
+            return failure(
+                "unsupported_event_hash_schema",
                 event_id=event_id,
                 detail=str(exc),
             )
-        if observed_event_hash != computed_event_hash:
+        try:
+            redacted_payload = redactor(payload)
+        except (TypeError, ValueError) as exc:
             return failure(
-                "event_hash_mismatch",
+                "payload_not_redacted",
                 event_id=event_id,
                 detail=(
-                    f"expected event_hash={computed_event_hash}, "
-                    f"observed={observed_event_hash}"
+                    "persisted payload cannot be safely normalized by the "
+                    "event-hash schema's bound redactor: "
+                    f"{event_hash_schema_version}: {exc}"
+                ),
+            )
+        if redacted_payload != payload:
+            return failure(
+                "payload_not_redacted",
+                event_id=event_id,
+                detail=(
+                    "persisted payload contains data that the event-hash "
+                    f"schema's bound redactor would change: "
+                    f"{event_hash_schema_version}"
                 ),
             )
         computed_identity_hash = compute_event_identity_hash(
@@ -815,6 +1007,7 @@ def _verify_event_chain(
             previous_event_identity_hash=previous_identity_hash,
         )
         previous_hash = computed_event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
         previous_identity_hash = computed_identity_hash
         previous_sequence = event_sequence
         previous_event_id = event_id
@@ -1818,9 +2011,7 @@ def _decode_event_payload(
             raw_json_bytes = raw.encode("utf-8")
         else:
             raise TypeError("event payload_json must be JSON text or an object")
-        loaded = json.loads(raw_text)
-        if not isinstance(loaded, dict):
-            raise TypeError("event payload must be a JSON object")
+        loaded = strict_json_object_loads(raw_text)
         canonical_encoding = canonical_json_bytes(loaded) == raw_json_bytes
     elif isinstance(payload, Mapping):
         loaded = dict(payload)
@@ -2032,6 +2223,8 @@ __all__ = [
     "ContentAddressedArtifactStore",
     "EMPTY_ARTIFACT_MANIFEST",
     "EMPTY_ARTIFACT_MANIFEST_HASH",
+    "EVENT_HASH_REDACTION_RULES_VERSION_BY_SCHEMA",
+    "EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA",
     "EVENT_HASH_SCHEMA_VERSION",
     "EVENT_IDENTITY_CHAIN_SCOPE",
     "EVENT_IDENTITY_HEAD_SCOPE",
@@ -2040,8 +2233,10 @@ __all__ = [
     "LedgerError",
     "LedgerFields",
     "LedgerVerification",
+    "LEGACY_EVENT_HASH_SCHEMA_VERSION",
     "LEGACY_IMPORT_GENESIS",
     "LEGACY_RAW_PAYLOAD_COMMITMENT_SCHEMA_VERSION",
+    "LEGACY_REDACTION_RULES_VERSION",
     "NATIVE_GENESIS",
     "REDACTION_RULES_BY_VERSION",
     "REDACTION_RULES_VERSION",
@@ -2057,10 +2252,13 @@ __all__ = [
     "compute_event_identity_hash",
     "compute_head_event_identity_hash",
     "create_ledger_checkpoint",
+    "event_hash_schema_transition_allowed",
     "legacy_raw_payload_manifest_hash",
     "prepare_event_payload",
     "rebuild_projection",
     "sha256_hex",
+    "strict_json_object_loads",
+    "supported_event_hash_schema_versions",
     "verify_authoritative_event_chain",
     "verify_event_chain",
     "verify_event_chain_authoritatively",

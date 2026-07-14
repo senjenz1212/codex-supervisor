@@ -10,7 +10,8 @@ provenance, trace closure, and claim authorization compose correctly.
 
 Run one pinned generic repository task and one pinned Unity task through A/B/C
 on both Claude Code and Codex, producing a complete evidence thread while
-`ClaimGate` refuses any claim above L2.
+`ClaimGate` refuses any claim above the evidence actually produced. The
+hermetic same-principal fixture is limited to L1.
 
 ## Promise Contracts
 
@@ -32,15 +33,20 @@ on both Claude Code and Codex, producing a complete evidence thread while
 ### P4: Evidence is immutable and traceable
 
 - Each frozen result receives a verifier-pinned immutable grade.
+- Every cited grade revision is committed to the exact persisted terminal
+  arm state/hash before trace closure.
 - Ledger verification passes.
 - The trace graph closes from objective through requirement, test, assignment,
   run, artifact, and grade.
 
 ### P5: Claims remain honest
 
-- Independent hidden verification may support L2.
+- Same-principal fixture verification supports no more than L1.
+- A later operational run with genuinely independent hidden verification may
+  support L2.
 - Two tracer tasks cannot support a powered causal, portable, ROI, or
-  auto-improvement claim; `ClaimGate` must refuse L3+.
+  auto-improvement claim; `ClaimGate` must refuse L2+ for this fixture and
+  L3+ until powered confirmation exists.
 
 ## Non-goals
 

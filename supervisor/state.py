@@ -28,6 +28,7 @@ from .evidence_ledger import (
     LedgerVerification,
     build_ledger_fields,
     canonical_json_bytes,
+    canonical_payload_hash,
     prepare_event_payload,
     sha256_hex,
     verify_event_chain,
@@ -355,6 +356,29 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_run_event ON events(run_id, event_id);
+
+CREATE TABLE IF NOT EXISTS event_idempotency_claims (
+  run_id          TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  event_id        INTEGER NOT NULL,
+  source          TEXT NOT NULL,
+  payload_sha256  TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  PRIMARY KEY(run_id, kind, idempotency_key),
+  UNIQUE(event_id),
+  CHECK(event_id > 0)
+);
+CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_update
+BEFORE UPDATE ON event_idempotency_claims
+BEGIN
+  SELECT RAISE(ABORT, 'event idempotency claims are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_delete
+BEFORE DELETE ON event_idempotency_claims
+BEGIN
+  SELECT RAISE(ABORT, 'event idempotency claims are immutable');
+END;
 
 CREATE TABLE IF NOT EXISTS verdicts (
   verdict_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1250,6 +1274,108 @@ class State:
             ts=ts,
         )
 
+    def write_event_once(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        ts: int | None = None,
+    ) -> int:
+        """Append one exact event or return its existing durable identity.
+
+        The claim row and event share one transaction, so concurrent processes
+        cannot both publish the same logical event. Reusing a key with changed
+        source or payload is an authority discrepancy, not an idempotent retry.
+        """
+        assert_generic_event_kind_allowed(kind)
+        assert_public_event_kind_allowed(kind)
+        normalized_key = str(idempotency_key).strip()
+        if not normalized_key:
+            raise ValueError("event idempotency_key must be non-empty")
+        if len(normalized_key.encode("utf-8")) > 512:
+            raise ValueError("event idempotency_key exceeds 512 bytes")
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                event_payload = self._event_payload(
+                    run_id=run_id,
+                    source=source,
+                    kind=kind,
+                    payload=payload,
+                )
+                payload_sha256 = canonical_payload_hash(event_payload)
+                existing = self._conn.execute(
+                    """SELECT event_id, source, payload_sha256
+                         FROM event_idempotency_claims
+                        WHERE run_id=? AND kind=? AND idempotency_key=?""",
+                    (str(run_id), str(kind), normalized_key),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        str(existing["source"]) != str(source)
+                        or str(existing["payload_sha256"]) != payload_sha256
+                    ):
+                        raise RuntimeError(
+                            "event idempotency key was reused with changed "
+                            "source or payload"
+                        )
+                    event_id = int(existing["event_id"])
+                    event = self._conn.execute(
+                        """SELECT source, canonical_payload_hash
+                             FROM events
+                            WHERE run_id=? AND event_id=? AND kind=?""",
+                        (str(run_id), event_id, str(kind)),
+                    ).fetchone()
+                    if event is None:
+                        raise RuntimeError(
+                            "event idempotency claim references a missing event"
+                        )
+                    if (
+                        str(event["source"]) != str(existing["source"])
+                        or str(event["canonical_payload_hash"])
+                        != str(existing["payload_sha256"])
+                    ):
+                        raise RuntimeError(
+                            "event idempotency claim does not match its "
+                            "immutable event"
+                        )
+                else:
+                    event_id = self._insert_event_unlocked(
+                        run_id=run_id,
+                        source=source,
+                        kind=kind,
+                        payload=event_payload,
+                        ts=ts,
+                    )
+                    self._conn.execute(
+                        """INSERT INTO event_idempotency_claims(
+                             run_id, kind, idempotency_key, event_id, source,
+                             payload_sha256, created_at)
+                           VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            str(run_id),
+                            str(kind),
+                            normalized_key,
+                            event_id,
+                            str(source),
+                            payload_sha256,
+                            int(time.time()),
+                        ),
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=kind,
+            )
+            return event_id
+
     def write_historical_operation_event(
         self,
         *,
@@ -1714,6 +1840,8 @@ class State:
                    'dual_agent_gate_round',
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
+                   'dual_agent_production_trace_failed',
+                   'dual_agent_production_trace_recorded',
                    'dual_agent_skill_receipt_validation',
                    'dual_agent_agentic_worker_production',
                    'dual_agent_agentic_worker_progress',

@@ -1,6 +1,19 @@
 schema_version: harness-v1-claims/v1
 unknown_claim_policy: reject
 
+claim_field_policy:
+  representation: registered_claim_ids_only
+  canonical_text_source: claims[].canonical_text
+  explicit_field_names:
+    - asserted_claim
+    - assertion
+    - auto_improvement_claim
+    - claim
+    - claim_text
+    - conclusion_claim
+    - outcome_claim
+    - roi_claim
+
 claims:
   - id: CLAIM-HARNESS-L0-INTEGRITY
     required_level: L0
@@ -28,6 +41,8 @@ claims:
       - '\bsupervision improves outcomes\b'
       - '\bharness improves outcomes\b'
       - '\bsupervisor causes better outcomes\b'
+      - '\b(?:the\s+|our\s+)?(?:supervisor|harness|arm\s+b|b)\s+(?:is|was|performs?|performed|does|did)\s+(?:(?:statistically|significantly)\s+)?(?:better|superior|more\s+effective)\s+than\s+(?:the\s+)?(?:baseline|control|direct(?:\s+execution)?|compute[- ]matched\s+direct|arm\s+c|c)\b'
+      - '\b(?:arm\s+)?b\s+(?:beats?|beat|wins?\s+against)\s+(?:arm\s+)?c\b'
 
   - id: CLAIM-HARNESS-L4-PORTABLE-IMPROVEMENT
     required_level: L4

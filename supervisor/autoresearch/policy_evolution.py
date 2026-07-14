@@ -1668,6 +1668,18 @@ def _journal_policy_proposal_created(
     )
     if existing_event_id is not None:
         return existing_event_id
+    write_event_once = getattr(state, "write_event_once", None)
+    if callable(write_event_once):
+        return int(write_event_once(
+            run_id=run_id,
+            source="autoresearch",
+            kind="autoresearch_policy_proposal_created",
+            payload=dict(proposal),
+            idempotency_key=(
+                "autoresearch-policy-proposal:"
+                + sha256_json(dict(proposal))
+            ),
+        ))
     return state.write_event(
         run_id=run_id,
         source="autoresearch",

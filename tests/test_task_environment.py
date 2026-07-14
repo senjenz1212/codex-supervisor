@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor import task_environment as task_environment_module
 from supervisor.task_environment import (
     bind_frozen_result_to_task,
     canonical_task_identity,
@@ -101,6 +102,41 @@ def _spec(repo: Path, revision: str, *, family: str) -> TaskSpec:
         verifier_hash="a" * 64,
         canonical_repo_id=f"fixture/{family}-repo",
     )
+
+
+def test_repository_commands_preserve_auth_and_proxy_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/test-agent.sock")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-pass")
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(argv, 0, stdout="ok\n")
+
+    monkeypatch.setattr(
+        task_environment_module.subprocess,
+        "run",
+        fake_run,
+    )
+
+    assert task_environment_module._run(
+        ("git", "fetch"),
+        tmp_path,
+        env={"GIT_TERMINAL_PROMPT": "1"},
+    ) == "ok\n"
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["SSH_AUTH_SOCK"] == "/tmp/test-agent.sock"
+    assert env["HTTPS_PROXY"] == "http://proxy.example"
+    assert env["NO_PROXY"] == "localhost,127.0.0.1"
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert "UNRELATED_SECRET" not in env
 
 
 @pytest.mark.asyncio

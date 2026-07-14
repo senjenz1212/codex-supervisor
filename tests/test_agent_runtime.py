@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -14,6 +16,7 @@ from typing import Any
 import psutil
 import pytest
 
+from supervisor import agent_runtime as agent_runtime_module
 from supervisor.agent_runtime import (
     AgentRunHandle,
     AgentRunResult,
@@ -26,6 +29,7 @@ from supervisor.agent_runtime import (
 )
 from supervisor.runtime_cleanup import cancel_runtime_after_failure
 from supervisor.runtime_execution import runtime_task_runner
+from supervisor.task_environment import default_task_platform
 
 
 def test_experiment_and_task_core_do_not_import_provider_sdks() -> None:
@@ -222,6 +226,96 @@ def test_runtime_manifest_pins_provider_binary_transport_and_tools(
     assert manifest["transport"]["configuration"]["endpoint"] == "direct"
     assert manifest["tools"] == ["Read", "Edit"]
     assert len(manifest["manifest_sha256"]) == 64
+
+
+def test_runtime_manifest_hashes_final_symlink_target_and_records_both_paths(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "versions" / "claude-v1"
+    target.parent.mkdir()
+    target.write_bytes(b"fake-claude-target")
+    target.chmod(0o755)
+    invoked = tmp_path / "bin" / "claude"
+    invoked.parent.mkdir()
+    invoked.symlink_to(target)
+    runtime = ClaudeCodeRuntime(
+        transport=ManifestRecordingTransport(endpoint="direct"),
+        binary=str(invoked),
+    )
+
+    manifest = runtime.runtime_manifest(
+        AgentTask(
+            task_id="manifest-symlink",
+            instruction="Run",
+            cwd=tmp_path,
+            model="claude-test-exact",
+            metadata={"tools": ["Read"]},
+        )
+    )
+
+    binary = manifest["binary"]
+    assert manifest["complete"] is True
+    assert binary["invoked_path"] == str(invoked.absolute())
+    assert binary["resolved_target"] == str(target.resolve())
+    assert binary["resolved_path"] == str(target.resolve())
+    assert binary["sha256"] == hashlib.sha256(
+        target.read_bytes()
+    ).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_error"),
+    (
+        ("broken", "binary_target_missing"),
+        ("unreadable", "binary_target_unreadable"),
+        ("relative_escape", "binary_target_escapes_invocation_root"),
+    ),
+)
+def test_runtime_manifest_rejects_unsafe_executable_targets(
+    tmp_path: Path,
+    kind: str,
+    expected_error: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    binary: Path | str
+    cleanup_target: Path | None = None
+    if kind == "broken":
+        binary = tmp_path / "broken-claude"
+        binary.symlink_to(tmp_path / "missing-claude")
+    elif kind == "unreadable":
+        binary = tmp_path / "unreadable-claude"
+        binary.write_bytes(b"unreadable")
+        binary.chmod(0o111)
+        cleanup_target = binary
+    else:
+        outside = tmp_path / "outside-claude"
+        outside.write_bytes(b"outside")
+        outside.chmod(0o755)
+        (workspace / "claude").symlink_to(outside)
+        binary = "./claude"
+    runtime = ClaudeCodeRuntime(
+        transport=ManifestRecordingTransport(endpoint="direct"),
+        binary=str(binary),
+    )
+
+    try:
+        manifest = runtime.runtime_manifest(
+            AgentTask(
+                task_id=f"manifest-{kind}",
+                instruction="Run",
+                cwd=workspace,
+                model="claude-test-exact",
+                metadata={"tools": ["Read"]},
+            )
+        )
+    finally:
+        if cleanup_target is not None:
+            cleanup_target.chmod(0o755)
+
+    assert manifest["complete"] is False
+    assert manifest["binary"]["error"] == expected_error
+    assert manifest["binary"]["sha256"] == ""
 
 
 def test_runtime_manifest_distinguishes_hidden_transport_routes(
@@ -540,6 +634,10 @@ async def test_codex_runtime_normalizes_captured_live_jsonl_and_marks_missing_pr
         "cost_usd": False,
         "token_usage": True,
     }
+    assert result.metadata["provenance_blockers"] == [
+        "resolved_model",
+        "cost_provenance",
+    ]
 
 
 @pytest.mark.asyncio
@@ -605,6 +703,217 @@ async def test_claude_cli_runtime_keeps_sessions_resumable_and_applies_controls(
     assert resume_argv[resume_argv.index("--resume") + 1] == (
         f"session-{handle.run_id}"
     )
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_rejects_untyped_extra_args(
+    tmp_path: Path,
+) -> None:
+    runtime = ClaudeCodeRuntime(transport=RecordingTransport())
+
+    with pytest.raises(
+        ValueError,
+        match="extra_args are unsupported",
+    ):
+        await runtime.start(
+            AgentTask(
+                task_id="claude-extra-args",
+                instruction="Start",
+                cwd=tmp_path,
+                model="claude-test",
+                metadata={"extra_args": ["--debug"]},
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_caller_supplied_backend_attestation(
+    tmp_path: Path,
+) -> None:
+    transport = RecordingTransport()
+    runtime = CodexRuntime(transport=transport)
+
+    with pytest.raises(
+        ValueError,
+        match="backend attestation metadata is transport-owned",
+    ):
+        await runtime.start(
+            AgentTask(
+                task_id="forged-attestation",
+                instruction="Start",
+                cwd=tmp_path,
+                model="gpt-test",
+                metadata={
+                    "result_metadata": {
+                        "execution_environment_attestation": {
+                            "mode": "operational",
+                            "enforced": True,
+                        }
+                    }
+                },
+            )
+        )
+
+    assert transport.started == []
+
+
+@pytest.mark.asyncio
+async def test_oversized_runtime_stream_line_fails_explicitly() -> None:
+    stream = asyncio.StreamReader(limit=8)
+    stream.feed_data(b"x" * 32 + b"\n")
+    stream.feed_eof()
+
+    with pytest.raises(
+        RuntimeError,
+        match="stream-json line exceeds",
+    ):
+        await agent_runtime_module._read_stream_line(stream)
+
+
+@pytest.mark.asyncio
+async def test_real_oversized_subprocess_line_fails_before_runtime_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_SUBPROCESS_STREAM_LIMIT",
+        64 * 1024,
+    )
+    transport = SubprocessRuntimeTransport()
+    started_at = asyncio.get_running_loop().time()
+    child_path = tmp_path / "oversized-child.json"
+    child_code = """
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+os.setsid()
+Path(sys.argv[1]).write_text(
+    json.dumps({"pid": os.getpid()}),
+    encoding="utf-8",
+)
+while True:
+    time.sleep(1)
+"""
+    parent_code = """
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+subprocess.Popen(
+    [sys.executable, "-c", sys.argv[1], sys.argv[2]],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    close_fds=True,
+)
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline and not Path(sys.argv[2]).exists():
+    time.sleep(0.01)
+sys.stdout.write("x" * int(sys.argv[3]) + "\\n")
+sys.stdout.flush()
+time.sleep(30)
+"""
+    token = await transport.start(
+        run_id="oversized-real-subprocess",
+        argv=(
+            sys.executable,
+            "-c",
+            parent_code,
+            child_code,
+            str(child_path),
+            str(agent_runtime_module._SUBPROCESS_STREAM_LIMIT + 1),
+        ),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=30,
+        metadata={},
+    )
+    root_pid = transport._get(token).process.pid
+    child_pid = 0
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="stream-json line exceeds",
+        ):
+            _ = [
+                event
+                async for event in transport.stream(token)
+            ]
+        with pytest.raises(
+            RuntimeError,
+            match="stream-json line exceeds",
+        ):
+            await asyncio.wait_for(transport.collect(token), timeout=10)
+
+        child_pid = int(
+            json.loads(child_path.read_text(encoding="utf-8"))["pid"]
+        )
+        assert asyncio.get_running_loop().time() - started_at < 10
+        assert not psutil.pid_exists(root_pid)
+        assert not psutil.pid_exists(child_pid)
+    finally:
+        if child_pid <= 0 and child_path.exists():
+            with contextlib.suppress(
+                json.JSONDecodeError,
+                KeyError,
+                ValueError,
+            ):
+                child_pid = int(
+                    json.loads(
+                        child_path.read_text(encoding="utf-8")
+                    )["pid"]
+                )
+        if transport.is_active(token):
+            with contextlib.suppress(Exception):
+                await transport.cancel(token)
+        with contextlib.suppress(Exception):
+            await transport.collect(token)
+        if psutil.pid_exists(root_pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(root_pid, signal.SIGKILL)
+        if child_pid and psutil.pid_exists(child_pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(child_pid, signal.SIGKILL)
+
+
+@pytest.mark.asyncio
+async def test_subprocess_timeout_wins_over_stream_failure_during_cleanup(
+    tmp_path: Path,
+) -> None:
+    class DelayedStreamFailureTransport(SubprocessRuntimeTransport):
+        async def _pump(
+            self,
+            item: agent_runtime_module._SubprocessToken,
+        ) -> int:
+            await asyncio.sleep(0.05)
+            raise RuntimeError(
+                "runtime stream-json line exceeds the configured limit"
+            )
+
+    transport = DelayedStreamFailureTransport()
+    token = await transport.start(
+        run_id="timeout-precedence",
+        argv=(sys.executable, "-c", "import time; time.sleep(30)"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=0.01,
+        metadata={},
+    )
+
+    try:
+        result = await transport.collect(token)
+        assert result.returncode == 124
+        assert [event async for event in transport.stream(token)] == []
+    finally:
+        if transport.is_active(token):
+            await transport.cancel(token)
+        with contextlib.suppress(Exception):
+            await transport.collect(token)
 
 
 @pytest.mark.asyncio
@@ -1386,6 +1695,102 @@ async def test_subprocess_transport_extracts_provider_served_usage_provenance(
     assert result.model_provenance.endswith(".model_usage")
     assert result.cost_provenance.endswith(".total_cost_usd")
     assert result.token_provenance.endswith(".usage")
+    assert result.metadata["provenance_blockers"] == []
+
+
+@pytest.mark.asyncio
+async def test_local_subprocess_attestation_names_unenforced_operational_pins(
+    tmp_path: Path,
+) -> None:
+    if not SubprocessRuntimeTransport().supports_filesystem_isolation(
+        "workspace_only"
+    ):
+        pytest.skip("local workspace isolation backend is unavailable")
+    architecture, os_name = default_task_platform()
+    hidden = tmp_path / "hidden"
+    hidden.mkdir()
+    transport = SubprocessRuntimeTransport()
+    token = await transport.start(
+        run_id="local-operational-attestation",
+        argv=(
+            sys.executable,
+            "-c",
+            "print('{\"type\":\"run.completed\"}')",
+        ),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=5,
+        metadata={
+            "execution_mode": "operational",
+            "experiment": {
+                "compute_resource_hash": "a" * 64,
+                "runtime_plan": {
+                    "container_digest": "sha256:" + ("b" * 64),
+                    "architecture": architecture,
+                    "os_name": os_name,
+                    "network_policy": "disabled",
+                    "resource_limits": {
+                        "max_tokens": 100,
+                        "max_cost_usd": 1.0,
+                        "timeout_s": 5,
+                        "max_retries": 0,
+                    },
+                },
+            },
+            "filesystem_isolation": {
+                "mode": "workspace_only",
+                "workspace": str(tmp_path),
+                "deny_paths": [str(hidden)],
+                "network_policy": "disabled",
+            },
+        },
+    )
+
+    result = await transport.collect(token)
+
+    attestation = result.metadata["execution_environment_attestation"]
+    assert attestation["attestation_source"] == "runtime_transport"
+    assert attestation["mode"] == "operational"
+    assert attestation["backend"] == (
+        "local-subprocess/macos-sandbox-exec"
+    )
+    assert attestation["image_digest"] == ""
+    assert attestation["architecture"] == architecture
+    assert attestation["os_name"] == os_name
+    assert attestation["network_policy"] == "disabled"
+    assert attestation["enforced"] is False
+    assert attestation["backend_evidence"]["container_backend"] is False
+    assert (
+        attestation["backend_evidence"]["network_isolation_enforced"]
+        is True
+    )
+    assert "image_digest:no_container_backend" in attestation["unmet_pins"]
+    assert (
+        "resource_limits.max_tokens:not_enforced_by_local_subprocess"
+        in attestation["unmet_pins"]
+    )
+    assert (
+        "resource_limits.max_cost_usd:not_enforced_by_local_subprocess"
+        in attestation["unmet_pins"]
+    )
+    attestation_body = {
+        key: value
+        for key, value in attestation.items()
+        if key != "attestation_id"
+    }
+    assert attestation["attestation_id"] == hashlib.sha256(
+        json.dumps(
+            attestation_body,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert result.metadata["provenance_blockers"] == [
+        "resolved_model",
+        "cost_provenance",
+        "token_provenance",
+        "token_usage",
+    ]
 
 
 def test_raw_event_provenance_sums_explicit_delta_usage() -> None:

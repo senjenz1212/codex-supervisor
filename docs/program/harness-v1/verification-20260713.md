@@ -1,4 +1,4 @@
-# Harness v1 Verification — July 13, 2026
+# Harness v1 Verification — July 13-14, 2026
 
 ## Verdict
 
@@ -21,18 +21,58 @@ uv run pytest -q
 Observed result:
 
 ```text
-2175 passed, 22 skipped in 1364.57s
+2369 passed, 24 skipped in 1712.38s
 ```
 
-Focused changed-surface command covered policy authority, evaluator
-determinism, evidence capture, manifests, trace closure, MCP/AXI boundaries,
-the experiment kernel, the hermetic tracer, and request-path isolation.
+The final post-audit focused command covered production-trace authority,
+public export reconstruction, event-ledger migrations, replay, historical
+evaluation, run registration, and launch-receipt durability.
 
 Observed result:
 
 ```text
-525 passed in 404.83s
+295 passed, 23 skipped in 12.19s
 ```
+
+The final authority-regression commands covered immutable experiment-to-grade
+joins, completed evidence replay, the hermetic tracer, canonical public
+exports, clean-room verification, production-trace recording, and terminal
+experiment recovery:
+
+```text
+uv run pytest -q tests/test_evidence_committer.py tests/test_tracer_001_e2e.py
+uv run pytest -q tests/test_dual_agent_artifacts.py
+uv run pytest -q tests/test_codex_supervisor_mcp_stdio.py -k production_trace
+uv run pytest -q tests/test_experiment_kernel.py -k 'terminal or grade or replay'
+```
+
+Observed results:
+
+```text
+33 passed in 9.25s
+63 passed in 6.58s
+5 passed, 43 deselected in 0.52s
+21 passed, 73 deselected in 1.03s
+```
+
+An earlier full-suite run found two stale launch-receipt fsync-probe
+assertions after the receipt store moved to descriptor-relative `openat`
+operations and eager creation of its anchored `pending`, `consumed`, and
+`locks` namespaces. The probe previously reported relative names instead of
+resolving them against `dir_fd`, and it omitted several real durable
+transitions. The probe now resolves descriptor-relative paths and asserts
+every directory-entry fsync. The two focused tests, the 24-test OBS-001 suite,
+the 37-test run-registry suite, and the final full suite all pass.
+
+Two later adversarial reviews found authority gaps after an earlier green
+suite. First, evidence publication snapshotted the experiment store and
+GradeBook without proving their terminal records joined. Second, a clean-room
+package could be internally hash-consistent while receipt-supplied trace
+semantics differed from the canonical gate event. RED probes reproduced both.
+The final implementation rejects missing, mismatched, deleted, or recommitted
+terminal authority on both initial commit and completed replay, and rejects
+non-`dual_agent` or semantically substituted clean-room trace sources. The
+independent re-probes confirmed both bypasses closed before the final suite.
 
 Static checks:
 
@@ -74,12 +114,88 @@ representative coding benchmarks.
   and credentials while preserving explicitly pinned planning artifacts.
 - Grade-backed trace closure validates immutable grade revisions through the
   GradeBook rather than accepting stale citations by shape alone.
+- L3 assignment evidence must match preregistered assignment-version,
+  experiment-spec, treatment, key-commitment, and task-to-stratum hashes;
+  self-consistent post-hoc re-randomization is rejected.
+- If terminal persistence fails after a pass is graded, a failed replacement,
+  invalidation, or immutable emergency quarantine prevents the orphan pass
+  from authorizing a decision.
+- Event-hash schema v2 is bound to frozen redaction rules v1. Verification
+  infers the schema from the event hash and never tries every known redactor.
+- A real oversized subprocess stream line fails immediately and the process
+  tree is reaped instead of waiting for the runtime timeout.
+- Production TRACE derives dynamic evidence, completion state, and its
+  workspace storage root from the ledger-verified gate-result event. Caller
+  result/payload objects cannot override or suppress that event, and replaying
+  the same source event emits no duplicate trace-recorded event.
+- A completed evidence-commit replay reloads the persisted `TraceGraphStore`
+  and rejects any difference from the immutable request instead of validating
+  the caller graph alone.
+- Every grade revision in one supersession lineage must bind the same terminal
+  experiment/task/arm/state/hash identity, regardless of commit order.
+- Every published grade history request pins exactly one immutable terminal
+  commit per revision plus the full source-authority terminal commit referenced
+  by its exact experiment terminal event. Initial publication and completed
+  replay reject deletion, substitution, or delete-and-recommit even when the
+  replacement preserves terminal semantics but changes commit identity/hash.
+- Public dual-agent exports now carry a canonical full-run ledger prefix in
+  `replay/evidence-ledger.jsonl`, including every event-chain field required by
+  `verify_event_chain` and the exact captured ledger head and event-identity
+  head.
+- Exported production-trace receipts are complete only when the trace-recorded
+  event, source gate-result event, receipt, and receipt evidence all bind the
+  same canonical ledger event ID and hash. Intervening unrelated run events do
+  not break clean-room reconstruction because the complete prefix is exported.
+- Every accepted execution or outcome-review gate must have exactly one
+  verified production-trace record. Export generation and clean-room
+  verification both reject missing, duplicated, omitted, or reordered trace
+  coverage.
+- Clean-room verification derives the production-trace receipt ceiling from
+  the persisted L1 grade and decision. Rewriting a receipt to claim L2-L6,
+  even with a recomputed receipt hash and package root, fails closed.
+- Public and clean-room production-trace verification require the canonical
+  source to be a `dual_agent` gate-result event and independently rederive its
+  planning, runtime, result, workspace, status, trace, grade, terminal-commit,
+  and decision semantics. Recommitted receipt/trace/grade bytes cannot replace
+  absent or different source-event semantics.
+- Failed trace persistence remains blocking unless a later, independently
+  verified record has the exact same task, gate, source event ID, and source
+  event hash. A manifest cannot forge recovery by editing status fields.
+- `replay/export-integrity.json` commits the canonical exported file tree and
+  captured ledger head. `DualAgentArtifactExport.export_root_sha256` exposes
+  the resulting root for an independent verifier to pin outside the package.
+- This export verification is explicitly `structural_prefix_only`. The package
+  root detects later substitution only when obtained from an independent
+  channel; it is not a signed external ledger anchor and does not raise the
+  L1/L2 claim ceiling.
+
+Focused public-export verification:
+
+```text
+uv run pytest tests/test_dual_agent_artifacts.py -q \
+  -k 'release_export_copies_reconstructable_production_trace_authority or
+      release_export_rejects_tampered_production_trace_store or
+      release_export_rejects_production_trace_source_substitution or
+      clean_room_export_rejects_forged_ledger_and_package_root or
+      clean_room_verifier_rejects_forged_trace_claim_ceiling or
+      clean_room_verifier_requires_one_record_per_trace_ledger_event or
+      release_export_requires_one_trace_per_accepted_runtime_gate or
+      clean_room_verifier_rejects_explicitly_missing_required_trace or
+      clean_room_verifier_rejects_forged_recovery_of_trace_failure'
+```
+
+Observed result:
+
+```text
+9 passed, 52 deselected
+```
 
 ## Current Claim Ceiling
 
 The hermetic tracer demonstrates cross-slice composition and keeps its claim
-at L2. It does not provide the randomized, blinded, powered B-vs-C evidence
-required for L3.
+at L1. Its same-principal fixture verifier is not independent operational
+evidence for L2, and it does not provide the randomized, blinded, powered
+B-vs-C evidence required for L3.
 
 Therefore the current program must not claim:
 
