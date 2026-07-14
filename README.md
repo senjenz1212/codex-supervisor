@@ -392,7 +392,7 @@ python -m compileall -q supervisor daemon.py mcp_tools
 Current verified result:
 
 ```text
-2175 passed, 22 skipped
+2443 passed, 24 skipped
 ```
 
 ## Replay Fixtures
@@ -441,8 +441,9 @@ python scripts/run_harness_v1_runtime_smoke.py
 ```
 
 When upgrading an existing deployment: SQLite forward migrations apply
-automatically at startup, but a pre-existing legacy event ledger must be
-backfilled offline with
+automatically at startup, and a small pre-existing legacy event ledger is
+backfilled in-process. Above 10,000 legacy events startup refuses and the
+ledger must be backfilled offline with
 `supervisor.schema_migrations.migrate_legacy_event_ledger_offline` while no
 other process touches the database (startup prints the exact command).
 Postgres-backed deployments must run `make migrate POSTGRES_DSN=...` before

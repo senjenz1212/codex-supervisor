@@ -40,10 +40,15 @@ levels:
       record: independent_hidden_verifier
       required:
         verifier_id: non_empty
+        producer_principal_id: non_empty
         independent: true
         hidden: true
         result_ref: non_empty
         result_sha256: sha256
+      attestation:
+        schema_version: supervisor-independent-verifier-attestation/v1
+        verifier_principal_id: non_empty_distinct_from_producer_casefold
+        signature: verified_by_registered_trusted_verifier_attestor
 
   - id: L3
     ordinal: 3
@@ -59,6 +64,10 @@ levels:
         supports_improvement: true
         analysis_ref: non_empty
         analysis_sha256: sha256
+      experiment_manifest:
+        schema_version: supervisor-experiment-evidence-manifest/v1
+        attestation: verified_external_authority
+        resolves_to_pinned_hash: required
       resolved_analysis:
         schema_version: supervisor-b-vs-c-analysis/v1
         validation:
@@ -91,6 +100,7 @@ levels:
             analysis_sha256: sha256
             schema_version: supervisor-b-vs-c-analysis/v1
             full_l3_validation: required
+            experiment_manifest: attested_external_authority_required
             experiment_id: distinct
             task_ids: disjoint
             replication_context:
@@ -117,6 +127,7 @@ levels:
         supports_positive_roi: true
         analysis_ref: non_empty
         analysis_sha256: sha256
+        attestation: verified_external_authority
       resolved_analysis:
         schema_version: supervisor-roi-analysis/v2
         causal_binding: causal_analysis_sha256
@@ -150,6 +161,11 @@ levels:
     claim: One candidate passed linked shadow, approval, canary, and rollback controls.
     inherits: L5
     predicate:
+      authority_manifest:
+        record: auto_improvement_authority_manifest
+        schema_version: supervisor-auto-improvement-authority-manifest/v1
+        attestation: verified_external_authority
+        resolves_to_pinned_hash: required
       all_records:
         frozen_control:
           schema_version: supervisor-frozen-control-receipt/v1

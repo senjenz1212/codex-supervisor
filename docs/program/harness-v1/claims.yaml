@@ -41,6 +41,9 @@ claims:
       - '\bsupervision improves outcomes\b'
       - '\bharness improves outcomes\b'
       - '\bsupervisor causes better outcomes\b'
+      - '\b(?:arm\s+)?b\s+(?:produces?|yields?|delivers?|achieves?)\s+more\s+(?:successful|passing|solved|completed)\s+(?:tasks?|cases?|benchmarks?)\s+than\s+(?:arm\s+)?c\b'
+      - '\b(?:the\s+|our\s+)?(?:supervisor|supervision|harness)\s+(?:produces?|yields?|delivers?|achieves?)\s+(?:a\s+)?(?:higher\s+(?:pass|success|solve|completion)\s+rate|better\s+(?:benchmark\s+)?(?:outcomes?|results?)|more\s+(?:successful|passing|solved|completed)\s+(?:tasks?|cases?|benchmarks?))\s+than\s+(?:the\s+)?(?:baseline|control|direct(?:\s+execution)?|compute[- ]matched\s+direct|arm\s+c|c)\b'
+      - '\b(?:the\s+|our\s+)?(?:supervisor|harness|arm\s+b|b)\s+outperforms?\s+(?:the\s+)?(?:baseline|control|direct(?:\s+execution)?|compute[- ]matched\s+direct|arm\s+c|c)\s+(?:on|for)\s+(?:benchmark\s+)?(?:outcomes?|results?|pass\s+rate|success\s+rate)\b'
       - '\b(?:the\s+|our\s+)?(?:supervisor|harness|arm\s+b|b)\s+(?:is|was|performs?|performed|does|did)\s+(?:(?:statistically|significantly)\s+)?(?:better|superior|more\s+effective)\s+than\s+(?:the\s+)?(?:baseline|control|direct(?:\s+execution)?|compute[- ]matched\s+direct|arm\s+c|c)\b'
       - '\b(?:arm\s+)?b\s+(?:beats?|beat|wins?\s+against)\s+(?:arm\s+)?c\b'
 

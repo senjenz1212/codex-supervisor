@@ -22,6 +22,7 @@ Replay artifacts are allowed to outlive the code that produced them. The supervi
 | trace_envelope | `dual-agent-trace-envelope/v1` |
 | failure_taxonomy | `dual-agent-failure-taxonomy/v1` |
 | interaction | `dual-agent-interaction/v1` |
+| production_trace_export | `dual-agent-production-trace-export/v1` |
 
 ## Verification
 

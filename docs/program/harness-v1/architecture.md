@@ -76,7 +76,9 @@ cost, or a self-declared `positive_roi` leaves the bundle at L4.
 
 ### L6: controlled candidate promotion
 
-L6 requires six versioned, hash-linked receipts for one candidate change:
+L6 requires an externally attested
+`supervisor-auto-improvement-authority-manifest/v1` plus six versioned,
+hash-linked receipts for one candidate change:
 
 1. frozen control;
 2. sealed holdout with an access-log identity;
@@ -114,8 +116,9 @@ source.
 
 `claims.yaml` is the program registry. The code carries the same minimum-level
 rules so installed runtime packages do not depend on a repository-relative
-documentation path. Focused tests compare the YAML registry and runtime rules
-to prevent drift.
+documentation path. Focused tests compare the YAML registry's claim IDs,
+required levels, and schema versions against the runtime rules to prevent
+drift; the tripwire regex patterns are kept in sync manually.
 
 Governed `claims` entries and explicit claim-bearing fields such as
 `claim_text`, `outcome_claim`, and `roi_claim` accept registered claim IDs

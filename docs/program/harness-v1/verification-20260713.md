@@ -21,7 +21,7 @@ uv run pytest -q
 Observed result:
 
 ```text
-2369 passed, 24 skipped in 1712.38s
+2443 passed, 24 skipped in 1572.17s
 ```
 
 The final post-audit focused command covered production-trace authority,
@@ -49,10 +49,10 @@ uv run pytest -q tests/test_experiment_kernel.py -k 'terminal or grade or replay
 Observed results:
 
 ```text
-33 passed in 9.25s
-63 passed in 6.58s
-5 passed, 43 deselected in 0.52s
-21 passed, 73 deselected in 1.03s
+35 passed in 12.36s
+68 passed in 8.01s
+5 passed, 47 deselected in 0.60s
+22 passed, 73 deselected in 1.54s
 ```
 
 An earlier full-suite run found two stale launch-receipt fsync-probe
@@ -62,7 +62,7 @@ operations and eager creation of its anchored `pending`, `consumed`, and
 resolving them against `dir_fd`, and it omitted several real durable
 transitions. The probe now resolves descriptor-relative paths and asserts
 every directory-entry fsync. The two focused tests, the 24-test OBS-001 suite,
-the 37-test run-registry suite, and the final full suite all pass.
+the 39-test run-registry suite, and the final full suite all pass.
 
 Two later adversarial reviews found authority gaps after an earlier green
 suite. First, evidence publication snapshotted the experiment store and
@@ -120,8 +120,10 @@ representative coding benchmarks.
 - If terminal persistence fails after a pass is graded, a failed replacement,
   invalidation, or immutable emergency quarantine prevents the orphan pass
   from authorizing a decision.
-- Event-hash schema v2 is bound to frozen redaction rules v1. Verification
-  infers the schema from the event hash and never tries every known redactor.
+- Each event-hash schema is bound to exactly one frozen redaction ruleset:
+  the current `evidence-ledger-event/v3` to `supervisor-redaction-rules/v2`,
+  and the legacy `evidence-ledger-event/v2` to rules v1. Verification infers
+  the schema from the event hash and never tries every known redactor.
 - A real oversized subprocess stream line fails immediately and the process
   tree is reaped instead of waiting for the runtime timeout.
 - Production TRACE derives dynamic evidence, completion state, and its
@@ -187,7 +189,7 @@ uv run pytest tests/test_dual_agent_artifacts.py -q \
 Observed result:
 
 ```text
-9 passed, 52 deselected
+9 passed, 59 deselected
 ```
 
 ## Current Claim Ceiling

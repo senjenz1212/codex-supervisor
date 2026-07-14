@@ -55,8 +55,10 @@ supervisor:
   # SQLite remains the dev/local default.
   # state_db: postgresql://codex-supervisor-pgbouncer:6432/codex_supervisor
   hook_server_port: 19001
-  # model_first sends every hook to Claude Agent SDK before deterministic
-  # fallback rules. Use deterministic_first if you want cheaper/faster hooks.
+  # model_first sends every hook to the model critic — the direct Anthropic
+  # client when configured, otherwise the Claude Agent SDK — before
+  # deterministic fallback rules. Use deterministic_first for cheaper/faster
+  # hooks.
   hook_critique_strategy: model_first
   rollout_sweep_interval_s: 10
   drift_check_interval_s: 30
