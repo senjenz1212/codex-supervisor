@@ -22,7 +22,11 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 from urllib.parse import unquote, urlsplit
 
-from .swe_bench_official_oracle import run_official_harness_oracle
+from .swe_bench_official_oracle import (
+    SweBenchVerifierExecutionSpec,
+    run_legacy_environment_selected_official_harness_oracle,
+    run_task_spec_bound_official_harness_oracle,
+)
 
 
 FROZEN_RESULT_SCHEMA_VERSION = "supervisor-frozen-task-result/v1"
@@ -64,9 +68,11 @@ class TaskSpec:
     task_class: str = ""
     canonical_repo_id: str = ""
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    verifier_execution: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         metadata = dict(self.metadata)
+        verifier_execution = dict(self.verifier_execution)
         normalized_task_class = str(
             self.task_class or self.task_family
         ).strip()
@@ -105,6 +111,11 @@ class TaskSpec:
             "metadata",
             MappingProxyType(metadata),
         )
+        object.__setattr__(
+            self,
+            "verifier_execution",
+            MappingProxyType(verifier_execution),
+        )
 
     @property
     def spec_hash(self) -> str:
@@ -115,7 +126,7 @@ class TaskSpec:
         return canonical_task_identity(self)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "task_id": self.task_id,
             "task_family": self.task_family,
             "repo": self.repo,
@@ -135,6 +146,9 @@ class TaskSpec:
             "canonical_repo_id": self.canonical_repo_id,
             "metadata": dict(self.metadata),
         }
+        if self.verifier_execution:
+            payload["verifier_execution"] = dict(self.verifier_execution)
+        return payload
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "TaskSpec":
@@ -605,6 +619,197 @@ class UnityRepositoryTask(GenericRepositoryTask):
 
 
 class SweBenchVerifier:
+    """Official SWE-bench verifier bound to one immutable complete TaskSpec."""
+
+    verifier_id = "official-swebench"
+    protected_paths: tuple[str, ...] = ()
+
+    def __init__(
+        self,
+        *,
+        task_spec: TaskSpec,
+        verifier_version: str,
+        verifier_hash: str,
+        oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] = (
+            run_task_spec_bound_official_harness_oracle
+        ),
+    ) -> None:
+        if not str(verifier_version).strip():
+            raise ValueError("verifier_version must be non-empty")
+        if not isinstance(task_spec, TaskSpec):
+            raise ValueError("SweBenchVerifier requires a TaskSpec")
+        self.verifier_version = str(verifier_version).strip()
+        task_snapshot = task_spec.to_dict()
+        task_snapshot_hash = _sha256_json(task_snapshot)
+        if task_snapshot_hash != task_spec.spec_hash:
+            raise ValueError(
+                "TaskSpec changed while binding official SWE-bench verifier"
+            )
+        self._execution_spec = (
+            SweBenchVerifierExecutionSpec.from_task_spec(
+                task_snapshot,
+                task_spec_hash=task_snapshot_hash,
+                verifier_version=self.verifier_version,
+            )
+        )
+        normalized_verifier_hash = str(verifier_hash).strip().casefold()
+        if normalized_verifier_hash != self._execution_spec.verifier_hash:
+            raise ValueError(
+                "verifier package hash does not match TaskSpec verifier_hash"
+            )
+        self.verifier_hash = normalized_verifier_hash
+        self._oracle_runner = oracle_runner
+
+    @property
+    def execution_spec(self) -> SweBenchVerifierExecutionSpec:
+        return self._execution_spec
+
+    async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+        self._validate_frozen_result_binding(frozen_result)
+        context = {
+            **self._execution_spec.context_binding(),
+            "candidate_id": frozen_result.result_hash,
+            "model_patch": frozen_result.patch,
+            "model_patch_sha256": frozen_result.patch_hash,
+            "frozen_result_hash": frozen_result.result_hash,
+        }
+        oracle_result = await asyncio.to_thread(self._oracle_runner, context)
+        if not isinstance(oracle_result, Mapping):
+            raise ValueError("official SWE-bench oracle must return a mapping")
+        self._validate_oracle_receipt_binding(oracle_result)
+        fail_to_pass = str(
+            oracle_result.get("fail_to_pass_status") or ""
+        )
+        pass_to_pass = str(
+            oracle_result.get("pass_to_pass_status") or ""
+        )
+        passed = (
+            _official_oracle_status_passed(fail_to_pass)
+            and _official_oracle_status_passed(pass_to_pass)
+        )
+        unavailable = bool(oracle_result.get("oracle_unavailable"))
+        return Grade(
+            verifier_id=self.verifier_id,
+            verifier_version=self.verifier_version,
+            verifier_hash=self.verifier_hash,
+            frozen_result_hash=frozen_result.result_hash,
+            passed=passed,
+            score=1.0 if passed else 0.0,
+            evidence=dict(oracle_result),
+            failure_classification=(
+                "verifier_infrastructure_unavailable"
+                if unavailable
+                else ("" if passed else "official_tests_failed")
+            ),
+        )
+
+    def _validate_frozen_result_binding(
+        self,
+        frozen_result: FrozenTaskResult,
+    ) -> None:
+        if not isinstance(frozen_result, FrozenTaskResult):
+            raise ValueError("SweBenchVerifier requires a FrozenTaskResult")
+        task = self._execution_spec.task_spec
+        if frozen_result.task_id != str(task["task_id"]):
+            raise ValueError(
+                "FrozenTaskResult task_id does not match bound TaskSpec"
+            )
+        if frozen_result.task_family != str(task["task_family"]):
+            raise ValueError(
+                "FrozenTaskResult task_family does not match bound TaskSpec"
+            )
+        if frozen_result.task_spec_hash != self._execution_spec.task_spec_hash:
+            raise ValueError(
+                "FrozenTaskResult task_spec_hash does not match bound TaskSpec"
+            )
+        if frozen_result.patch_hash != hashlib.sha256(
+            frozen_result.patch.encode("utf-8")
+        ).hexdigest():
+            raise ValueError("FrozenTaskResult patch_hash does not match patch")
+        canonical_result = FrozenTaskResult.create(
+            task_id=frozen_result.task_id,
+            task_family=frozen_result.task_family,
+            task_spec_hash=frozen_result.task_spec_hash,
+            run_result_hash=frozen_result.run_result_hash,
+            patch=frozen_result.patch,
+            output=frozen_result.output,
+            metadata=frozen_result.metadata,
+            frozen_at_ms=frozen_result.frozen_at_ms,
+        )
+        if (
+            frozen_result.schema_version != canonical_result.schema_version
+            or frozen_result.result_hash != canonical_result.result_hash
+        ):
+            raise ValueError(
+                "FrozenTaskResult integrity does not match bound verifier input"
+            )
+        expected_metadata = {
+            "repo": self._execution_spec.repository,
+            "canonical_repo_id": self._execution_spec.canonical_repo_id,
+            "revision": self._execution_spec.revision,
+            "instance_id": self._execution_spec.instance_id,
+            "canonical_task_id": self._execution_spec.canonical_task_id,
+        }
+        for key, expected in expected_metadata.items():
+            observed = frozen_result.metadata.get(key)
+            if not isinstance(observed, str) or not observed.strip():
+                raise ValueError(
+                    f"FrozenTaskResult metadata missing bound {key}"
+                )
+            matches = (
+                observed.strip().casefold() == expected.casefold()
+                if key == "revision"
+                else observed.strip() == expected
+            )
+            if not matches:
+                raise ValueError(
+                    "FrozenTaskResult metadata "
+                    f"{key} does not match bound TaskSpec"
+                )
+
+    def _validate_oracle_receipt_binding(
+        self,
+        oracle_result: Mapping[str, Any],
+    ) -> None:
+        observed_result_hash = str(
+            oracle_result.get("verifier_execution_spec_hash") or ""
+        ).strip().casefold()
+        if observed_result_hash != self._execution_spec.execution_spec_hash:
+            raise ValueError(
+                "official SWE-bench oracle result is not bound to verifier "
+                "execution spec"
+            )
+        adapter_receipt = oracle_result.get("oracle_adapter_receipt")
+        if not isinstance(adapter_receipt, Mapping):
+            raise ValueError(
+                "official SWE-bench oracle result missing adapter receipt"
+            )
+        receipt_spec = adapter_receipt.get("verifier_execution_spec")
+        if not isinstance(receipt_spec, Mapping):
+            raise ValueError(
+                "official SWE-bench oracle receipt missing bound spec"
+            )
+        parsed = SweBenchVerifierExecutionSpec.from_mapping(receipt_spec)
+        if (
+            parsed.execution_spec_hash
+            != self._execution_spec.execution_spec_hash
+            or parsed.to_dict() != self._execution_spec.to_dict()
+        ):
+            raise ValueError(
+                "official SWE-bench oracle receipt bound spec mismatch"
+            )
+        receipt_hash = str(
+            adapter_receipt.get("verifier_execution_spec_hash") or ""
+        ).strip().casefold()
+        if receipt_hash != self._execution_spec.execution_spec_hash:
+            raise ValueError(
+                "official SWE-bench oracle receipt spec hash mismatch"
+            )
+
+
+class LegacyEnvironmentSelectedSweBenchVerifier:
+    """Legacy verifier whose dataset and harness choices may come from env."""
+
     verifier_id = "official-swebench"
     protected_paths: tuple[str, ...] = ()
 
@@ -614,7 +819,7 @@ class SweBenchVerifier:
         verifier_version: str,
         verifier_hash: str,
         oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] = (
-            run_official_harness_oracle
+            run_legacy_environment_selected_official_harness_oracle
         ),
     ) -> None:
         if not str(verifier_version).strip():

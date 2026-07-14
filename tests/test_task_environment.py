@@ -12,7 +12,7 @@ from supervisor.task_environment import (
     canonical_task_identity,
     FrozenTaskResult,
     GenericRepositoryTask,
-    SweBenchVerifier,
+    LegacyEnvironmentSelectedSweBenchVerifier,
     TaskSpec,
     UnityRepositoryTask,
     UnityTestFrameworkVerifier,
@@ -137,6 +137,18 @@ def test_repository_commands_preserve_auth_and_proxy_environment(
     assert env["NO_PROXY"] == "localhost,127.0.0.1"
     assert env["GIT_TERMINAL_PROMPT"] == "0"
     assert "UNRELATED_SECRET" not in env
+
+
+def test_legacy_task_spec_serialization_omits_empty_verifier_execution(
+    tmp_path: Path,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    task = _spec(repo, revision, family="generic")
+
+    serialized = task.to_dict()
+
+    assert "verifier_execution" not in serialized
+    assert TaskSpec.from_dict(serialized).spec_hash == task.spec_hash
 
 
 @pytest.mark.asyncio
@@ -427,7 +439,7 @@ def test_unity_verifier_declares_hidden_root_as_protected(
 
 
 @pytest.mark.asyncio
-async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
+async def test_legacy_swebench_verifier_delegates_without_status_rewrite(
     tmp_path: Path,
 ) -> None:
     observed: list[dict[str, object]] = []
@@ -449,7 +461,7 @@ async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
         output="done",
         metadata={"instance_id": "repo__issue-1"},
     )
-    grade = await SweBenchVerifier(
+    grade = await LegacyEnvironmentSelectedSweBenchVerifier(
         verifier_version="swebench-4.1",
         verifier_hash="official-harness-sha",
         oracle_runner=official_oracle,
@@ -471,7 +483,7 @@ async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
         ("unavailable", False),
     ],
 )
-async def test_swebench_verifier_preserves_official_status_semantics(
+async def test_legacy_swebench_verifier_preserves_official_status_semantics(
     status: str,
     expected_passed: bool,
 ) -> None:
@@ -485,7 +497,7 @@ async def test_swebench_verifier_preserves_official_status_semantics(
         metadata={"instance_id": "repo__issue-1"},
     )
 
-    grade = await SweBenchVerifier(
+    grade = await LegacyEnvironmentSelectedSweBenchVerifier(
         verifier_version="swebench-4.1",
         verifier_hash="official-harness-sha",
         oracle_runner=lambda _context: {
