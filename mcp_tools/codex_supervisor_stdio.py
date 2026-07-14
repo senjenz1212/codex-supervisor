@@ -7,7 +7,6 @@ server through its external MCP configuration and receives ordinary MCP tools.
 from __future__ import annotations
 
 import argparse
-import asyncio
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -163,7 +162,6 @@ from supervisor.dual_agent_runner import (
     DualAgentGateSpec,
     request_deadlock_escalation,
     resume_pending_gates,
-    run_dual_agent_gate,
     run_dual_agent_gate_with_escalation,
 )
 from supervisor.dual_agent_lead import (
