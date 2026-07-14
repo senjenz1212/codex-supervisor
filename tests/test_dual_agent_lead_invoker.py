@@ -223,6 +223,7 @@ def test_runtime_lead_invocation_has_identical_schema_through_claude_and_codex(
         expected_decisions=("keep the gate narrow",),
         expected_objections=(),
         model="provider-neutral-request-model",
+        execution_mode="operational",
     )
     provider_cases = (
         (ClaudeCodeRuntime, ("claude", "-p")),
@@ -251,6 +252,7 @@ def test_runtime_lead_invocation_has_identical_schema_through_claude_and_codex(
 
         assert transport.started[0]["argv"][:2] == argv_prefix
         assert transport.started[0]["metadata"]["lead_invocation"]["gate"] == "prd_review"
+        assert transport.started[0]["metadata"]["execution_mode"] == "operational"
         assert transport.started[0]["metadata"]["permission_mode"] == "bypassPermissions"
         assert result.probe.ok
         assert result.outcome is not None
@@ -275,6 +277,45 @@ def test_runtime_lead_invocation_has_identical_schema_through_claude_and_codex(
     ]
     assert outcome_schemas[0] == outcome_schemas[1]
     assert results[0].outcome.model_dump() == results[1].outcome.model_dump()
+
+
+def test_operational_lead_fails_before_legacy_runner_without_runtime_injection(
+    tmp_path,
+):
+    legacy_calls = []
+
+    def legacy_runner(*args, **kwargs):
+        legacy_calls.append((args, kwargs))
+        raise AssertionError("operational mode must not enter the legacy edge")
+
+    request = LeadInvocationRequest(
+        task_id="operational-lead",
+        gate="execution",
+        instruction="Run through the injected provider-neutral runtime.",
+        cwd=tmp_path,
+        execution_mode="operational",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="operational lead execution requires an injected RuntimeTaskRunner",
+    ):
+        invoke_lead(request, runner=legacy_runner)
+
+    assert legacy_calls == []
+
+
+def test_lead_execution_mode_rejects_unknown_provider_edge_mode(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="invalid-lead-mode",
+        gate="execution",
+        instruction="Reject an ambiguous execution mode.",
+        cwd=tmp_path,
+        execution_mode="automatic",  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="unsupported lead execution_mode"):
+        invoke_lead(request)
 
 
 @pytest.mark.asyncio

@@ -19,7 +19,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
 from .agent_mailbox import critical_review_prompt
-from .agent_runtime import AgentRunResult, AgentTask
+from .agent_runtime import (
+    AgentRunResult,
+    AgentTask,
+    RuntimeExecutionMode,
+    normalize_runtime_execution_mode,
+)
 from .dual_agent_legacy_claude import (
     CLAUDE_CHEAP_MODEL as CLAUDE_CHEAP_MODEL,
     CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY as CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY,
@@ -119,6 +124,7 @@ class LeadInvocationRequest:
     permission_mode: str = "bypassPermissions"
     tools: str = "default"
     effort: ClaudeEffort | None = None
+    execution_mode: RuntimeExecutionMode = "compatible"
     execution_layer_mode: ExecutionLayerMode = "lead_direct"
     dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
     agentic_lead_policy: AgenticLeadPolicyMode = "off"
@@ -549,12 +555,17 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
 def build_lead_agent_task(request: LeadInvocationRequest) -> AgentTask:
     """Translate one lead request into the provider-neutral runtime contract."""
 
+    execution_mode = normalize_runtime_execution_mode(
+        request.execution_mode,
+        context="lead",
+    )
     model = select_lead_model(
         request.gate,
         quality=request.quality,
         explicit_model=request.model,
     )
     metadata: dict[str, Any] = {
+        "execution_mode": execution_mode,
         "lead_invocation": {
             "task_id": request.task_id,
             "gate": request.gate,
@@ -638,8 +649,21 @@ def invoke_lead(
     runner: Runner = subprocess.run,
     runtime_runner: RuntimeTaskRunner | None = None,
 ) -> LeadInvocationResult:
-    """Invoke a lead through ``AgentRuntime`` or the legacy Claude edge."""
+    """Invoke a lead without allowing operational fallback to legacy Claude."""
 
+    execution_mode = normalize_runtime_execution_mode(
+        request.execution_mode,
+        context="lead",
+    )
+    if execution_mode == "operational":
+        if runtime_runner is None:
+            raise ValueError(
+                "operational lead execution requires an injected "
+                "RuntimeTaskRunner"
+            )
+        return _invoke_runtime_lead(request, runtime_runner=runtime_runner)
+    if execution_mode in {"legacy", "replay", "fixture_replay", "test"}:
+        return _invoke_legacy_claude_lead(request, runner=runner)
     if runtime_runner is not None:
         return _invoke_runtime_lead(request, runtime_runner=runtime_runner)
     return _invoke_legacy_claude_lead(request, runner=runner)

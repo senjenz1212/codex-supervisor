@@ -22,7 +22,8 @@ import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from types import MappingProxyType
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import psutil
 
@@ -37,6 +38,25 @@ from .provider_routing import (
     uses_adaptive_opus_effort,
 )
 RUN_RESULT_SCHEMA_VERSION = "supervisor-agent-run-result/v1"
+CAPABILITY_EVIDENCE_SCHEMA_VERSION = (
+    "supervisor-runtime-capability-evidence/v1"
+)
+RuntimeExecutionMode = Literal[
+    "compatible",
+    "operational",
+    "legacy",
+    "replay",
+    "fixture_replay",
+    "test",
+]
+_RUNTIME_EXECUTION_MODES = frozenset({
+    "compatible",
+    "operational",
+    "legacy",
+    "replay",
+    "fixture_replay",
+    "test",
+})
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 _SUBPROCESS_STREAM_LIMIT = 32 * 1024 * 1024
 _WORKSPACE_ONLY_ISOLATION_MODE = "workspace_only"
@@ -47,6 +67,7 @@ _LOCAL_SUBPROCESS_EVIDENCE_SCHEMA_VERSION = (
     "supervisor-local-subprocess-backend-evidence/v1"
 )
 _TRANSPORT_OWNED_RESULT_METADATA_KEYS = frozenset({
+    "capability_evidence",
     "execution_environment_attestation",
     "execution_attestation",
     "resource_attestation",
@@ -120,12 +141,104 @@ class AgentTask:
 
 
 @dataclass(frozen=True)
+class RuntimeCapabilityEvidence:
+    """Separate configured claims from runtime discovery and actual exercise."""
+
+    declared: Mapping[str, bool] = field(default_factory=dict)
+    discovered: Mapping[str, bool] = field(default_factory=dict)
+    exercised: Mapping[str, bool] = field(default_factory=dict)
+    schema_version: str = CAPABILITY_EVIDENCE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "declared",
+            MappingProxyType(_normalized_capabilities(self.declared)),
+        )
+        object.__setattr__(
+            self,
+            "discovered",
+            MappingProxyType(_normalized_capabilities(self.discovered)),
+        )
+        object.__setattr__(
+            self,
+            "exercised",
+            MappingProxyType(_normalized_capabilities(self.exercised)),
+        )
+
+    @property
+    def available(self) -> Mapping[str, bool]:
+        return MappingProxyType({
+            **dict(self.declared),
+            **dict(self.discovered),
+        })
+
+    @property
+    def observed(self) -> Mapping[str, bool]:
+        """Facts discovered or exercised, excluding declarations alone."""
+
+        return MappingProxyType({
+            **dict(self.discovered),
+            **dict(self.exercised),
+        })
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "declared": dict(self.declared),
+            "discovered": dict(self.discovered),
+            "exercised": dict(self.exercised),
+            "available": dict(self.available),
+            "observed": dict(self.observed),
+        }
+
+
+@dataclass(frozen=True)
 class AgentRunHandle:
     run_id: str
     task_id: str
     runtime: str
     session_id: str
     capabilities: Mapping[str, bool]
+    capability_evidence: RuntimeCapabilityEvidence | None = None
+
+    def __post_init__(self) -> None:
+        normalized = _normalized_capabilities(self.capabilities)
+        evidence = self.capability_evidence
+        if evidence is None:
+            # Legacy constructors supplied one undifferentiated mapping. Treat
+            # those values as declarations, never as observed exercise.
+            evidence = RuntimeCapabilityEvidence(declared=normalized)
+        else:
+            # The legacy summary is retained as an explicit derived field; the
+            # evidence categories remain authoritative.
+            normalized = dict(evidence.available)
+        object.__setattr__(
+            self,
+            "capabilities",
+            MappingProxyType(normalized),
+        )
+        object.__setattr__(self, "capability_evidence", evidence)
+
+    @property
+    def declared_capabilities(self) -> Mapping[str, bool]:
+        assert self.capability_evidence is not None
+        return self.capability_evidence.declared
+
+    @property
+    def discovered_capabilities(self) -> Mapping[str, bool]:
+        assert self.capability_evidence is not None
+        return self.capability_evidence.discovered
+
+    @property
+    def exercised_capabilities(self) -> Mapping[str, bool]:
+        assert self.capability_evidence is not None
+        return self.capability_evidence.exercised
+
+    @property
+    def observed_capabilities(self) -> Mapping[str, bool]:
+        assert self.capability_evidence is not None
+        return self.capability_evidence.observed
 
 
 @dataclass(frozen=True)
@@ -327,6 +440,7 @@ class CommandAgentRuntime:
         self._events: dict[str, list[RuntimeEvent]] = {}
         self._generation_event_offsets: dict[str, int] = {}
         self._session_ids: dict[str, str] = {}
+        self._capability_evidence: dict[str, RuntimeCapabilityEvidence] = {}
 
     def runtime_manifest(self, task: AgentTask) -> Mapping[str, Any]:
         runtime_env = self._runtime_env(task)
@@ -415,6 +529,19 @@ class CommandAgentRuntime:
                 str(key): bool(value)
                 for key, value in provided.items()
             }
+        discovered_capabilities = {
+            **dict(transport_capabilities),
+            "filesystem_isolation": supports_isolation,
+        }
+        exercised_capabilities = {"start": True}
+        if isolation is not None:
+            exercised_capabilities["filesystem_isolation"] = True
+        capability_evidence = RuntimeCapabilityEvidence(
+            declared=self.capabilities,
+            discovered=discovered_capabilities,
+            exercised=exercised_capabilities,
+        )
+        self._capability_evidence[run_id] = capability_evidence
         return AgentRunHandle(
             run_id=run_id,
             task_id=task.task_id,
@@ -422,9 +549,9 @@ class CommandAgentRuntime:
             session_id=run_id,
             capabilities={
                 **dict(self.capabilities),
-                **transport_capabilities,
-                "filesystem_isolation": supports_isolation,
+                **discovered_capabilities,
             },
+            capability_evidence=capability_evidence,
         )
 
     async def resume(self, handle: AgentRunHandle, instruction: str) -> None:
@@ -445,22 +572,30 @@ class CommandAgentRuntime:
             timeout_s=max(0.001, float(task.timeout_s)),
             metadata=dict(task.metadata),
         )
+        self._mark_capabilities_exercised(handle.run_id, "resume")
         self._generation_event_offsets[handle.run_id] = len(
             self._events[handle.run_id]
         )
 
     async def cancel(self, handle: AgentRunHandle) -> None:
         await self._transport.cancel(self._token_for(handle))
+        self._mark_capabilities_exercised(handle.run_id, "cancel")
 
     async def stream(self, handle: AgentRunHandle) -> AsyncIterator[RuntimeEvent]:
         token = self._token_for(handle)
+        completed = False
         async for raw in self._transport.stream(token):
+            if not completed:
+                self._mark_capabilities_exercised(handle.run_id, "stream")
+                completed = True
             event = normalize_runtime_event(raw)
             self._events[handle.run_id].append(event)
             session_id = _session_id(raw)
             if session_id:
                 self._session_ids[handle.run_id] = session_id
             yield event
+        if not completed:
+            self._mark_capabilities_exercised(handle.run_id, "stream")
 
     async def collect(self, handle: AgentRunHandle) -> AgentRunResult:
         task = self._task_for(handle)
@@ -482,6 +617,13 @@ class CommandAgentRuntime:
             cost_provenance,
             token_provenance,
         ) = _validated_transport_provenance(task, transport_result)
+        self._mark_capabilities_exercised(handle.run_id, "collect")
+        if cost_provenance:
+            self._mark_capabilities_exercised(
+                handle.run_id,
+                "cost_reporting",
+            )
+        capability_evidence = self._capability_evidence_for(handle.run_id)
         result_payload = {
             "run_id": handle.run_id,
             "task_id": task.task_id,
@@ -503,6 +645,7 @@ class CommandAgentRuntime:
                 **dict(transport_result.metadata),
                 "returncode": transport_result.returncode,
                 "stderr": transport_result.stderr,
+                "capability_evidence": capability_evidence.to_dict(),
             },
         }
         return AgentRunResult(
@@ -565,6 +708,32 @@ class CommandAgentRuntime:
         except KeyError as exc:
             raise KeyError(f"unknown runtime handle: {handle.run_id}") from exc
 
+    def _capability_evidence_for(
+        self,
+        run_id: str,
+    ) -> RuntimeCapabilityEvidence:
+        try:
+            return self._capability_evidence[run_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown runtime handle: {run_id}") from exc
+
+    def _mark_capabilities_exercised(
+        self,
+        run_id: str,
+        *capabilities: str,
+    ) -> None:
+        evidence = self._capability_evidence_for(run_id)
+        exercised = dict(evidence.exercised)
+        for capability in capabilities:
+            normalized = str(capability or "").strip()
+            if normalized:
+                exercised[normalized] = True
+        object.__setattr__(
+            evidence,
+            "exercised",
+            MappingProxyType(exercised),
+        )
+
     def _runtime_env(self, task: AgentTask) -> dict[str, str]:
         inherited = (
             dict(os.environ)
@@ -610,6 +779,29 @@ def _allowlisted_environment(
         for key, value in source.items()
         if key in allowed_keys and str(value)
     }
+
+
+def _normalized_capabilities(
+    capabilities: Mapping[str, Any],
+) -> dict[str, bool]:
+    return {
+        str(key): bool(value)
+        for key, value in capabilities.items()
+        if str(key).strip()
+    }
+
+
+def normalize_runtime_execution_mode(
+    value: str | None,
+    *,
+    context: str,
+) -> RuntimeExecutionMode:
+    normalized = str(value or "compatible").strip().casefold()
+    if normalized not in _RUNTIME_EXECUTION_MODES:
+        raise ValueError(
+            f"unsupported {context} execution_mode: {value!r}"
+        )
+    return cast(RuntimeExecutionMode, normalized)
 
 
 def _direct_anthropic_runtime_env(

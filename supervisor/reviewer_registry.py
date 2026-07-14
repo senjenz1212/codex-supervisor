@@ -9,6 +9,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from .agent_runtime import (
+    RuntimeExecutionMode,
+    normalize_runtime_execution_mode,
+)
 from .cursor_agent import (
     DEFAULT_STRUCTURED_REVIEWER_MODEL,
     CursorInvocationRequest,
@@ -112,6 +116,7 @@ def configured_reviewers(
     ) = None,
     runtime_runner: RuntimeTaskRunner | None = None,
     model_client: ModelClient | None = None,
+    execution_mode: RuntimeExecutionMode = "compatible",
 ) -> list[ReviewerAdapter]:
     """Return the configured reviewer roster for a gate.
 
@@ -125,13 +130,45 @@ def configured_reviewers(
     Composition roots may instead inject a complete ``reviewer_adapters``
     roster, a provider-neutral ``runtime_runner`` for reviewer 1, or a
     ``model_client`` for structured slots. Omitting those seams preserves the
-    legacy direct Cursor/Codex/LiteLLM construction used by existing callers.
+    legacy direct Cursor/Codex/LiteLLM construction used by compatible callers.
+    Operational mode fails closed unless the neutral roster or both neutral
+    execution seams are injected.
     """
+    normalized_mode = normalize_runtime_execution_mode(
+        execution_mode,
+        context="reviewer",
+    )
+    operational = normalized_mode == "operational"
+    compatibility_mode = normalized_mode == "compatible"
     if reviewer_adapters is not None:
         injected = list(reviewer_adapters)
         if not injected:
             raise ValueError("reviewer_adapters must contain at least one reviewer")
+        if operational:
+            legacy = [
+                type(adapter).__name__
+                for adapter in injected
+                if isinstance(
+                    adapter,
+                    (
+                        CursorCompatibleReviewer,
+                        CodexCliReviewer,
+                        LiteLLMReviewer,
+                    ),
+                )
+            ]
+            if legacy:
+                raise ValueError(
+                    "operational reviewer execution rejects legacy provider "
+                    "adapters: "
+                    + ", ".join(sorted(legacy))
+                )
         return injected
+    if operational and (runtime_runner is None or model_client is None):
+        raise ValueError(
+            "operational reviewer execution requires injected "
+            "reviewer_adapters or both RuntimeTaskRunner and ModelClient"
+        )
 
     legacy_spec = ReviewerSpec(
         reviewer_id="independent-reviewer-0",
@@ -141,6 +178,17 @@ def configured_reviewers(
         lineage=_lineage(reviewer_output_mode, reviewer_model),
         tool_access=_tool_access(reviewer_output_mode),
         assurance_grade=_assurance_grade_for_runtime(reviewer_output_mode),
+    )
+    structured_spec = replace(
+        legacy_spec,
+        runtime="model_client_structured",
+        model=reviewer_model or DEFAULT_STRUCTURED_REVIEWER_MODEL,
+        lineage=_lineage(
+            "model_client_structured",
+            reviewer_model or DEFAULT_STRUCTURED_REVIEWER_MODEL,
+        ),
+        tool_access="text_only",
+        assurance_grade="text_only",
     )
     codex_spec = ReviewerSpec(
         reviewer_id="independent-reviewer-1",
@@ -154,14 +202,20 @@ def configured_reviewers(
     reviewers: list[ReviewerAdapter] = [
         (
             StructuredReviewerAdapter(
-                spec=replace(
+                spec=structured_spec if operational else replace(
                     legacy_spec,
                     model=reviewer_model or DEFAULT_STRUCTURED_REVIEWER_MODEL,
                 ),
                 model_client=model_client,
             )
             if model_client is not None
-            and reviewer_output_mode == "litellm_structured"
+            and (
+                operational
+                or (
+                    compatibility_mode
+                    and reviewer_output_mode == "litellm_structured"
+                )
+            )
             else CursorCompatibleReviewer(spec=legacy_spec, runner=runner)
         ),
         (
@@ -177,6 +231,7 @@ def configured_reviewers(
                 task_metadata={"reasoning_effort": "xhigh"},
             )
             if runtime_runner is not None
+            and (operational or compatibility_mode)
             else CodexCliReviewer(
                 spec=codex_spec,
                 **({"runner": codex_runner} if codex_runner is not None else {}),
@@ -203,10 +258,21 @@ def configured_reviewers(
             tool_access="text_only",
             assurance_grade="text_only",
         )
-        if model_client is not None:
+        if model_client is not None and (operational or compatibility_mode):
             reviewers.append(
                 StructuredReviewerAdapter(
-                    spec=litellm_spec,
+                    spec=(
+                        replace(
+                            litellm_spec,
+                            runtime="model_client_structured",
+                            lineage=_lineage(
+                                "model_client_structured",
+                                litellm_model,
+                            ),
+                        )
+                        if operational
+                        else litellm_spec
+                    ),
                     model_client=model_client,
                 )
             )

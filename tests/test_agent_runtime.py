@@ -23,6 +23,7 @@ from supervisor.agent_runtime import (
     AgentTask,
     ClaudeCodeRuntime,
     CodexRuntime,
+    RuntimeCapabilityEvidence,
     RuntimeTransportResult,
     SubprocessRuntimeTransport,
     normalize_runtime_event,
@@ -1892,6 +1893,57 @@ async def test_runtime_advertises_transport_filesystem_isolation_capability(
 
 
 @pytest.mark.asyncio
+async def test_runtime_capability_evidence_separates_declared_discovered_and_exercised(
+    tmp_path: Path,
+) -> None:
+    class CapabilityTransport(RecordingTransport):
+        def runtime_capabilities(self) -> dict[str, bool]:
+            return {
+                "cancel": True,
+                "resume": False,
+                "transport_preflight": True,
+            }
+
+    runtime = CodexRuntime(transport=CapabilityTransport())
+    handle = await runtime.start(
+        AgentTask(
+            task_id="capability-evidence",
+            instruction="Exercise only stream and collect.",
+            cwd=tmp_path,
+            model="gpt-test",
+        )
+    )
+
+    assert isinstance(handle.capability_evidence, RuntimeCapabilityEvidence)
+    assert handle.declared_capabilities["subagents"] is True
+    assert handle.declared_capabilities["images"] is True
+    assert handle.discovered_capabilities == {
+        "cancel": True,
+        "resume": False,
+        "transport_preflight": True,
+        "filesystem_isolation": False,
+    }
+    assert handle.exercised_capabilities == {"start": True}
+    assert "subagents" not in handle.observed_capabilities
+    assert "images" not in handle.observed_capabilities
+    assert handle.capabilities["resume"] is False
+
+    events = [event async for event in runtime.stream(handle)]
+    result = await runtime.collect(handle)
+
+    assert events
+    assert handle.exercised_capabilities["stream"] is True
+    assert handle.exercised_capabilities["collect"] is True
+    assert handle.exercised_capabilities["cost_reporting"] is True
+    assert handle.observed_capabilities["stream"] is True
+    assert handle.observed_capabilities["cost_reporting"] is True
+    assert "subagents" not in handle.observed_capabilities
+    assert result.metadata["capability_evidence"] == (
+        handle.capability_evidence.to_dict()
+    )
+
+
+@pytest.mark.asyncio
 async def test_runtime_fails_before_transport_launch_when_isolation_is_unsupported(
     tmp_path: Path,
 ) -> None:
@@ -2209,3 +2261,130 @@ def test_codex_runtime_read_only_review_pins_read_only_sandbox(
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "read-only"
     assert "workspace-write" not in argv
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not hasattr(os, "killpg"),
+    reason="provider runtime tree cancellation requires POSIX process groups",
+)
+@pytest.mark.parametrize(
+    ("runtime_cls", "binary_name", "model"),
+    (
+        (ClaudeCodeRuntime, "claude", "claude-test-exact"),
+        (CodexRuntime, "codex", "gpt-test-exact"),
+    ),
+)
+async def test_provider_command_shim_cancellation_reaps_detached_descendant(
+    tmp_path: Path,
+    runtime_cls: type[ClaudeCodeRuntime] | type[CodexRuntime],
+    binary_name: str,
+    model: str,
+) -> None:
+    root_path = tmp_path / f"{binary_name}-root.json"
+    child_path = tmp_path / f"{binary_name}-child.json"
+    shim = tmp_path / binary_name
+    shim.write_text(
+        f"""#!{sys.executable}
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+root_path = Path({str(root_path)!r})
+child_path = Path({str(child_path)!r})
+child_code = '''
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+os.setsid()
+Path(sys.argv[1]).write_text(
+    json.dumps({{"pid": os.getpid(), "pgid": os.getpgrp()}}),
+    encoding="utf-8",
+)
+while True:
+    time.sleep(1)
+'''
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+root_path.write_text(
+    json.dumps({{"pid": os.getpid(), "argv": sys.argv[1:]}}),
+    encoding="utf-8",
+)
+subprocess.Popen(
+    [sys.executable, "-c", child_code, str(child_path)],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    close_fds=True,
+)
+while True:
+    time.sleep(1)
+""",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    runtime = runtime_cls(binary=str(shim))
+    handle = await runtime.start(
+        AgentTask(
+            task_id=f"{binary_name}-provider-shaped-cancel",
+            instruction="Remain active until cancellation.",
+            cwd=tmp_path,
+            model=model,
+            timeout_s=30,
+        )
+    )
+    root_pid = 0
+    child_pid = 0
+    try:
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            if root_path.exists() and child_path.exists():
+                try:
+                    root_payload = json.loads(
+                        root_path.read_text(encoding="utf-8")
+                    )
+                    root_pid = int(root_payload["pid"])
+                    child_pid = int(
+                        json.loads(child_path.read_text(encoding="utf-8"))["pid"]
+                    )
+                    break
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    pass
+            await asyncio.sleep(0.01)
+        assert root_pid > 0
+        assert child_pid > 0
+        assert os.getpgid(child_pid) == child_pid
+        argv = root_payload["argv"]
+        if binary_name == "claude":
+            assert argv[:2] == ["-p", "Remain active until cancellation."]
+            assert "--output-format" in argv
+            assert "--model" in argv
+        else:
+            assert argv[:2] == ["exec", "--json"]
+            assert "-m" in argv
+            assert argv[-1] == "Remain active until cancellation."
+
+        await runtime.cancel(handle)
+        result = await runtime.collect(handle)
+
+        assert result.status == "cancelled"
+        assert handle.exercised_capabilities["cancel"] is True
+        assert result.metadata["capability_evidence"]["exercised"]["cancel"] is True
+        for pid in (root_pid, child_pid):
+            if not psutil.pid_exists(pid):
+                continue
+            assert psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    finally:
+        for pid in (root_pid, child_pid):
+            if pid <= 0:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
