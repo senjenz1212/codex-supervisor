@@ -420,7 +420,10 @@ def test_production_trace_uses_the_persisted_event_as_dynamic_authority(
     assert accepted_payload["status"] == "accepted"
     assert receipt is not None
     assert receipt["evidence"]["source_event_state"] == "completed"
-    assert receipt["grade_revision"]["passed"] is True
+    assert receipt["grade_revision"]["passed"] is False
+    assert (
+        receipt["grade_revision"]["failure_classification"] == "gate_failed"
+    )
     assert (
         receipt["evidence"]["final_gate_result"]["status"]
         == "rejected"
