@@ -117,6 +117,9 @@ def execute_legacy_agent_task(
 
     ended_at_ms = int(time.time() * 1000)
     wrapper = _json_object(stdout)
+    if returncode == 0 and not failure_reason and bool(wrapper.get("is_error")):
+        failure_reason = str(wrapper.get("subtype") or "result_is_error")
+        error = f"legacy result reported is_error with subtype {failure_reason}"
     output = (
         str(wrapper.get("result"))
         if isinstance(wrapper.get("result"), str)

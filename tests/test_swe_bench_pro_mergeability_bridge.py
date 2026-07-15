@@ -2458,6 +2458,23 @@ def test_official_live_budget_overrun_is_unavailable_not_accepted(tmp_path):
     assert report["metric_applyable"] is False
     assert report["improvement_claim_allowed"] is False
     assert report["policy_mutated"] is False
+    persisted = json.loads(
+        (tmp_path / "out" / "official_live_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "claim_gate" in persisted
+    persisted_body = {
+        key: value for key, value in persisted.items() if key != "report_sha256"
+    }
+    assert persisted["report_sha256"] == sha256(
+        json.dumps(
+            persisted_body,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def test_live_runner_refuses_without_allow_live_before_generators_run(tmp_path):
@@ -2600,6 +2617,21 @@ def test_live_runner_budget_overrun_is_unavailable_not_accepted(tmp_path):
     assert report["metric_applyable"] is False
     assert report["improvement_claim_allowed"] is False
     assert report["policy_mutated"] is False
+    persisted = json.loads(
+        (tmp_path / "out" / "live_report.json").read_text(encoding="utf-8")
+    )
+    assert "claim_gate" in persisted
+    persisted_body = {
+        key: value for key, value in persisted.items() if key != "report_sha256"
+    }
+    assert persisted["report_sha256"] == sha256(
+        json.dumps(
+            persisted_body,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def test_live_cli_requires_allow_live_and_budget(tmp_path):

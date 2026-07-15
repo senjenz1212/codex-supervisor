@@ -415,7 +415,15 @@ def _is_supervisor_owned_runtime_path(
         "state.db-wal",
     }:
         return "state.db" not in tracked and normalized not in tracked
-    task_prefix = f"docs/dual-agent/{task_id}/"
+    task_id_text = str(task_id)
+    if (
+        not task_id_text
+        or "/" in task_id_text
+        or "\\" in task_id_text
+        or task_id_text in {".", ".."}
+    ):
+        return False
+    task_prefix = f"docs/dual-agent/{task_id_text}/"
     if not normalized.startswith(task_prefix):
         return False
     relative = normalized[len(task_prefix):]
@@ -1357,7 +1365,7 @@ def _normalise_pytest_targets(text: str, cwd: Path) -> str:
 
 _BARE_PYTEST_TARGET_RE = re.compile(
     r"^(?:(?P<class_name>[A-Za-z_][A-Za-z0-9_]*)::)?"
-    r"(?P<test_name>test_[A-Za-z0-9_]+)(?P<params>\\[.*\\])?$"
+    r"(?P<test_name>test_[A-Za-z0-9_]+)(?P<params>\[.*\])?$"
 )
 _PYTEST_LABEL_TEST_RE = re.compile(r"\b(?P<test_name>test_[A-Za-z0-9_]+)(?!\.py)(?P<params>\[[^\]]+\])?\b")
 _PYTEST_LABEL_FILE_RE = re.compile(r"\b(?P<path>(?:[\w.-]+/)*test_[\w.-]+\.py)(?::\d+)?\b")

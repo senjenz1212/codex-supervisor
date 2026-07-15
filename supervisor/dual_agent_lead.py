@@ -126,6 +126,7 @@ class LeadInvocationRequest:
     effort: ClaudeEffort | None = None
     execution_mode: RuntimeExecutionMode = "compatible"
     execution_layer_mode: ExecutionLayerMode = "lead_direct"
+    corrective_retry: bool = False
     dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
     agentic_lead_policy: AgenticLeadPolicyMode = "off"
     min_subagents: int = 0
@@ -320,7 +321,7 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "replace gate review, outcome validation, receipts, or the final Codex-supervised artifact. "
             "Use it only for fan-out execution work and report the preview gates in the outcome claims.\n"
         )
-    corrective_retry = "Corrective retry:" in request.instruction
+    corrective_retry = request.corrective_retry
     implementation_contract = ""
     if request.gate == "execution" and corrective_retry:
         implementation_contract = (
@@ -368,10 +369,14 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "operator request."
         )
         if corrective_retry:
-            corrective_start = request.instruction.index("Corrective retry:")
-            instruction_block += (
-                "\n\n" + request.instruction[corrective_start:].strip()
-            )
+            corrective_start = request.instruction.find("Corrective retry:")
+            corrective_text = (
+                request.instruction[corrective_start:]
+                if corrective_start >= 0
+                else request.instruction
+            ).strip()
+            if corrective_text:
+                instruction_block += "\n\n" + corrective_text
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{instruction_block}\n\n"

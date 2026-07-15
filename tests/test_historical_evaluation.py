@@ -823,16 +823,108 @@ async def test_transient_source_verification_failure_stays_retryable(
         await service.replay(request)
 
     assert calls["replay"] == 0
-    assert state.read_events_since(
-        request.operation_id,
-        after_event_id=0,
-        limit=10,
-    ) == []
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            request.operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == ["historical_operation.preflight_released"]
 
     receipt = await service.replay(request)
 
     assert receipt.result["deterministic"] is True
     assert calls["replay"] == 1
+
+
+@pytest.mark.asyncio
+async def test_preflight_failure_releases_claim_durably_across_restart(
+    tmp_path,
+):
+    state, _service, source, artifacts, calls = _fixture(tmp_path)
+    outages = {"remaining": 1}
+
+    def flaky_resolver(ref):
+        if outages["remaining"] > 0:
+            outages["remaining"] -= 1
+            raise ConnectionError("evidence store outage")
+        return artifacts.get(ref)
+
+    def build_service(resolver):
+        return HistoricalEvaluationService(
+            state=state,
+            evidence_resolver=resolver,
+            rerun_executor=lambda _request: {},
+            regrade_executor=lambda _request: {},
+            replay_executor=_working_replay(
+                tmp_path,
+                artifacts,
+                calls,
+                "preflight-restart-replay",
+            ),
+        )
+
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="preflight-restart",
+    )
+    with pytest.raises(
+        HistoricalEvidenceError,
+        match="could not be resolved",
+    ):
+        await build_service(flaky_resolver).replay(request)
+
+    receipt = await build_service(artifacts.get).replay(request)
+
+    assert receipt.result["deterministic"] is True
+    assert calls["replay"] == 1
+    events = state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == [
+        "historical_operation.preflight_released",
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_malformed_claim_lease_is_not_treated_as_stale(tmp_path):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="malformed-lease",
+    )
+    state.reserve_historical_operation(
+        operation_id=request.operation_id,
+        request_hash=request.request_hash,
+        operation=request.operation.value,
+    )
+    state._conn.execute(
+        """UPDATE historical_operation_claims
+              SET updated_at='not-a-timestamp'
+            WHERE operation_id=?""",
+        (request.operation_id,),
+    )
+    state._conn.commit()
+    service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=lambda _request: pytest.fail(
+            "claim with a malformed lease must not be taken over"
+        ),
+        claim_stale_after_s=1,
+    )
+
+    with pytest.raises(HistoricalOperationInProgress):
+        await service.replay(request)
 
 
 @pytest.mark.asyncio

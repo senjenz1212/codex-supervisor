@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import random
 import shutil
 import subprocess
 import sys
@@ -113,7 +114,7 @@ def record_quality_trends_for_run(
     computed_at: int | None = None,
 ) -> list[dict[str, Any]]:
     """Compute and persist per-gate trend rows from existing ledger events."""
-    events = _decode_events(state.read_events_since(run_id, after_event_id=0, limit=10_000))
+    events = _decode_events(_read_all_run_events(state, run_id))
     if not events:
         return []
 
@@ -247,12 +248,20 @@ def run_sampled_p11_false_accept_audit(
             trend_rows=trend_rows,
         )
 
-    accepted_gate_events = [
+    accepted_candidates = [
         event for event in events
         if event["kind"] == "dual_agent_gate_result"
         and str(event["payload"].get("gate") or "") in gates
         and _payload_accepted(event["payload"])
-    ][:max(0, int(sample_size))]
+    ]
+    sample_count = min(len(accepted_candidates), max(0, int(sample_size)))
+    rng = random.Random(
+        int.from_bytes(sha256(str(run_id).encode("utf-8")).digest()[:8], "big")
+    )
+    accepted_gate_events = sorted(
+        rng.sample(accepted_candidates, sample_count),
+        key=lambda event: int(event["event_id"]),
+    )
 
     audited: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -547,7 +556,7 @@ def run_weekly_p11_audit_if_due(
     timestamp = int(time.time()) if now is None else int(now)
     window_start = timestamp - max(1, int(cadence_s))
     existing = [
-        event for event in state.read_events_since(run_id, after_event_id=0, limit=10_000)
+        event for event in _read_all_run_events(state, run_id)
         if event["kind"] == "supervisor_p11_audit_scheduled"
         and int(event["payload"].get("scheduled_at") or 0) >= window_start
         and _scheduled_audit_consumed_cadence(event["payload"])
@@ -613,13 +622,23 @@ def _scheduled_audit_consumed_cadence(payload: dict[str, Any]) -> bool:
     return True
 
 
+def _read_all_run_events(state: Any, run_id: str) -> list[Any]:
+    latest_event_id = getattr(state, "latest_event_id", None)
+    limit = (
+        max(1, int(latest_event_id(run_id)))
+        if callable(latest_event_id)
+        else 100_000
+    )
+    return list(state.read_events_since(run_id, after_event_id=0, limit=limit))
+
+
 def _decode_events(rows: list[Any]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
         if isinstance(row, dict) and "payload" in row:
             payload = row.get("payload")
         else:
-            payload_json = row["payload_json"] if isinstance(row, dict) else row["payload_json"]
+            payload_json = row["payload_json"]
             try:
                 payload = json.loads(payload_json)
             except (TypeError, json.JSONDecodeError):

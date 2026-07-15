@@ -318,6 +318,7 @@ def freeze_pilot_protocol(payload: Mapping[str, Any]) -> FrozenPilotProtocol:
     normalized["commit_sha"] = commit_sha
 
     task_ids = _require_unique_text_sequence(normalized, "task_ids")
+    normalized["task_ids"] = list(task_ids)
     pilot_canonical_task_ids = _require_task_identity_mapping(
         normalized,
         "task_identities",
@@ -328,6 +329,8 @@ def freeze_pilot_protocol(payload: Mapping[str, Any]) -> FrozenPilotProtocol:
         task_ids=task_ids,
     )
     runtimes = _require_protocol_identifiers(normalized, "runtimes")
+    normalized["task_families"] = dict(task_families)
+    normalized["runtimes"] = list(runtimes)
     declared_task_count = normalized.get("task_count")
     if (
         isinstance(declared_task_count, bool)
@@ -346,6 +349,7 @@ def freeze_pilot_protocol(payload: Mapping[str, Any]) -> FrozenPilotProtocol:
         ("portability_task_ids", "portability_task_identities"),
     ):
         values = _require_unique_text_sequence(normalized, field)
+        normalized[field] = list(values)
         overlap = sorted(set(task_ids) & set(values))
         if overlap:
             raise PilotReadinessError(
@@ -1144,7 +1148,14 @@ def _validated_budget(arm: str, value: Any) -> dict[str, Any]:
             raise PilotReadinessError(
                 f"arm {arm} budget {field} must be positive and finite"
             )
-        normalized[field] = int(raw) if field != "max_cost_usd" else numeric
+        if field == "max_cost_usd":
+            normalized[field] = numeric
+        else:
+            if numeric != int(numeric):
+                raise PilotReadinessError(
+                    f"arm {arm} budget {field} must be an integer"
+                )
+            normalized[field] = int(numeric)
     return normalized
 
 

@@ -372,6 +372,45 @@ def test_large_legacy_event_import_fails_fast_then_runs_offline(
     assert applied_migrations(migrated) == EXPECTED_MIGRATIONS
 
 
+def test_offline_backfill_rejects_unreproducible_prepopulated_event_hash(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL,
+             event_sequence INTEGER,
+             previous_event_hash TEXT,
+             event_hash TEXT,
+             canonical_payload_hash TEXT,
+             artifact_manifest_hash TEXT,
+             ledger_genesis_kind TEXT
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO events(
+             run_id, ts, source, kind, payload_json, event_hash)
+           VALUES('legacy-run', 101, 'test', 'event_msg',
+                  '{"value":1}', ?)""",
+        ("f" * 64,),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="conflicting pre-populated event ledger metadata",
+    ):
+        migrate_legacy_event_ledger_offline(db_path)
+
+
 def test_legacy_event_import_refuses_to_re_redact_historical_payloads(
     tmp_path,
 ):

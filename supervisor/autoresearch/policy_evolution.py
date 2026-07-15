@@ -529,14 +529,17 @@ def approve_policy_proposal(
                 "after_bytes": candidate_bytes,
             })
 
-        transaction_id = _policy_transaction_id(
-            operation="approval",
-            run_id=run_id,
-            proposal_id=proposal_id,
-            approver=approver,
-            approval_channel=approval_channel,
-            reason="",
-            changes=prepared_changes,
+        transaction_id = _fresh_policy_transaction_id(
+            _policy_transaction_id(
+                operation="approval",
+                run_id=run_id,
+                proposal_id=proposal_id,
+                approver=approver,
+                approval_channel=approval_channel,
+                reason="",
+                changes=prepared_changes,
+            ),
+            repo_root=repo_root_path,
         )
         rollback_files: list[dict[str, Any]] = []
         applied_changes: list[dict[str, Any]] = []
@@ -763,14 +766,17 @@ def rollback_policy_proposal(
                 "after_bytes": backup_bytes,
             })
 
-        transaction_id = _policy_transaction_id(
-            operation="rollback",
-            run_id=run_id,
-            proposal_id=proposal_id,
-            approver=approver,
-            approval_channel=approval_channel,
-            reason=str(reason or "").strip(),
-            changes=prepared_restores,
+        transaction_id = _fresh_policy_transaction_id(
+            _policy_transaction_id(
+                operation="rollback",
+                run_id=run_id,
+                proposal_id=proposal_id,
+                approver=approver,
+                approval_channel=approval_channel,
+                reason=str(reason or "").strip(),
+                changes=prepared_restores,
+            ),
+            repo_root=repo_root_path,
         )
         restored: list[dict[str, Any]] = []
         for prepared in prepared_restores:
@@ -1947,14 +1953,54 @@ def _policy_transaction_id(
     })
 
 
+def _is_policy_transaction_id(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef"
+        for character in value
+    )
+
+
 def _transaction_dir(transaction_id: str) -> str:
     normalized = str(transaction_id).strip().lower()
-    if len(normalized) != 64 or any(
-        character not in "0123456789abcdef"
-        for character in normalized
-    ):
+    if not _is_policy_transaction_id(normalized):
         raise PolicyEvolutionError("invalid policy transaction id")
     return f"{POLICY_TRANSACTION_ROOT}/{normalized}"
+
+
+def _transaction_is_settled(
+    transaction_id: str,
+    *,
+    repo_root: Path,
+) -> bool:
+    transaction_dir = _transaction_dir(transaction_id)
+    for state_name in ("finalized", "aborted"):
+        filename = _TRANSACTION_STATE_FILENAMES[state_name]
+        raw = _read_repo_bytes(
+            f"{transaction_dir}/{filename}",
+            repo_root=repo_root,
+            label=f"policy transaction {state_name} state",
+            missing_ok=True,
+        )
+        if raw is not None:
+            return True
+    return False
+
+
+def _fresh_policy_transaction_id(
+    base_transaction_id: str,
+    *,
+    repo_root: Path,
+) -> str:
+    transaction_id = base_transaction_id
+    sequence = 0
+    while _transaction_is_settled(transaction_id, repo_root=repo_root):
+        sequence += 1
+        transaction_id = sha256_json({
+            "schema_version": POLICY_TRANSACTION_SCHEMA_VERSION,
+            "base_transaction_id": base_transaction_id,
+            "sequence": sequence,
+        })
+    return transaction_id
 
 
 def _transaction_stage_ref(
@@ -2405,8 +2451,27 @@ def _recover_policy_transactions_locked(
         raise PolicyEvolutionError(str(exc)) from exc
     results: list[dict[str, Any]] = []
     for entry in entries:
+        entry_name = str(entry)
+        if not _is_policy_transaction_id(entry_name):
+            results.append({
+                "entry": entry_name,
+                "status": "ignored_foreign_entry",
+            })
+            continue
+        manifest_raw = _read_repo_bytes(
+            f"{POLICY_TRANSACTION_ROOT}/{entry_name}/manifest.json",
+            repo_root=repo_root,
+            label="policy transaction manifest",
+            missing_ok=True,
+        )
+        if manifest_raw is None:
+            results.append({
+                "transaction_id": entry_name,
+                "status": "ignored_unpublished_manifest",
+            })
+            continue
         manifest = _load_transaction_manifest(
-            transaction_id=entry,
+            transaction_id=entry_name,
             repo_root=repo_root,
         )
         transaction_id = str(manifest["transaction_id"])

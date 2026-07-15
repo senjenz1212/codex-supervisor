@@ -1505,7 +1505,8 @@ def _sha256_json(payload: Mapping[str, Any]) -> str:
         payload,
         sort_keys=True,
         separators=(",", ":"),
-        default=str,
+        ensure_ascii=False,
+        allow_nan=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

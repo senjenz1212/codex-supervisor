@@ -1603,6 +1603,23 @@ def test_blinding_drops_encoded_or_free_text_from_unstructured_metadata(
     assert leaking_value not in json.dumps(blinded.to_dict())
 
 
+def test_blinding_allows_one_letter_scalars_in_non_arm_fields() -> None:
+    frozen = FrozenTaskResult.create(
+        task_id="task-1",
+        task_family="generic",
+        task_spec_hash="task-spec",
+        run_result_hash="run-1",
+        patch="b",
+        output="done",
+        metadata={"revision": "a"},
+    )
+
+    blinded = blind_frozen_result(frozen)
+
+    assert blinded.metadata["revision"] == "a"
+    assert blinded.patch == "b"
+
+
 def test_blinding_fails_closed_when_required_patch_contains_arm_identity() -> None:
     frozen = FrozenTaskResult.create(
         task_id="task-1",
@@ -1770,6 +1787,82 @@ def test_reviewer_packets_blind_primary_and_adjudicate_only_persisted_reviews(
         and len(review["receipt_hash"]) == 64
         for review in adjudicator["primary_reviews"]
     )
+
+
+def test_adjudication_enforces_allowed_reviewer_roster_when_provided(
+    tmp_path: Path,
+) -> None:
+    task = {"task_id": "task-1", "problem_statement": "fix"}
+    diff = "diff --git a/a.py b/a.py\n"
+    tests = _raw_tests()
+    primary = build_primary_reviewer_packet(
+        task=task,
+        diff=diff,
+        tests=tests,
+    )
+    store = SqliteExperimentStore(tmp_path / "roster-reviews.db")
+    receipts = [
+        store.record_primary_review(
+            experiment_id="exp-1",
+            task_id="task-1",
+            reviewer_id=reviewer_id,
+            primary_packet_hash=primary["packet_hash"],
+            review={"decision": decision},
+            completed_at_ms=completed_at_ms,
+        )
+        for reviewer_id, decision, completed_at_ms in (
+            ("alice", "accept", 100),
+            ("alice-2", "reject", 101),
+        )
+    ]
+    started_at_ms = max(
+        receipt.persisted_at_ms for receipt in receipts
+    ) + 1
+
+    with pytest.raises(
+        ValueError,
+        match="not on the allowed reviewer roster: alice-2",
+    ):
+        build_adjudicator_packet(
+            experiment_id="exp-1",
+            task_id="task-1",
+            task=task,
+            diff=diff,
+            tests=tests,
+            review_store=store,
+            adjudication_started_at_ms=started_at_ms,
+            lead_outcome={"accepted": True},
+            allowed_reviewers=("alice", "bob"),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="at least two distinct reviewers",
+    ):
+        build_adjudicator_packet(
+            experiment_id="exp-1",
+            task_id="task-1",
+            task=task,
+            diff=diff,
+            tests=tests,
+            review_store=store,
+            adjudication_started_at_ms=started_at_ms,
+            lead_outcome={"accepted": True},
+            allowed_reviewers=("alice", "alice"),
+        )
+
+    packet = build_adjudicator_packet(
+        experiment_id="exp-1",
+        task_id="task-1",
+        task=task,
+        diff=diff,
+        tests=tests,
+        review_store=store,
+        adjudication_started_at_ms=started_at_ms,
+        lead_outcome={"accepted": True},
+        allowed_reviewers=("alice", "alice-2"),
+    )
+    assert len(packet["primary_reviews"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -2089,6 +2182,59 @@ async def test_resume_never_reexecutes_a_started_paid_arm(
         "tokens_in": 80,
         "tokens_out": 20,
     }
+
+
+@pytest.mark.asyncio
+async def test_concurrent_durable_start_claim_never_double_executes(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "concurrent-start-claim.db")
+    executor = RecordingExecutor(store)
+    kernel = ExperimentKernel(store=store, executor=executor)
+    experiment = _experiment()
+    task = _task_spec()
+    assignment = kernel.assign(experiment, task)
+    paid_arm = assignment.order[0]
+    real_get = store.get_arm_attempt_state
+
+    def racing_get(
+        experiment_id: str,
+        task_id: str,
+        *,
+        block_attempt: int,
+        arm: Arm,
+    ):
+        state = real_get(
+            experiment_id,
+            task_id,
+            block_attempt=block_attempt,
+            arm=arm,
+        )
+        if arm == paid_arm and block_attempt == 0 and not state:
+            store.start_arm_attempt(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                block_attempt=0,
+                arm=arm,
+                payload={
+                    "assignment_id": assignment.assignment_id,
+                    "block_attempt": 0,
+                    "budget": experiment.arm_budgets[arm].to_dict(),
+                    "treatment_hash": assignment.treatment_hashes[arm],
+                    "start_claim_nonce": "f" * 32,
+                },
+                transition_idempotency_key=(
+                    f"block.0.arm.{arm.value}.started"
+                ),
+            )
+        return state
+
+    store.get_arm_attempt_state = racing_get  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="arm state discrepancy"):
+        await kernel.run_task(experiment, task, RecordingVerifier())
+
+    assert paid_arm not in executor.calls
 
 
 @pytest.mark.asyncio

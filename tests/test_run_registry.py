@@ -1226,3 +1226,132 @@ def test_register_submitted_workflow_rejects_conflicting_rebinding(tmp_path):
     assert loaded is not None
     assert loaded["workflow_run_id"] == "workflow-run"
     assert loaded["task_id"] == "task-1"
+
+
+def test_register_submitted_workflow_pending_rejects_conflicting_rebinding(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-pending",
+        task_id="task-1",
+        cwd=tmp_path,
+    )
+
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-pending",
+        task_id="task-1",
+        cwd=tmp_path,
+    )
+
+    with pytest.raises(RuntimeError, match="provenance discrepancy"):
+        _register_pending(
+            state=state,
+            registry=registry,
+            workflow_run_id="workflow-pending",
+            task_id="task-2",
+            cwd=tmp_path,
+        )
+
+
+def test_release_launch_receipt_retry_after_partial_release_succeeds(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=100,
+        ttl_s=60,
+    )
+    pending_payload = receipt.receipt_path.read_text(encoding="utf-8")
+
+    assert run_registry.release_launch_receipt(
+        registry_dir=registry,
+        launch_id=receipt.launch_id,
+        nonce=receipt.nonce,
+        now=101,
+    ) is True
+
+    receipt.receipt_path.write_text(pending_payload, encoding="utf-8")
+
+    assert run_registry.release_launch_receipt(
+        registry_dir=registry,
+        launch_id=receipt.launch_id,
+        nonce=receipt.nonce,
+        now=102,
+    ) is True
+    assert not receipt.receipt_path.exists()
+
+    assert run_registry.release_launch_receipt(
+        registry_dir=registry,
+        launch_id=receipt.launch_id,
+        nonce=receipt.nonce,
+        now=103,
+    ) is True
+
+    with pytest.raises(LaunchReceiptError, match="already claimed"):
+        run_registry.release_launch_receipt(
+            registry_dir=registry,
+            launch_id=receipt.launch_id,
+            nonce="wrong-nonce",
+            now=104,
+        )
+
+
+def test_release_launch_receipt_still_rejects_consumed_receipt(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
+        cwd=tmp_path,
+    )
+    receipt = reserve_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
+        target_kind="codex",
+        cwd=tmp_path,
+        now=100,
+        ttl_s=60,
+    )
+    consume_launch_receipt(
+        state=state,
+        registry_dir=registry,
+        launch_id=receipt.launch_id,
+        nonce=receipt.nonce,
+        workflow_run_id="workflow-run",
+        task_id="task-1",
+        target_kind="codex",
+        target_session_id="real-session",
+        cwd=tmp_path,
+        rollout_path="/captured/real-session.jsonl",
+        now=101,
+    )
+
+    with pytest.raises(LaunchReceiptError, match="already claimed"):
+        run_registry.release_launch_receipt(
+            registry_dir=registry,
+            launch_id=receipt.launch_id,
+            nonce=receipt.nonce,
+            now=102,
+        )

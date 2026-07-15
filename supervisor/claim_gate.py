@@ -9,8 +9,10 @@ from hashlib import sha256
 import hmac
 import json
 import math
+import os
 from pathlib import Path
 import re
+import stat
 from types import SimpleNamespace
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -95,6 +97,9 @@ HUMAN_APPROVAL_RECEIPT_SCHEMA_VERSION = (
 )
 CANARY_RESULT_SCHEMA_VERSION = "supervisor-canary-result/v1"
 ROLLBACK_RECEIPT_SCHEMA_VERSION = "supervisor-rollback-receipt/v1"
+MIN_SHADOW_TASK_COUNT = 20
+MIN_CANARY_SAMPLE_SIZE = 50
+MAX_CANARY_TRAFFIC_FRACTION = 0.5
 MANAGED_CLAIM_FIELDS = (
     "improvement_claim_allowed",
     "powered_improvement_claim_allowed",
@@ -1419,6 +1424,8 @@ def _validate_b_vs_c_analysis(
                 field="design.power.alpha",
             ),
         )
+    except ClaimGateError:
+        raise
     except (KeyError, OverflowError, TypeError, ValueError):
         return False
 
@@ -2641,6 +2648,7 @@ def _validate_auto_improvement_receipts(
             sealed_at_ms < shadow_started_at_ms <= opened_at_ms
             and opened_at_ms <= shadow_completed_at_ms
             == holdout_completed_at_ms
+            and shadow_task_count >= MIN_SHADOW_TASK_COUNT
             and shadow_control_successes <= shadow_task_count
             and shadow_candidate_successes <= shadow_task_count
             and shadow_candidate_successes >= shadow_control_successes
@@ -2803,7 +2811,8 @@ def _validate_auto_improvement_receipts(
         )
         return (
             approved_at_ms < deployed_at_ms < completed_at_ms
-            and 0.0 < traffic_fraction < 1.0
+            and 0.0 < traffic_fraction <= MAX_CANARY_TRAFFIC_FRACTION
+            and sample_size >= MIN_CANARY_SAMPLE_SIZE
             and control_successes <= sample_size
             and candidate_successes <= sample_size
             and candidate_successes >= control_successes
@@ -3644,6 +3653,8 @@ def _validate_pilot_confirmation_lineage(
         ):
             return False
         return True
+    except ClaimGateError:
+        raise
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -5041,9 +5052,17 @@ def _filesystem_evidence_resolver(root: Path) -> EvidenceResolver:
             resolved.relative_to(root)
         except ValueError:
             return None
-        if not resolved.is_file():
+        try:
+            descriptor = os.open(
+                resolved,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            )
+        except OSError:
             return None
-        return resolved.read_bytes()
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            return handle.read()
 
     return resolve
 

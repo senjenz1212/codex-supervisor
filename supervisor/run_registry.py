@@ -368,21 +368,20 @@ def register_submitted_workflow(
     try:
         _exclusive_write_json(registration.registry_path, metadata)
     except FileExistsError:
+        existing = _read_registration_file(
+            registry_root,
+            registration.registry_path,
+        )
+        if existing is None:
+            raise RuntimeError(
+                "workflow session sidecar exists but is unreadable"
+            ) from None
+        _validate_submitted_workflow_registration(
+            existing,
+            expected=metadata,
+        )
         if pending:
             _replace_write_json(registration.registry_path, metadata)
-        else:
-            existing = _read_registration_file(
-                registry_root,
-                registration.registry_path,
-            )
-            if existing is None:
-                raise RuntimeError(
-                    "workflow session sidecar exists but is unreadable"
-                ) from None
-            _validate_submitted_workflow_registration(
-                existing,
-                expected=metadata,
-            )
     return registration
 
 
@@ -850,7 +849,30 @@ def release_launch_receipt(
                 registry_root,
                 normalized_launch_id,
             )
+            expected_nonce_hash = _launch_nonce_digest(
+                normalized_launch_id,
+                normalized_nonce,
+            )
             if receipt_store.exists("consumed", consumed_path.name):
+                consumed = receipt_store.read_json(
+                    "consumed",
+                    consumed_path.name,
+                )
+                consumed_nonce_hash = str(
+                    (consumed or {}).get("nonce_sha256") or ""
+                ).strip()
+                if (
+                    consumed is not None
+                    and str(consumed.get("status") or "") == "released"
+                    and consumed_nonce_hash
+                    and hmac.compare_digest(
+                        consumed_nonce_hash,
+                        expected_nonce_hash,
+                    )
+                ):
+                    receipt_store.unlink("pending", pending_path.name)
+                    receipt_store.assert_namespace_current()
+                    return True
                 raise LaunchReceiptError(
                     "launch receipt already claimed: "
                     f"{normalized_launch_id}"
@@ -861,10 +883,6 @@ def release_launch_receipt(
             observed_nonce_hash = str(
                 receipt.get("nonce_sha256") or ""
             ).strip()
-            expected_nonce_hash = _launch_nonce_digest(
-                normalized_launch_id,
-                normalized_nonce,
-            )
             if not observed_nonce_hash or not hmac.compare_digest(
                 observed_nonce_hash,
                 expected_nonce_hash,

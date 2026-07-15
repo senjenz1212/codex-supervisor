@@ -412,6 +412,7 @@ def run_dual_agent_gate(
             corrective = _lead_request(
                 spec,
                 packet_path=packet_path,
+                corrective_retry=True,
                 instruction=(
                     spec.instruction
                     + "\n\nCorrective retry: the previous response did not contain "
@@ -776,7 +777,12 @@ class _GateCancellation:
                 return None
             return state.write_event_once(*args, **kwargs)
 
-    def cancel_active_invocations(self) -> None:
+    def cancel_active_invocations(
+        self,
+        *,
+        timeout_s: float = 60.0,
+    ) -> None:
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
         cancelled_targets: set[int] = set()
         while True:
             active = self._active_snapshot()
@@ -802,6 +808,15 @@ class _GateCancellation:
                 and self._terminate_gate_processes(containment_ids)
             ):
                 break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    "dual-agent gate cancellation did not reach a quiescent "
+                    f"containment state within {timeout_s:g}s: "
+                    f"active_invocations={len(active)}, "
+                    f"processes_quiescent={processes_quiescent}; contained "
+                    "gate processes may still be running and were not "
+                    "reported safe to finalize"
+                )
             with self._condition:
                 self._condition.wait(timeout=0.02)
 
@@ -1698,11 +1713,13 @@ def _lead_request(
     *,
     packet_path: Path | None = None,
     instruction: str | None = None,
+    corrective_retry: bool = False,
 ) -> LeadInvocationRequest:
     return LeadInvocationRequest(
         task_id=spec.task_id,
         gate=spec.gate,
         instruction=instruction or spec.instruction,
+        corrective_retry=corrective_retry,
         cwd=spec.cwd,
         expected_specialists=spec.expected_specialists,
         expected_decisions=spec.expected_decisions,

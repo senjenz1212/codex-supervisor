@@ -76,7 +76,7 @@ def test_replay_schema_versions_reject_unapplied_known_migration():
     }]
 
 
-def test_replay_schema_versions_accept_manifest_predating_new_schemas():
+def test_replay_schema_versions_reject_manifest_predating_new_schemas():
     result = check_replay_schema_versions({
         "schema_versions": {
             "manifest": "dual-agent-replay-manifest/v1",
@@ -86,7 +86,7 @@ def test_replay_schema_versions_accept_manifest_predating_new_schemas():
         }
     })
 
-    assert result["status"] == "compatible"
+    assert result["status"] == "incompatible"
     assert result["missing_current_schemas"] == []
     assert result["missing_schema_migrations"] == [
         {

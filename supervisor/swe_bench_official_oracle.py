@@ -1662,6 +1662,8 @@ def _sha256_json(value: Mapping[str, Any]) -> str:
         _thaw_json(value),
         sort_keys=True,
         separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     )
     return sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -2414,7 +2416,12 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         float(os.environ.get("SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S", "3600"))
     )
 
-    cleaned_patch = _strip_binary_hunks(model_patch)
+    cleaned_patch, stripped_binary_sections = _strip_binary_hunks(model_patch)
+    applied_patch_sha256 = (
+        sha256(cleaned_patch.encode("utf-8")).hexdigest()
+        if stripped_binary_sections
+        else ""
+    )
     (workspace_dir / "patch.diff").write_text(cleaned_patch, encoding="utf-8")
     (workspace_dir / "run_script.sh").write_text(
         source_run_script.read_text(encoding="utf-8"),
@@ -2465,6 +2472,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             docker_image=docker_image,
             docker_platform=docker_platform,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
     if pull_result.returncode != 0:
         return _pro_adapter_failure(
@@ -2479,6 +2488,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             docker_image=docker_image,
             docker_platform=docker_platform,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     run_command = [
@@ -2518,6 +2529,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     patch_applied = _pro_patch_applied(workspace_dir / "patch_apply.json")
@@ -2542,6 +2555,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     output_path = workspace_dir / "output.json"
@@ -2565,6 +2580,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             patch_applied=patch_applied,
             test_command_return_code=test_command_return_code,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     try:
@@ -2591,6 +2608,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             patch_applied=patch_applied,
             test_command_return_code=test_command_return_code,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     test_command_return_code = _pro_test_command_return_code(
@@ -2613,6 +2632,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             patch_applied=True,
             test_command_return_code=test_command_return_code,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     if not fail_to_pass:
@@ -2632,6 +2653,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             patch_applied=True,
             test_command_return_code=test_command_return_code,
             source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
         )
 
     pass_to_pass_empty_vacuous_pass = not pass_to_pass
@@ -2662,6 +2685,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         patch_applied=True,
         test_command_return_code=test_command_return_code,
         source_script_evidence=source_script_evidence,
+        stripped_binary_sections=stripped_binary_sections,
+        applied_patch_sha256=applied_patch_sha256,
         fail_to_pass_count=len(fail_to_pass),
         pass_to_pass_count=len(pass_to_pass),
         pass_to_pass_empty_vacuous_pass=pass_to_pass_empty_vacuous_pass,
@@ -2946,6 +2971,8 @@ def _pro_adapter_failure(
     patch_applied: bool | None = None,
     test_command_return_code: int | None = None,
     source_script_evidence: Mapping[str, Any] | None = None,
+    stripped_binary_sections: Sequence[Mapping[str, Any]] | None = None,
+    applied_patch_sha256: str = "",
 ) -> dict[str, Any]:
     receipt = _pro_adapter_receipt(
         context=context,
@@ -2966,6 +2993,8 @@ def _pro_adapter_failure(
         patch_applied=patch_applied,
         test_command_return_code=test_command_return_code,
         source_script_evidence=source_script_evidence,
+        stripped_binary_sections=stripped_binary_sections,
+        applied_patch_sha256=applied_patch_sha256,
         run_id="",
         selected_tests=_pro_test_list(context.get("selected_test_files_to_run") or []),
         before_repo_set_cmd=str(context.get("before_repo_set_cmd") or ""),
@@ -3046,6 +3075,8 @@ def _pro_adapter_receipt(
     patch_applied: bool | None = None,
     test_command_return_code: int | None = None,
     source_script_evidence: Mapping[str, Any] | None = None,
+    stripped_binary_sections: Sequence[Mapping[str, Any]] | None = None,
+    applied_patch_sha256: str = "",
     fail_to_pass_count: int | None = None,
     pass_to_pass_count: int | None = None,
     pass_to_pass_empty_vacuous_pass: bool = False,
@@ -3089,6 +3120,12 @@ def _pro_adapter_receipt(
     }
     if source_script_evidence is not None:
         receipt["source_run_scripts"] = dict(source_script_evidence)
+    if stripped_binary_sections:
+        receipt["stripped_binary_sections"] = [
+            dict(section) for section in stripped_binary_sections
+        ]
+        receipt["stripped_binary_section_count"] = len(stripped_binary_sections)
+        receipt["applied_patch_sha256"] = applied_patch_sha256
     if patch_applied is not None:
         receipt["patch_applied"] = bool(patch_applied)
     if test_command_return_code is not None:
@@ -3392,7 +3429,7 @@ def _pro_passed_tests(payload: Any) -> set[str]:
     tests = payload.get("tests")
     if not isinstance(tests, Sequence) or isinstance(tests, (str, bytes)):
         raise ValueError("Pro parser output missing tests list")
-    passed: set[str] = set()
+    statuses: dict[str, str] = {}
     for index, raw_test in enumerate(tests):
         if not isinstance(raw_test, Mapping):
             raise ValueError(f"Pro parser test entry {index} must be an object")
@@ -3400,9 +3437,13 @@ def _pro_passed_tests(payload: Any) -> set[str]:
         status = str(raw_test.get("status") or "").upper()
         if not name:
             raise ValueError(f"Pro parser test entry {index} missing name")
-        if status == "PASSED":
-            passed.add(name)
-    return passed
+        if name in statuses and statuses[name] != status:
+            raise ValueError(
+                f"Pro parser test entry {index} duplicates {name!r} "
+                "with conflicting status"
+            )
+        statuses[name] = status
+    return {name for name, status in statuses.items() if status == "PASSED"}
 
 
 def _pro_test_count(payload: Any) -> int:
@@ -3414,25 +3455,34 @@ def _pro_test_count(payload: Any) -> int:
     return len(tests)
 
 
-def _last_nonempty_line(value: str) -> str:
-    lines = [line.strip() for line in str(value).splitlines() if line.strip()]
-    return lines[-1] if lines else ""
-
-
-def _strip_binary_hunks(patch: str) -> str:
+def _strip_binary_hunks(patch: str) -> tuple[str, list[dict[str, Any]]]:
     sections = patch.split("diff --git ")
     if len(sections) == 1:
-        return patch
+        return patch, []
     kept: list[str] = []
+    stripped: list[dict[str, Any]] = []
     prefix = sections[0]
     if prefix:
         kept.append(prefix)
     for section in sections[1:]:
         full = "diff --git " + section
         if "GIT binary patch" in full or "Binary files " in full:
+            stripped.append({
+                "paths": _diff_section_paths(full),
+                "section_sha256": sha256(full.encode("utf-8")).hexdigest(),
+            })
             continue
         kept.append(full)
-    return "".join(kept)
+    return "".join(kept), stripped
+
+
+def _diff_section_paths(section: str) -> list[str]:
+    header = section.splitlines()[0] if section else ""
+    body = header.removeprefix("diff --git ").strip()
+    if not body.startswith("a/") or " b/" not in body:
+        return []
+    left, right = body.split(" b/", 1)
+    return sorted({left[2:], right})
 
 
 def _required_text(context: Mapping[str, Any], key: str) -> str:

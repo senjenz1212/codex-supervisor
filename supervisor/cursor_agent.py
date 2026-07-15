@@ -579,8 +579,7 @@ def _run_cursor_sdk_with_infra_retries(
 
     for infra_attempt in range(1, max_attempts + 1):
         try:
-            with _cursor_sdk_timeout(request.timeout_s):
-                transcript, metadata = _run_cursor_sdk(request)
+            transcript, metadata = _run_cursor_sdk_bounded(request)
         except CursorSdkTimeoutError:
             attempts.append({
                 "attempt": infra_attempt,
@@ -720,6 +719,42 @@ def _result_diagnostics(result: CursorInvocationResult) -> dict[str, Any]:
     if result.diagnostics:
         payload["diagnostics"] = result.diagnostics
     return payload
+
+
+def _run_cursor_sdk_bounded(
+    request: CursorInvocationRequest,
+) -> tuple[str, dict[str, Any]]:
+    if (
+        threading.current_thread() is threading.main_thread()
+        and hasattr(signal, "SIGALRM")
+        and hasattr(signal, "setitimer")
+    ):
+        with _cursor_sdk_timeout(request.timeout_s):
+            return _run_cursor_sdk(request)
+
+    seconds = max(1, int(request.timeout_s))
+    outcome: dict[str, Any] = {}
+    done = threading.Event()
+
+    def _target() -> None:
+        try:
+            outcome["value"] = _run_cursor_sdk(request)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    worker = threading.Thread(
+        target=_target,
+        name="cursor-sdk-timeout-watchdog",
+        daemon=True,
+    )
+    worker.start()
+    if not done.wait(timeout=seconds):
+        raise CursorSdkTimeoutError(f"cursor_sdk_timeout after {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 @contextlib.contextmanager

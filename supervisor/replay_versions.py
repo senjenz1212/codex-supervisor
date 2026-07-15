@@ -95,7 +95,12 @@ def check_replay_schema_versions(manifest: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "dual-agent-replay-version-check/v1",
         "status": (
             "incompatible"
-            if unknown_versions or missing_current or migrations_required
+            if (
+                unknown_versions
+                or missing_current
+                or migrations_required
+                or missing_schema_migrations
+            )
             else "compatible"
         ),
         "current_versions": dict(CURRENT_SCHEMA_VERSIONS),

@@ -2112,6 +2112,39 @@ def test_write_event_once_is_exact_and_rejects_changed_payload(tmp_path):
         )
 
 
+def test_write_event_once_retry_with_untimed_tool_calls_is_idempotent(
+    tmp_path, monkeypatch
+):
+    import supervisor.trace_envelope as trace_envelope_module
+
+    state = State(str(tmp_path / "state.db"))
+    kwargs = {
+        "run_id": "run-once-untimed",
+        "source": "dual_agent",
+        "kind": "dual_agent_production_trace_recorded",
+        "payload": {
+            "source_event_hash": "b" * 64,
+            "receipt": {"status": "recorded"},
+            "tool_calls": [{"name": "record_production_trace"}],
+        },
+        "idempotency_key": "production-trace:" + ("b" * 64),
+    }
+
+    monkeypatch.setattr(
+        trace_envelope_module, "_current_time_ms", lambda: 1_000
+    )
+    first = state.write_event_once(**copy.deepcopy(kwargs))
+    monkeypatch.setattr(
+        trace_envelope_module, "_current_time_ms", lambda: 2_000
+    )
+    second = state.write_event_once(**copy.deepcopy(kwargs))
+
+    assert second == first
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM event_idempotency_claims"
+    ).fetchone()[0] == 1
+
+
 def test_event_idempotency_claims_reject_update_and_delete(tmp_path):
     state = State(str(tmp_path / "state.db"))
     state.write_event_once(
@@ -2225,3 +2258,15 @@ def test_write_event_once_deduplicates_across_processes(tmp_path):
             WHERE run_id='run-once'
               AND kind='dual_agent_production_trace_recorded'"""
     ).fetchone()[0] == 1
+
+
+def test_artifact_store_rejects_ancestor_symlinked_after_creation(tmp_path):
+    real = tmp_path / "real"
+    store = ContentAddressedArtifactStore(real / "artifacts")
+    descriptor = store.put_bytes(b"payload")
+    moved = tmp_path / "moved"
+    real.rename(moved)
+    real.symlink_to(moved, target_is_directory=True)
+
+    with pytest.raises(ArtifactIntegrityError, match="symlink"):
+        store.read_bytes(str(descriptor["digest"]["sha256"]))

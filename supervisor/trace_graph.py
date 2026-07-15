@@ -1356,19 +1356,20 @@ class TraceGraph:
                         node=node.identity,
                         message="decision has no supporting ANL node",
                     ))
-                if validation_binding is not None:
+                if node.identity in authoritative_decisions:
+                    if validation_binding is not None:
+                        hard_findings.extend(
+                            self._decision_binding_findings(
+                                node,
+                                expected_binding=validation_binding,
+                            )
+                        )
                     hard_findings.extend(
-                        self._decision_binding_findings(
+                        self._decision_grade_findings(
                             node,
-                            expected_binding=validation_binding,
+                            validator=grade_validator,
                         )
                     )
-                hard_findings.extend(
-                    self._decision_grade_findings(
-                        node,
-                        validator=grade_validator,
-                    )
-                )
             elif node_type is NodeType.PROMOTION:
                 decisions = self._outgoing_edges(
                     node.identity,
@@ -1950,6 +1951,7 @@ class TraceGraphStore:
         )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
+        self._verified_revision_hashes: set[str] = set()
         self._initialise_schema()
 
     def __enter__(self) -> "TraceGraphStore":
@@ -1969,6 +1971,34 @@ class TraceGraphStore:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                revisions = self._list_lifecycle_revisions_unlocked()
+                if revisions:
+                    latest = revisions[-1]
+                    versioned_keys = {
+                        *latest.node_keys,
+                        *latest.edge_keys,
+                        *latest.waiver_keys,
+                    }
+                    divergent = sorted({
+                        *(
+                            node.identity.canonical_key
+                            for node in graph.nodes
+                        ),
+                        *(_trace_edge_key(edge) for edge in graph.edges),
+                        *(
+                            _trace_waiver_key(waiver)
+                            for waiver in graph.waivers
+                        ),
+                    } - versioned_keys)
+                    if divergent:
+                        raise TraceGraphError(
+                            "trace store lifecycle revisions are pinned; "
+                            "append would add unversioned trace records "
+                            "beyond the latest "
+                            f"{latest.stage.value} revision: "
+                            + ", ".join(divergent)
+                            + "; use append_lifecycle_revision"
+                        )
                 for node in graph.nodes:
                     self._append_node(node)
                 for edge in graph.edges:
@@ -2299,7 +2329,15 @@ class TraceGraphStore:
             _trace_lifecycle_revision_from_row(row)
             for row in rows
         )
-        loaded: list[TraceGraph] = []
+        loaded: dict[int, TraceGraph] = {}
+
+        def load_revision(index: int) -> TraceGraph:
+            if index not in loaded:
+                loaded[index] = self._load_lifecycle_revision_unlocked(
+                    revisions[index]
+                )
+            return loaded[index]
+
         for index, revision in enumerate(revisions):
             if index >= len(_TRACE_LIFECYCLE_ORDER):
                 raise TraceGraphError(
@@ -2318,7 +2356,9 @@ class TraceGraphStore:
                 raise TraceGraphError(
                     "trace lifecycle revision chain is invalid"
                 )
-            graph = self._load_lifecycle_revision_unlocked(revision)
+            if revision.revision_hash in self._verified_revision_hashes:
+                continue
+            graph = load_revision(index)
             if not _trace_graph_has_same_ordered_records(
                 graph.lifecycle_revision(revision.stage),
                 graph,
@@ -2345,7 +2385,7 @@ class TraceGraphStore:
                     preserves_parent = (
                         _trace_graph_preserves_legacy_parent_record_set(
                             parent_stage=revisions[index - 1].stage,
-                            parent=loaded[-1],
+                            parent=load_revision(index - 1),
                             child=graph,
                         )
                     )
@@ -2353,7 +2393,7 @@ class TraceGraphStore:
                     preserves_parent = (
                         _trace_graph_preserves_parent_projection(
                             parent_stage=revisions[index - 1].stage,
-                            parent=loaded[-1],
+                            parent=load_revision(index - 1),
                             child=graph,
                         )
                     )
@@ -2362,7 +2402,7 @@ class TraceGraphStore:
                     "trace lifecycle revision does not preserve its exact "
                     "ordered parent projection"
                 )
-            loaded.append(graph)
+            self._verified_revision_hashes.add(revision.revision_hash)
         return revisions
 
     def _load_lifecycle_revision_unlocked(

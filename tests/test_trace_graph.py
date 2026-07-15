@@ -385,12 +385,12 @@ def test_closure_rejects_closed_graph_bound_to_an_unrelated_workflow():
         )
 
 
-def test_every_decision_must_match_the_requested_workflow_context():
+def test_every_authoritative_decision_must_match_the_requested_context():
     graph, nodes = _closed_graph()
     binding = _binding()
     graph = _bind_decision(graph, nodes, binding)
     decoy = _node(NodeType.DEC, "DEC-DECOY-001", 31)
-    graph = TraceGraph(
+    superseded = TraceGraph(
         nodes=(*graph.nodes, decoy),
         edges=(
             *graph.edges,
@@ -403,7 +403,34 @@ def test_every_decision_must_match_the_requested_workflow_context():
         decision_grade_validator=graph.decision_grade_validator,
     )
 
-    result = graph.validate_closure(
+    superseded_result = superseded.validate_closure(
+        now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc),
+        expected_binding=binding,
+    )
+
+    assert not any(
+        finding.node == decoy.identity
+        and finding.rule in {
+            ClosureRule.DECISION_CONTEXT_MATCHES,
+            ClosureRule.DECISION_GRADE_CITATIONS_CURRENT,
+        }
+        for finding in superseded_result.findings
+    )
+
+    promoted = TraceGraph(
+        nodes=superseded.nodes,
+        edges=(
+            *superseded.edges,
+            TraceEdge(
+                nodes[NodeType.PROMOTION].identity,
+                EdgeType.PROMOTES,
+                decoy.identity,
+            ),
+        ),
+        decision_grade_validator=graph.decision_grade_validator,
+    )
+
+    promoted_result = promoted.validate_closure(
         now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc),
         expected_binding=binding,
     )
@@ -411,7 +438,7 @@ def test_every_decision_must_match_the_requested_workflow_context():
     assert any(
         finding.rule is ClosureRule.DECISION_CONTEXT_MATCHES
         and finding.node == decoy.identity
-        for finding in result.findings
+        for finding in promoted_result.findings
     )
 
 
@@ -1310,7 +1337,16 @@ def test_trace_graph_lifecycle_rejects_reordered_parent_on_reload(
             TraceLifecycleStage.PLANNING,
             planning,
         )
-        store.append(reordered_runtime)
+        with pytest.raises(TraceGraphError, match="unversioned"):
+            store.append(reordered_runtime)
+        store._conn.execute("BEGIN IMMEDIATE")
+        for node in reordered_runtime.nodes:
+            store._append_node(node)
+        for edge in reordered_runtime.edges:
+            store._append_edge(edge)
+        for waiver in reordered_runtime.waivers:
+            store._append_waiver(waiver)
+        store._conn.execute("COMMIT")
         child = TraceLifecycleRevision.create(
             stage=TraceLifecycleStage.RUNTIME,
             graph=reordered_runtime,

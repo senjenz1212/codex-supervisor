@@ -282,8 +282,25 @@ def upgrade() -> None:
                       artifact_manifest_hash, ledger_genesis_kind
                  FROM events
                 ORDER BY run_id ASC, event_id ASC"""
-        )
+        ).execution_options(stream_results=True, max_row_buffer=1000)
     ).mappings()
+    ledger_metadata_update = sa.text(
+        """UPDATE events
+              SET event_sequence=:event_sequence,
+                  previous_event_hash=:previous_event_hash,
+                  event_hash=:event_hash,
+                  canonical_payload_hash=:canonical_payload_hash,
+                  artifact_manifest_hash=:artifact_manifest_hash,
+                  ledger_genesis_kind=:ledger_genesis_kind
+            WHERE global_id=:global_id"""
+    )
+    pending_updates: list[dict[str, object]] = []
+
+    def _flush_ledger_metadata_updates() -> None:
+        if not pending_updates:
+            return
+        bind.execute(ledger_metadata_update, pending_updates)
+        pending_updates.clear()
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None
@@ -388,17 +405,7 @@ def upgrade() -> None:
                     f"run_id={run_id} event_id={row['event_id']} "
                     f"field={field}"
                 )
-        bind.execute(
-            sa.text(
-                """UPDATE events
-                      SET event_sequence=:event_sequence,
-                          previous_event_hash=:previous_event_hash,
-                          event_hash=:event_hash,
-                          canonical_payload_hash=:canonical_payload_hash,
-                          artifact_manifest_hash=:artifact_manifest_hash,
-                          ledger_genesis_kind=:ledger_genesis_kind
-                    WHERE global_id=:global_id"""
-            ),
+        pending_updates.append(
             {
                 "event_sequence": fields.event_sequence,
                 "previous_event_hash": fields.previous_event_hash,
@@ -407,10 +414,13 @@ def upgrade() -> None:
                 "artifact_manifest_hash": fields.artifact_manifest_hash,
                 "ledger_genesis_kind": fields.ledger_genesis_kind,
                 "global_id": int(row["global_id"]),
-            },
+            }
         )
+        if len(pending_updates) >= 1000:
+            _flush_ledger_metadata_updates()
         previous_event_hash = fields.event_hash
         previous_event_hash_schema_version = event_hash_schema_version
+    _flush_ledger_metadata_updates()
 
     _backfill_quality_projection_evidence(bind)
 

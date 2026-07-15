@@ -7,6 +7,7 @@ import itertools
 import json
 import math
 import re
+import secrets
 import sqlite3
 import time
 from collections.abc import Iterator, Mapping as MappingABC, Sequence
@@ -78,11 +79,9 @@ _VERIFIER_METADATA_ALLOWLIST = frozenset({
 })
 
 _ARM_IDENTITY_KEY_TOKENS = frozenset({"arm", "assignment", "treatment"})
+_BARE_ARM_LETTER_VALUES = frozenset({"a", "b", "c"})
 _ARM_IDENTITY_EXACT_VALUES = frozenset(
     {
-        "a",
-        "b",
-        "c",
         "arm_a",
         "arm_b",
         "arm_c",
@@ -2739,6 +2738,11 @@ class ExperimentKernel:
                 ).__name__
                 orphan["quarantine_error"] = str(quarantine_error)
             if owner is None:
+                if quarantine_error is not None:
+                    raise RuntimeError(
+                        "ownerless uncommitted grade could not be "
+                        f"quarantined: {revision.grade_id}"
+                    ) from quarantine_error
                 continue
             key = (
                 owner["experiment_id"],
@@ -3097,6 +3101,7 @@ class ExperimentKernel:
                     "block_attempt": block_attempt,
                     "budget": experiment.arm_budgets[arm].to_dict(),
                     "treatment_hash": assignment.treatment_hashes[arm],
+                    "start_claim_nonce": secrets.token_hex(16),
                 }
                 self.store.start_arm_attempt(
                     experiment_id=experiment.experiment_id,
@@ -4158,6 +4163,9 @@ def build_adjudicator_packet(
     review_store: SqliteExperimentStore,
     adjudication_started_at_ms: int,
     lead_outcome: Mapping[str, Any],
+    allowed_reviewers: Sequence[str] | frozenset[str] | set[str] | None = (
+        None
+    ),
 ) -> dict[str, Any]:
     if (
         isinstance(adjudication_started_at_ms, bool)
@@ -4167,6 +4175,22 @@ def build_adjudicator_packet(
         raise ValueError(
             "adjudication_started_at_ms must be a positive integer"
         )
+    reviewer_roster: frozenset[str] | None = None
+    if allowed_reviewers is not None:
+        if isinstance(allowed_reviewers, (str, bytes)):
+            raise ValueError(
+                "allowed_reviewers must be a collection of reviewer ids"
+            )
+        entries = [str(entry).strip() for entry in allowed_reviewers]
+        if not entries or any(not entry for entry in entries):
+            raise ValueError(
+                "allowed_reviewers must contain non-empty reviewer ids"
+            )
+        reviewer_roster = frozenset(entries)
+        if len(reviewer_roster) < 2:
+            raise ValueError(
+                "allowed_reviewers must name at least two distinct reviewers"
+            )
     primary_packet = build_primary_reviewer_packet(
         task=task,
         diff=diff,
@@ -4183,6 +4207,14 @@ def build_adjudicator_packet(
             "adjudication requires at least two persisted primary reviews"
         )
     for receipt in receipts:
+        if (
+            reviewer_roster is not None
+            and receipt.reviewer_id not in reviewer_roster
+        ):
+            raise ValueError(
+                "primary review reviewer is not on the allowed reviewer "
+                f"roster: {receipt.reviewer_id}"
+            )
         if receipt.primary_packet_hash != primary_packet["packet_hash"]:
             raise ValueError(
                 "primary review receipt does not bind the reviewer packet"
@@ -5889,6 +5921,10 @@ def _reject_arm_identity_scalar(value: Any, *, path: str) -> None:
     normalized = _normalize_identity_text(value)
     if normalized in _ARM_IDENTITY_EXACT_VALUES:
         raise ValueError(f"arm identity leakage at {path}")
+    if normalized in _BARE_ARM_LETTER_VALUES and _is_arm_identity_key(
+        _path_leaf_key(path)
+    ):
+        raise ValueError(f"arm identity leakage at {path}")
     if _UNAMBIGUOUS_ARM_IDENTITY_RE.search(value):
         raise ValueError(f"arm identity leakage at {path}")
     if _SUPERVISOR_CONTEXT_RE.search(value):
@@ -5903,6 +5939,11 @@ def _reject_arm_identity_scalar(value: Any, *, path: str) -> None:
             raise ValueError(f"arm identity leakage at {path}")
         if "compute_matched_direct" in normalized:
             raise ValueError(f"arm identity leakage at {path}")
+
+
+def _path_leaf_key(path: str) -> str:
+    leaf = path.rsplit(".", 1)[-1]
+    return re.sub(r"\[\d+\]$", "", leaf)
 
 
 def _normalize_identity_text(value: str) -> str:

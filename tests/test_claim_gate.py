@@ -15,6 +15,7 @@ from supervisor import claim_gate as claim_gate_module
 from supervisor import experiment_kernel
 from supervisor.claim_gate import (
     ClaimGate as _ClaimGate,
+    ClaimGateError,
     ClaimLevel,
     UnsupportedClaimError,
     external_authority_attestation_payload,
@@ -2902,14 +2903,15 @@ def test_preregistered_win_rate_cannot_exceed_pilot_estimate_bound(
 
     _rewrite_pilot_analysis(tmp_path, bundle, swap_wins_in_analysis)
 
-    assert (
+    with pytest.raises(
+        ClaimGateError,
+        match="more optimistic than the pilot estimate",
+    ):
         ClaimGate.max_claim_level(
             bundle,
             evidence_root=tmp_path,
             ledger_verification_resolver=ledger_resolver,
         )
-        == ClaimLevel.L2
-    )
 
 
 def test_l3_requires_every_grade_on_the_authorizing_analysis_path(
@@ -3637,6 +3639,24 @@ def test_versioned_linked_control_receipts_can_reach_l6(
         (
             "canary",
             lambda receipt: receipt.update({"traffic_fraction": 1.0}),
+        ),
+        (
+            "canary",
+            lambda receipt: receipt.update({"traffic_fraction": 0.6}),
+        ),
+        (
+            "canary",
+            lambda receipt: receipt.update({"sample_size": 49}),
+        ),
+        (
+            "shadow_result",
+            lambda receipt: receipt.update(
+                {
+                    "task_count": 19,
+                    "control_successes": 10,
+                    "candidate_successes": 12,
+                }
+            ),
         ),
         (
             "rollback_receipt",

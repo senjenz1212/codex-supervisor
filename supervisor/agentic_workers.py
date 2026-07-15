@@ -688,14 +688,27 @@ def cleanup_orphaned_agentic_workers(
             "elapsed_s": elapsed_s,
         })
 
+    unverifiable = [
+        entry
+        for entry in skipped
+        if entry.get("reason") == "missing_worker_runtime_fields"
+    ]
+    status = (
+        "cleanup_skipped_unverifiable_workers"
+        if unverifiable and not cleaned and not active
+        else "cleanup_completed"
+    )
     return {
         "schema_version": "agentic-worker-cleanup/v1",
-        "status": "cleanup_completed",
+        "status": status,
         "task_id": task_id,
         "cwd": str(cwd_path),
         "cleaned": cleaned,
         "active": active,
         "skipped": skipped,
+        "cleaned_count": len(cleaned),
+        "active_count": len(active),
+        "skipped_count": len(skipped),
     }
 
 

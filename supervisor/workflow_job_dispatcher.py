@@ -96,6 +96,7 @@ class WorkflowJobDispatcher:
         self.max_dispatch_attempts = max(1, int(max_dispatch_attempts))
         self.max_cleanup_retry_attempts = max(1, int(max_cleanup_retry_attempts))
         self._reap_skipped_missing_containment: set[str] = set()
+        self._cleanup_attempts: dict[str, int] = {}
         self.budget_hook = budget_hook or (lambda _row: True)
         self.popen = popen
         self.pid_alive = pid_alive
@@ -364,9 +365,12 @@ class WorkflowJobDispatcher:
                     refreshed or row,
                     termination=termination,
                 )
-            return self._park(
+            reaped = self._complete_from_result_file(row, result_path=result_path)
+            if reaped is not None:
+                return reaped
+            return self._schedule_retry_or_park(
                 row,
-                reason="spawned_worker_identity_unavailable",
+                error="spawned_worker_identity_unavailable",
             )
         worker_pgid, worker_started_at = identity
         try:
@@ -413,6 +417,32 @@ class WorkflowJobDispatcher:
             worker_started_at=float(worker_started_at),
             worker_containment_id=containment_id,
         )
+        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+        return refreshed or row
+
+    def _complete_from_result_file(
+        self,
+        row: Any,
+        *,
+        result_path: Path,
+    ) -> Any | None:
+        if not result_path.exists():
+            return None
+        try:
+            loaded = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
+        status = str(result.get("status") or "completed")
+        try:
+            self.state.complete_dual_agent_workflow_job(
+                job_id=row["job_id"],
+                status=status,
+                terminal_outcome=result,
+                error="",
+            )
+        except (ValueError, RuntimeError):
+            return None
         refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
         return refreshed or row
 
@@ -479,12 +509,15 @@ class WorkflowJobDispatcher:
                 row,
                 reason=f"worker_containment_identity_missing: {reason}",
             )
-        attempts = int(row["dispatch_attempts"] or 0) + 1
+        job_id = str(row["job_id"])
+        attempts = self._cleanup_attempts.get(job_id, 0) + 1
         if attempts > self.max_cleanup_retry_attempts:
+            self._cleanup_attempts.pop(job_id, None)
             return self._park(
                 row,
                 reason=f"cleanup_retry_attempts_exhausted: {reason}",
             )
+        self._cleanup_attempts[job_id] = attempts
         now = int(self.now())
         delay = min(self.max_backoff_s, self.base_backoff_s)
         retry_delay = min(
@@ -498,7 +531,6 @@ class WorkflowJobDispatcher:
             leased_by=f"cleanup:{self.dispatcher_id}",
             lease_expires_at=now + int(retry_delay),
             heartbeat_at=now,
-            dispatch_attempts=attempts,
         )
         self._write_job_event(
             row,

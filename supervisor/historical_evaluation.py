@@ -34,6 +34,9 @@ HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION = (
     "supervisor-historical-operation-receipt/v1"
 )
 HISTORICAL_OPERATION_EVENT_SOURCE = "historical_evaluation"
+HISTORICAL_OPERATION_PREFLIGHT_RELEASED_EVENT_KIND = (
+    "historical_operation.preflight_released"
+)
 RECEIPT_REDACTION_RULES_VERSION = "supervisor-redaction-rules/v2"
 _RECEIPT_REDACTORS_BY_VERSION: Mapping[str, Callable[[Any], Any]] = (
     MappingProxyType(
@@ -518,7 +521,7 @@ class HistoricalEvaluationService:
             operation=request.operation.value,
         )
         self._validate_claim(request, claim)
-        prior_requested_event_id, existing = (
+        prior_requested_event_id, preflight_released, existing = (
             self._existing_terminal_receipt(request)
         )
         if existing is not None:
@@ -550,6 +553,10 @@ class HistoricalEvaluationService:
             recoverable = (
                 request.operation_id in self._preflight_failed_operations
                 or self._claim_is_stale(claim)
+                or (
+                    preflight_released
+                    and prior_requested_event_id is None
+                )
             )
             if not recoverable:
                 raise HistoricalOperationInProgress(
@@ -566,8 +573,19 @@ class HistoricalEvaluationService:
             self._verify_source(request.source)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             self._preflight_failed_operations.add(request.operation_id)
+            self._state.write_historical_operation_event(
+                run_id=request.operation_id,
+                kind=HISTORICAL_OPERATION_PREFLIGHT_RELEASED_EVENT_KIND,
+                payload={
+                    "operation_id": request.operation_id,
+                    "request_hash": request.request_hash,
+                    "operation": request.operation.value,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
             raise
         requested_event_id = self._state.write_historical_operation_event(
             run_id=request.operation_id,
@@ -736,10 +754,13 @@ class HistoricalEvaluationService:
         )
 
     def _claim_is_stale(self, claim: Mapping[str, Any]) -> bool:
+        updated_at_value = claim.get("updated_at")
+        if isinstance(updated_at_value, bool):
+            return False
         try:
-            updated_at = int(claim.get("updated_at"))
+            updated_at = int(updated_at_value)
         except (TypeError, ValueError):
-            return True
+            return False
         return int(time.time()) - updated_at >= self._claim_stale_after_s
 
     def _require_authoritative_state(self) -> None:
@@ -899,8 +920,9 @@ class HistoricalEvaluationService:
     def _existing_terminal_receipt(
         self,
         request: HistoricalOperationRequest,
-    ) -> tuple[int | None, HistoricalOperationReceipt | None]:
+    ) -> tuple[int | None, bool, HistoricalOperationReceipt | None]:
         after = 0
+        preflight_released = False
         requested_events: list[Mapping[str, Any]] = []
         terminal_events: list[Mapping[str, Any]] = []
         while True:
@@ -964,6 +986,20 @@ class HistoricalEvaluationService:
                             "match its request"
                         )
                     terminal_events.append(event)
+                elif (
+                    kind
+                    == HISTORICAL_OPERATION_PREFLIGHT_RELEASED_EVENT_KIND
+                ):
+                    if (
+                        str(payload.get("operation_id") or "")
+                        != request.operation_id
+                        or observed_hash != request.request_hash
+                    ):
+                        raise HistoricalEvidenceError(
+                            "historical preflight release event does not "
+                            "match its request"
+                        )
+                    preflight_released = True
                 else:
                     raise HistoricalEvidenceError(
                         f"unsupported historical operation event kind: {kind}"
@@ -992,7 +1028,7 @@ class HistoricalEvaluationService:
             else None
         )
         if not terminal_events:
-            return sole_requested_event_id, None
+            return sole_requested_event_id, preflight_released, None
         if sole_requested_event_id is None:
             raise HistoricalEvidenceError(
                 "historical terminal event has no unique requested event"
@@ -1033,7 +1069,11 @@ class HistoricalEvaluationService:
                 "historical operation already failed; use a new "
                 "idempotency key after correcting the cause"
             )
-        return sole_requested_event_id, _receipt_from_event(terminal)
+        return (
+            sole_requested_event_id,
+            preflight_released,
+            _receipt_from_event(terminal),
+        )
 
     @staticmethod
     def _validate_claim(
@@ -1397,6 +1437,7 @@ def _sha256_json(value: Any) -> str:
 __all__ = [
     "EvidenceResolver",
     "HISTORICAL_OPERATION_EVENT_SOURCE",
+    "HISTORICAL_OPERATION_PREFLIGHT_RELEASED_EVENT_KIND",
     "HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION",
     "HISTORICAL_OPERATION_REQUEST_SCHEMA_VERSION",
     "RECEIPT_REDACTION_RULES_VERSION",

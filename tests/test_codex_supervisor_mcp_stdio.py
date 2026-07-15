@@ -3342,6 +3342,59 @@ def test_ensure_workflow_run_registration_accepts_legacy_snapshot(tmp_path):
         cwd=str(tmp_path),
     )
 
+    skip_events = [
+        json.loads(row["payload_json"])
+        for row in state._conn.execute(
+            """SELECT payload_json FROM events
+                WHERE run_id='legacy-run'
+                  AND kind='workflow_run_registration_validation_skipped'"""
+        ).fetchall()
+    ]
+    assert len(skip_events) == 1
+    assert skip_events[0]["skipped_fields"] == [
+        "cwd",
+        "task_id",
+        "target_kind",
+        "workflow_run_id",
+    ]
+    assert skip_events[0]["reason"] == "sparse_config_snapshot"
+
+
+def test_submit_parks_reserved_job_when_registration_fails(
+    tmp_path,
+    monkeypatch,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio_module
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    def failing_registration(**_kwargs):
+        raise ValueError("target session id is invalid")
+
+    monkeypatch.setattr(
+        stdio_module,
+        "register_submitted_workflow",
+        failing_registration,
+    )
+
+    with pytest.raises(ValueError, match="target session id is invalid"):
+        api.submit_dual_agent_workflow_job(
+            cwd=str(tmp_path),
+            task_id="task-reg-fail",
+            run_id="run-reg-fail",
+            intent="Submit with failing registration.",
+        )
+
+    jobs = state.list_dual_agent_workflow_jobs()
+    assert len(jobs) == 1
+    assert jobs[0]["status"] == "parked"
+    assert str(jobs[0]["parked_reason"]).startswith(
+        "workflow_run_registration_failed"
+    )
+    assert state.list_dual_agent_workflow_jobs(active_only=True) == []
+
 
 def test_ensure_workflow_run_registration_rejects_conflicting_snapshot(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI

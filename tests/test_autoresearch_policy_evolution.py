@@ -2079,6 +2079,87 @@ def test_policy_proposal_rollback_pointer_restores_previous_artifact(
     ]
 
 
+def test_reapproval_after_rollback_records_fresh_audit_transaction(
+    tmp_path,
+    policy_authority,
+):
+    state = State(str(tmp_path / "state.db"))
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
+    [proposal] = _create_authorized(
+        _report(_record()),
+        policy_authority,
+        repo_root=tmp_path,
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+    approval = approve_policy_proposal(
+        proposal,
+        state=state,
+        run_id="policy-run",
+        repo_root=tmp_path,
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+    )
+    rollback_policy_proposal(
+        approval["rollback_pointer"],
+        state=state,
+        run_id="policy-run",
+        repo_root=tmp_path,
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+        reason="operator requested revert",
+    )
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+
+    reapproval = approve_policy_proposal(
+        proposal,
+        state=state,
+        run_id="policy-run",
+        repo_root=tmp_path,
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+    )
+
+    assert target.read_text(encoding="utf-8") == AFTER_OVERLAY
+    assert reapproval["transaction_id"] != approval["transaction_id"]
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == [
+        "autoresearch_report_emitted",
+        "autoresearch_policy_proposal_created",
+        "autoresearch_policy_proposal_approved",
+        "autoresearch_policy_proposal_rolled_back",
+        "autoresearch_policy_proposal_approved",
+    ]
+    assert (
+        events[-1]["payload"]["transaction_id"]
+        == reapproval["transaction_id"]
+    )
+
+
+def test_transaction_recovery_tolerates_foreign_and_unpublished_entries(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    transactions = tmp_path / ".handoff" / "policy-transactions"
+    transactions.mkdir(parents=True)
+    (transactions / ".DS_Store").write_bytes(b"junk")
+    unpublished = "a" * 64
+    (transactions / unpublished).mkdir()
+
+    results = recover_policy_transactions(state=state, repo_root=tmp_path)
+
+    assert {
+        (entry.get("entry") or entry.get("transaction_id"), entry["status"])
+        for entry in results
+    } == {
+        (".DS_Store", "ignored_foreign_entry"),
+        (unpublished, "ignored_unpublished_manifest"),
+    }
+
+
 def test_paired_acceptance_report_oracle_coupling_blocks_policy_derivation(
     tmp_path,
     policy_authority,

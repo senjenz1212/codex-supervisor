@@ -47,6 +47,45 @@ def test_bare_pytest_test_name_resolves_to_unique_nodeid(tmp_path: Path) -> None
     ]
 
 
+def test_bare_parametrized_pytest_name_resolves_to_nodeid(tmp_path: Path) -> None:
+    _write_test(
+        tmp_path / "tests" / "test_runtime_target.py",
+        "import pytest\n\n"
+        "@pytest.mark.parametrize('value', [1])\n"
+        "def test_runtime_target_value(value):\n"
+        "    assert value\n",
+    )
+
+    assert _test_commands(
+        ["python -m pytest test_runtime_target_value[1] -q"],
+        tmp_path,
+    ) == [
+        f"{shlex.quote(sys.executable)} -m pytest "
+        "'tests/test_runtime_target.py::test_runtime_target_value[1]' -q"
+    ]
+
+
+def test_supervisor_owned_exclusion_rejects_path_separator_task_ids() -> None:
+    from supervisor.runtime_evidence import _is_supervisor_owned_runtime_path
+
+    assert _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/task-1/release/notes.md",
+        task_id="task-1",
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/task-1/evil/release/notes.md",
+        task_id="task-1/evil",
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/../secret/release/notes.md",
+        task_id="..",
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent//release/notes.md",
+        task_id="",
+    )
+
+
 def test_python_pytest_command_resolves_bare_test_name(tmp_path: Path) -> None:
     _write_test(
         tmp_path / "tests" / "test_runtime_target.py",

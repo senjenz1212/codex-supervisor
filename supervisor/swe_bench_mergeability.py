@@ -5403,7 +5403,6 @@ def swebench_mergeability_official_live_runner(
                     arm_config=arm_config,
                     gaming_flags=("budget_exceeded",),
                 )
-                report = ClaimGate.govern_report(report)
                 _write_official_live_report(output_path, report)
                 return report
 
@@ -5613,6 +5612,7 @@ def _official_live_unavailable_report(
         "wall_clock_s": round(time.monotonic() - started, 6),
         "report_path": str(output_path / "official_live_report.json"),
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -5741,7 +5741,6 @@ def swebench_mergeability_live_runner(
                     arm_config=arm_config,
                     gaming_flags=("budget_exceeded",),
                 )
-                report = ClaimGate.govern_report(report)
                 _write_live_report(output_path, report)
                 return report
 
@@ -6185,6 +6184,7 @@ def _live_unavailable_report(
         "wall_clock_s": round(time.monotonic() - started, 6),
         "report_path": str(output_path / "live_report.json"),
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })

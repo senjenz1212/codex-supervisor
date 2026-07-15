@@ -1593,7 +1593,12 @@ def _open_directory_tree(
 ) -> int:
     """Open an absolute directory path one component at a time without links."""
     _require_no_follow_support(error_type)
-    absolute = _absolute_no_follow_path(path)
+    supplied = Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+    absolute = _absolute_no_follow_path(supplied)
+    if absolute != supplied:
+        raise error_type(
+            f"{label} contains a symlink or non-directory path component"
+        )
     anchor = absolute.anchor
     if not anchor:
         raise error_type(f"{label} must resolve to an absolute path")
@@ -1744,6 +1749,7 @@ def _append_only_directory_lock(
     *,
     error_type: type[LedgerError],
     label: str,
+    shared: bool = False,
 ) -> Iterator[None]:
     """Serialize one append-only directory across threads and processes."""
     if fcntl is None:
@@ -1752,7 +1758,10 @@ def _append_only_directory_lock(
         )
     while True:
         try:
-            fcntl.flock(parent_fd, fcntl.LOCK_EX)
+            fcntl.flock(
+                parent_fd,
+                fcntl.LOCK_SH if shared else fcntl.LOCK_EX,
+            )
             break
         except OSError as exc:
             if exc.errno == errno.EINTR:
@@ -2130,17 +2139,14 @@ class ContentAddressedArtifactStore:
                 parent_fd,
                 error_type=ArtifactIntegrityError,
                 label=f"artifact sha256:{normalized}",
+                shared=True,
             ):
-                _recover_append_only_temporary_files_at(
-                    parent_fd,
-                    error_type=ArtifactIntegrityError,
-                    label=f"artifact sha256:{normalized}",
-                )
                 value = _read_regular_file_at(
                     parent_fd,
                     normalized,
                     error_type=ArtifactIntegrityError,
                     label=f"artifact sha256:{normalized}",
+                    require_single_link=False,
                 )
         if sha256_hex(value) != normalized:
             raise ArtifactIntegrityError(

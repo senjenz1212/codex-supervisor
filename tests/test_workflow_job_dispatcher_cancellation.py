@@ -137,6 +137,33 @@ def _cleanup_pid(pid: int) -> None:
         pass
 
 
+def _hermetic_containment_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop unrelated environ-unreadable processes from containment scans.
+
+    Root-identity-less scans fail closed on any same-user process that denies
+    environment reads (common on macOS). These tests assert termination
+    outcomes for the launched tree itself, so they emulate a host without
+    unrelated unreadable processes.
+    """
+    real_process_iter = process_containment_module.psutil.process_iter
+
+    def readable_process_iter(attrs: list[str]) -> list[Any]:
+        readable: list[Any] = []
+        for proc in real_process_iter(attrs):
+            try:
+                proc.environ()
+            except Exception:
+                continue
+            readable.append(proc)
+        return readable
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        readable_process_iter,
+    )
+
+
 def _spawn_orphaned_tagged_child(
     tmp_path: Path,
     *,
@@ -220,7 +247,11 @@ def test_cancel_term_kill_removes_worker_process_group_and_descendant(
         _cleanup_process_group(process, pgid)
 
 
-def test_cancel_kills_descendant_that_escaped_with_setsid(tmp_path: Path) -> None:
+def test_cancel_kills_descendant_that_escaped_with_setsid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _hermetic_containment_scan(monkeypatch)
     process, tree = _spawn_stubborn_worker_with_child(
         tmp_path,
         child_starts_new_session=True,
@@ -708,7 +739,9 @@ def test_terminal_pending_reap_persists_once_with_append_only_evidence(
 
 def test_spawn_identity_failure_uses_known_containment_to_kill_detached_child(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _hermetic_containment_scan(monkeypatch)
     child_path = tmp_path / "spawn-identity-child.json"
     child_code = """
 import json
@@ -779,13 +812,16 @@ subprocess.Popen(
             popen=spawn_then_exit,
             process_identity_probe=lambda _pid: None,
         )
-        parked = dispatcher._spawn(row)
+        retried = dispatcher._spawn(row)
         child_pid = int(
             json.loads(child_path.read_text(encoding="utf-8"))["pid"]
         )
 
-        assert parked["status"] == "parked"
-        assert parked["parked_reason"] == "spawned_worker_identity_unavailable"
+        assert retried["status"] == "submitted"
+        assert retried["recovery_point"] == "request_written"
+        assert retried["dispatch_attempts"] == 1
+        assert retried["next_dispatch_at"] is not None
+        assert retried["error"] == "spawned_worker_identity_unavailable"
         assert not psutil.pid_exists(child_pid)
     finally:
         if child_pid:
@@ -821,6 +857,7 @@ def test_pid_reuse_still_terminates_surviving_tagged_descendant(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _hermetic_containment_scan(monkeypatch)
     tree = _spawn_orphaned_tagged_child(
         tmp_path,
         name="pid-reuse-shared-containment",
@@ -888,6 +925,7 @@ def test_pid_reuse_reaps_tagged_descendant_before_dispatcher_finalizes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _hermetic_containment_scan(monkeypatch)
     tree = _spawn_orphaned_tagged_child(
         tmp_path,
         name="pid-reuse-dispatcher",
@@ -1064,7 +1102,9 @@ def test_result_recovery_kills_live_worker_before_terminal_completion(
 
 def test_pid_reuse_with_empty_containment_finalizes_without_cleanup_retry(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _hermetic_containment_scan(monkeypatch)
     state = State(str(tmp_path / "state.db"))
     job_dir = tmp_path / ".handoff" / "workflow-jobs" / "cleanup-retry"
     state.upsert_dual_agent_workflow_job(

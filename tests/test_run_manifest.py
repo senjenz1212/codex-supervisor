@@ -450,7 +450,7 @@ def test_cli_and_evaluator_claims_are_not_rehashed_or_trusted_at_export():
     )
 
 
-def test_bound_execution_time_cli_and_evaluator_digests_are_accepted():
+def test_digest_only_cli_and_evaluator_receipts_are_not_verified_artifacts():
     provenance = build_execution_provenance(
         events=[{
             "event_id": 1,
@@ -495,8 +495,8 @@ def test_bound_execution_time_cli_and_evaluator_digests_are_accepted():
     assert evaluator["sha256"] == "b" * 64
     assert evaluator["details"]["status"] == "verified"
     assert evaluator["details"]["digest_only"] is True
-    assert "cli" not in provenance["missing_component_categories"]
-    assert "evaluators" not in provenance["missing_component_categories"]
+    assert "cli" in provenance["missing_component_categories"]
+    assert "evaluators" in provenance["missing_component_categories"]
 
 
 def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(

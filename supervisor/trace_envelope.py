@@ -27,7 +27,7 @@ def stamp_trace_envelope(
             tool_calls = envelope.get("tool_calls")
             if isinstance(tool_calls, list):
                 envelope["tool_calls"] = [
-                    ensure_tool_call_timing(item)
+                    ensure_tool_call_timing(item, fallback_started_at_ms=0)
                     for item in tool_calls
                     if isinstance(item, dict)
                 ]
@@ -70,10 +70,18 @@ def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | 
 def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     direct = payload.get("tool_calls")
     if isinstance(direct, list):
-        return [ensure_tool_call_timing(item) for item in direct if isinstance(item, dict)]
+        return [
+            ensure_tool_call_timing(item, fallback_started_at_ms=0)
+            for item in direct
+            if isinstance(item, dict)
+        ]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
-    return [ensure_tool_call_timing(item) for item in calls if isinstance(item, dict)] if isinstance(calls, list) else []
+    return [
+        ensure_tool_call_timing(item, fallback_started_at_ms=0)
+        for item in calls
+        if isinstance(item, dict)
+    ] if isinstance(calls, list) else []
 
 
 @contextmanager
@@ -112,7 +120,11 @@ def timed_tool_call(
         record.setdefault("tool_call_id", _default_tool_call_id(record))
 
 
-def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
+def ensure_tool_call_timing(
+    call: dict[str, Any],
+    *,
+    fallback_started_at_ms: int | None = None,
+) -> dict[str, Any]:
     """Return a tool-call record with the standard timing fields present."""
     record = dict(call)
     result_summary = record.get("result_summary")
@@ -133,7 +145,11 @@ def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
     if started is None and ended is not None and duration is not None:
         started = max(0, ended - duration)
     if started is None:
-        started = _current_time_ms()
+        started = (
+            _current_time_ms()
+            if fallback_started_at_ms is None
+            else int(fallback_started_at_ms)
+        )
     if duration is None and duration_us is not None:
         duration = duration_us // 1_000
     if duration is None and ended is not None:

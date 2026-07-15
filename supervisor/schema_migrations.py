@@ -983,6 +983,7 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             event_id=_row_int(row, "event_id", 0),
         )
         genesis_kind = first_genesis if event_sequence == 1 else None
+        observed_event_hash = _row_optional_str(row, "event_hash", 6)
         event_hash_schema_version, fields = _ledger_fields_for_event_row(
             run_id=run_id,
             event_sequence=event_sequence,
@@ -996,8 +997,18 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             use_legacy_raw_commitment=(
                 first_genesis == LEGACY_IMPORT_GENESIS
             ),
-            observed_event_hash=_row_optional_str(row, "event_hash", 6),
+            observed_event_hash=observed_event_hash,
         )
+        if (
+            observed_event_hash is not None
+            and fields.event_hash != observed_event_hash
+        ):
+            raise RuntimeError(
+                "conflicting pre-populated event ledger metadata: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                "field=event_hash"
+            )
         if (
             previous_event_hash_schema_version is not None
             and not event_hash_schema_transition_allowed(

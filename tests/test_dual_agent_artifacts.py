@@ -3774,6 +3774,7 @@ def test_posthoc_snapshot_preserves_declared_planning_artifact_bytes(
         run_id="run-1",
         task_id="task-1",
         output_dir=output_dir,
+        trusted_workspace_root=repo,
     )
     snapshot = json.loads(
         (

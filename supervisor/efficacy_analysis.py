@@ -614,6 +614,20 @@ def compute_harness_roi(
     expected_risk_cost_per_task: float,
     value_per_verified_success: float,
 ) -> HarnessROI:
+    """Classify harness ROI from per-task B-vs-C operating economics.
+
+    ``cost_b`` and ``cost_c`` are per-task operating costs for each arm;
+    ``latency_cost_per_task`` and ``expected_risk_cost_per_task`` are the
+    additional per-task burdens the harness (arm B) imposes beyond its
+    operating cost, expressed as incremental costs relative to arm C.
+
+    ``cost_per_incremental_success`` reports the operating-cost delta
+    alone.  ``break_even_success_rate_delta`` and ``classification``
+    deliberately charge the full incremental burden (operating delta plus
+    latency and risk burdens), so a positive-ROI classification requires
+    the success-rate delta to pay for every incremental cost, not just
+    compute.
+    """
     if (
         isinstance(task_count, bool)
         or not isinstance(task_count, int)

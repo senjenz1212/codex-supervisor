@@ -206,6 +206,140 @@ def test_cleanup_retry_parks_after_attempt_cap(tmp_path: Path) -> None:
     )
 
 
+def _insert_request_written_job(
+    state: State,
+    tmp_path: Path,
+    *,
+    job_id: str,
+) -> Path:
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / job_id
+    state.upsert_dual_agent_workflow_job(
+        job_id=job_id,
+        run_id=f"run-{job_id}",
+        task_id=f"task-{job_id}",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(job_dir / "request.json"),
+        result_path=str(job_dir / "result.json"),
+        log_path=str(job_dir / "worker.log"),
+        recovery_point="request_written",
+    )
+    return job_dir / "result.json"
+
+
+class _FastExitProcess:
+    pid = 54321
+
+    def poll(self) -> int:
+        return 0
+
+
+def test_spawn_identity_unavailable_reaps_completed_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_safe_termination(monkeypatch)
+    state = State(str(tmp_path / "state.db"))
+    result_path = _insert_request_written_job(
+        state,
+        tmp_path,
+        job_id="fast-exit",
+    )
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "run_id": "run-fast-exit",
+                "task_id": "task-fast-exit",
+            }
+        ),
+        encoding="utf-8",
+    )
+    row = state.get_dual_agent_workflow_job(job_id="fast-exit")
+    assert row is not None
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=lambda *_args, **_kwargs: _FastExitProcess(),
+        process_identity_probe=lambda _pid: None,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    completed = dispatcher._spawn(row)
+
+    assert completed["status"] == "completed"
+    assert completed["recovery_point"] == "terminal"
+    assert completed["parked_reason"] is None
+
+
+def test_spawn_identity_unavailable_without_result_schedules_retry_then_parks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_safe_termination(monkeypatch)
+    state = State(str(tmp_path / "state.db"))
+    _insert_request_written_job(
+        state,
+        tmp_path,
+        job_id="no-result",
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        max_dispatch_attempts=2,
+        popen=lambda *_args, **_kwargs: _FastExitProcess(),
+        process_identity_probe=lambda _pid: None,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    row = state.get_dual_agent_workflow_job(job_id="no-result")
+    assert row is not None
+    retried = dispatcher._spawn(row)
+    assert retried["status"] == "submitted"
+    assert retried["dispatch_attempts"] == 1
+    assert retried["next_dispatch_at"] is not None
+    assert retried["error"] == "spawned_worker_identity_unavailable"
+
+    parked = dispatcher._spawn(retried)
+    assert parked["status"] == "parked"
+    assert str(parked["parked_reason"]).startswith(
+        "max_dispatch_attempts_exceeded: spawned_worker_identity_unavailable"
+    )
+
+
+def test_cleanup_retries_do_not_consume_dispatch_attempts(
+    tmp_path: Path,
+) -> None:
+    state = State(str(tmp_path / "state.db"))
+    _insert_spawned_job(
+        state,
+        tmp_path,
+        job_id="cleanup-counter",
+        containment_id="containment-counter",
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        max_cleanup_retry_attempts=5,
+        pid_alive=lambda _pid: True,
+        process_identity_probe=lambda _pid: (99999, 111.0),
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    dispatcher.reap_stale_leases()
+
+    row = state.get_dual_agent_workflow_job(job_id="cleanup-counter")
+    assert row is not None
+    assert row["status"] == "running"
+    assert str(row["leased_by"]).startswith("cleanup:")
+    assert row["dispatch_attempts"] == 0
+    assert dispatcher._cleanup_attempts["cleanup-counter"] == 1
+
+
 def test_legacy_spawned_row_without_containment_parks_deterministically(
     tmp_path: Path,
 ) -> None:

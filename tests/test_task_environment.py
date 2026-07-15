@@ -829,3 +829,10 @@ def test_bind_frozen_result_rejects_substituted_identity_echoes(
 
     with pytest.raises(ValueError, match=field):
         bind_frozen_result_to_task(task, frozen)
+
+
+def test_canonical_hash_rejects_non_canonical_json_payloads() -> None:
+    with pytest.raises(ValueError):
+        task_environment_module._sha256_json({"value": float("nan")})
+    with pytest.raises(TypeError):
+        task_environment_module._sha256_json({"value": {"a", "b"}})

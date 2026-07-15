@@ -331,7 +331,12 @@ class DriftDetector:
 
     async def _tick(self) -> None:
         for run in self.state.active_runs():
-            await self._check_one(run)
+            try:
+                await self._check_one(run)
+            except Exception as e:
+                log.exception(
+                    "drift check failed for run %s: %s", run["run_id"], e
+                )
 
     async def _check_one(self, run) -> None:
         run_id = run["run_id"]

@@ -606,8 +606,8 @@ def test_readiness_report_is_deterministic_and_missing_receipts_fail_closed():
 
 def test_budget_invariant_compares_the_values_that_get_frozen():
     payload = _protocol_payload()
-    payload["arm_budgets"]["B"]["timeout_s"] = 120.9
-    payload["arm_budgets"]["C"]["timeout_s"] = 120.1
+    payload["arm_budgets"]["B"]["timeout_s"] = 120.0
+    payload["arm_budgets"]["C"]["timeout_s"] = 120.0
 
     protocol = freeze_pilot_protocol(payload)
 
@@ -625,6 +625,38 @@ def test_budget_invariant_compares_the_values_that_get_frozen():
         trusted_receipt_verifiers=TRUSTED_RECEIPT_VERIFIERS,
     )
     assert report.ready is True
+
+
+def test_frozen_protocol_normalizes_identifier_whitespace():
+    payload = _protocol_payload()
+    payload["runtimes"] = ["claude_code\n", "codex"]
+    payload["task_families"] = {"task-1": "generic\n", "task-2": "unity"}
+
+    protocol = freeze_pilot_protocol(payload)
+
+    assert list(protocol.payload["runtimes"]) == ["claude_code", "codex"]
+    assert protocol.payload["task_families"]["task-1"] == "generic"
+    assert (
+        protocol.protocol_hash
+        == freeze_pilot_protocol(_protocol_payload()).protocol_hash
+    )
+    pins, blobs = _receipts(protocol.protocol_hash)
+    report = validate_pilot_readiness(
+        protocol,
+        receipts=pins,
+        evidence_resolver=blobs.get,
+        trusted_receipt_verifiers=TRUSTED_RECEIPT_VERIFIERS,
+    )
+    assert report.ready is True
+
+
+def test_fractional_integer_budgets_are_rejected():
+    payload = _protocol_payload()
+    payload["arm_budgets"]["B"]["timeout_s"] = 120.9
+    payload["arm_budgets"]["C"]["timeout_s"] = 120.9
+
+    with pytest.raises(PilotReadinessError, match="must be an integer"):
+        freeze_pilot_protocol(payload)
 
 
 def test_mixed_case_commit_sha_is_normalized_into_frozen_payload():

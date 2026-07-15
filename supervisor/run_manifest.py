@@ -1223,7 +1223,8 @@ def _verified_component_artifact(
             and sha256(canonical_bytes).hexdigest() == component_sha256
         )
     return (
-        details.get("digest_only") is True
+        category == "containers"
+        and details.get("digest_only") is True
     )
 
 

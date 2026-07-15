@@ -1236,7 +1236,7 @@ class EvidenceCommitter:
         request_hash: str,
     ) -> sqlite3.Row:
         with self._lock, self._outbox_connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             row = conn.execute(
                 "SELECT * FROM evidence_commits WHERE commit_id=?",
                 (request.commit_id,),
@@ -2726,7 +2726,7 @@ class EvidenceCommitter:
             # transaction records its identity. If the process dies between
             # those commits, the next holder discovers the event by commit_id
             # and reconciles it instead of appending a second event.
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             observed = self._find_manifest_event(request)
             if observed is None:
                 self._assert_precommit_streams(
@@ -2937,7 +2937,7 @@ class EvidenceCommitter:
     ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
         """Serialize cross-instance checkpoint publication and phase commit."""
         with self._lock, self._outbox_connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             try:
                 persisted = self._persist_checkpoints(
                     request,
@@ -3444,7 +3444,7 @@ class EvidenceCommitter:
         now = _now_ms()
         value = canonical_json_bytes(materialization).decode("utf-8")
         with self._lock, self._outbox_connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             row = conn.execute(
                 """
                 SELECT materialization_json, phase
@@ -3492,7 +3492,7 @@ class EvidenceCommitter:
             raise ValueError(f"unknown evidence commit phase: {phase}")
         now = _now_ms()
         with self._lock, self._outbox_connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             self._advance_in_transaction(
                 conn,
                 commit_id=commit_id,
@@ -3547,7 +3547,7 @@ class EvidenceCommitter:
     ) -> None:
         now = _now_ms()
         with self._lock, self._outbox_connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            _begin_outbox_transaction(conn)
             self._insert_or_verify_phase(
                 conn,
                 commit_id=commit_id,
@@ -4337,6 +4337,15 @@ def _insert_projection_record(
 
 def _now_ms() -> int:
     return int(time.time_ns() // 1_000_000)
+
+
+def _begin_outbox_transaction(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except sqlite3.OperationalError as exc:
+        raise EvidenceCommitError(
+            f"evidence commit outbox is locked by another committer: {exc}"
+        ) from exc
 
 
 __all__ = [

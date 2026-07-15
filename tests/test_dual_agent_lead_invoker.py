@@ -905,6 +905,36 @@ def test_execution_gate_prompt_requires_real_implementation_diff(tmp_path):
     assert "Keep execution context bounded" not in review_prompt
 
 
+def test_execution_gate_corrective_contract_requires_explicit_flag(tmp_path):
+    quoting_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction=(
+            "Implement the accepted issue. The runner appends "
+            "'Corrective retry:' text when a retry happens."
+        ),
+        cwd=tmp_path,
+    )
+    corrective_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction=(
+            "Implement the accepted issue."
+            "\n\nCorrective retry: return the required outcome block."
+        ),
+        cwd=tmp_path,
+        corrective_retry=True,
+    )
+
+    quoting_prompt = build_lead_prompt(quoting_request)
+    corrective_prompt = build_lead_prompt(corrective_request)
+
+    assert "IMPLEMENTATION CONTRACT (execution gate)" in quoting_prompt
+    assert "CORRECTIVE REPORT CONTRACT" not in quoting_prompt
+    assert "CORRECTIVE REPORT CONTRACT" in corrective_prompt
+    assert "IMPLEMENTATION CONTRACT (execution gate)" not in corrective_prompt
+
+
 def test_execution_gate_prompt_compacts_large_instruction_when_handoff_exists(tmp_path):
     packet = tmp_path / ".handoff" / "slice0-lead.json"
     request = LeadInvocationRequest(

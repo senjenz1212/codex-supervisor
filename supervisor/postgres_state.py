@@ -5,6 +5,7 @@ import asyncio
 import json
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
 from .evidence_ledger import (
@@ -49,6 +50,36 @@ if TYPE_CHECKING:
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
 POSTGRES_ALEMBIC_HEAD = "20260712_0004"
+
+
+def _alembic_script_directory_head() -> str | None:
+    script_location = Path(__file__).resolve().parent.parent / "migrations"
+    if not (script_location / "env.py").is_file():
+        return None
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+    except ImportError:
+        return None
+    config = Config()
+    config.set_main_option("script_location", str(script_location))
+    heads = tuple(ScriptDirectory.from_config(config).get_heads())
+    if len(heads) != 1:
+        raise RuntimeError(
+            "Alembic script directory must have exactly one head: "
+            f"{sorted(heads)}"
+        )
+    return str(heads[0])
+
+
+def _assert_alembic_head_constant_current() -> None:
+    script_head = _alembic_script_directory_head()
+    if script_head is not None and script_head != POSTGRES_ALEMBIC_HEAD:
+        raise RuntimeError(
+            f"POSTGRES_ALEMBIC_HEAD {POSTGRES_ALEMBIC_HEAD} does not match "
+            f"the Alembic script directory head {script_head}; update the "
+            "constant before starting Supervisor"
+        )
 
 POSTGRES_CLAIM_AVAILABLE_JOBS_SQL = f"""
 WITH c AS MATERIALIZED (
@@ -835,6 +866,7 @@ class PostgresState:
         return self._ledger_checkpoint_coordinator.assurance
 
     def apply_schema(self) -> None:
+        _assert_alembic_head_constant_current()
         with self._write_lock:
             with self._conn.transaction():
                 schema_state = self._conn.execute(
@@ -960,6 +992,7 @@ class PostgresState:
         kind: str,
         payload: dict[str, Any],
         ts: int | None = None,
+        prepared_payload: dict[str, Any] | None = None,
     ) -> int:
         (
             event_id,
@@ -968,11 +1001,15 @@ class PostgresState:
             previous_hash,
         ) = self._next_stream_event_id(run_id)
         event_ts = int(time.time()) if ts is None else int(ts)
-        event_payload = _event_payload(
-            run_id=run_id,
-            source=source,
-            kind=kind,
-            payload=payload,
+        event_payload = (
+            prepared_payload
+            if prepared_payload is not None
+            else _event_payload(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=payload,
+            )
         )
         fields = build_ledger_fields(
             run_id=run_id,
@@ -1306,6 +1343,7 @@ class PostgresState:
                         kind=kind,
                         payload=payload,
                         ts=ts,
+                        prepared_payload=prepared_payload,
                     )
                     finalized = self._conn.execute(
                         """UPDATE event_idempotency_claims
@@ -3530,6 +3568,8 @@ class PostgresState:
         now = int(time.time())
         event_id = 0
         discrepancy = False
+        idempotent_replay = False
+        replayed_terminal_event_id: int | None = None
         with self._write_lock:
             with self._conn.transaction():
                 row = self._conn.execute(
@@ -3655,97 +3695,94 @@ class PostgresState:
                             (str(row["run_id"]), job_id),
                         ).fetchone()
                         if terminal_event is not None:
-                            self._coordinate_committed_event(
-                                run_id=str(row["run_id"]),
-                                event_id=int(terminal_event["event_id"]),
-                                event_kind=(
-                                    "dual_agent_workflow_terminal_outcome"
-                                ),
+                            replayed_terminal_event_id = int(
+                                terminal_event["event_id"]
                             )
-                        return 0
-                    conflict_sha256 = terminal_completion_conflict_sha256(
-                        original=existing_semantics,
-                        conflicting=incoming_semantics,
-                        validation_error=validation_error,
-                    )
-                    original_record = canonical_terminal_completion_record(
-                        job_id=row["job_id"],
-                        run_id=row["run_id"],
-                        task_id=row["task_id"],
-                        result_path=row["result_path"],
-                        status=row["status"],
-                        recovery_point=row["recovery_point"],
-                        terminal_status=row["terminal_status"],
-                        terminal_outcome_json=str(existing_outcome_json),
-                        terminal_outcome_recorded_at=row[
-                            "terminal_outcome_recorded_at"
-                        ],
-                        returncode=row["returncode"],
-                        error=row["error"],
-                    )
-                    conflicting_record = canonical_terminal_completion_record(
-                        job_id=job_id,
-                        run_id=row["run_id"],
-                        task_id=row["task_id"],
-                        result_path=row["result_path"],
-                        status=status,
-                        recovery_point="terminal",
-                        terminal_status=terminal_status_value,
-                        terminal_outcome_json=outcome_json,
-                        terminal_outcome_recorded_at=now,
-                        returncode=returncode,
-                        error=error,
-                    )
-                    discrepancy_payload = {
-                            "job_id": job_id,
-                            "task_id": row["task_id"],
-                            "result_path": row["result_path"],
-                            "original_status": row["status"],
-                            "original_terminal_status": row["terminal_status"],
-                            "original_terminal_outcome": json.loads(
-                                str(existing_outcome_json)
-                            ),
-                            "original_returncode": row["returncode"],
-                            "original_error": row["error"],
-                            "conflicting_status": status,
-                            "conflicting_terminal_status": terminal_status_value,
-                            "conflicting_terminal_outcome": json.loads(outcome_json),
-                            "conflicting_returncode": returncode,
-                            "conflicting_error": error,
-                            "conflicting_validation_error": validation_error,
-                            "conflict_sha256": conflict_sha256,
-                            "original_terminal_record": original_record,
-                            "original_terminal_record_sha256": (
-                                terminal_completion_record_sha256(original_record)
-                            ),
-                            "conflicting_terminal_record": conflicting_record,
-                            "conflicting_terminal_record_sha256": (
-                                terminal_completion_record_sha256(
-                                    conflicting_record
-                                )
-                            ),
-                            "transport_recovery": "detached_cli_worker",
-                    }
-                    existing_discrepancy = self._conn.execute(
-                        """SELECT event_id
-                             FROM events
-                            WHERE run_id=%s
-                              AND kind='dual_agent_workflow_terminal_discrepancy'
-                              AND payload_json->>'conflict_sha256'=%s
-                            LIMIT 1""",
-                        (str(row["run_id"]), conflict_sha256),
-                    ).fetchone()
-                    if existing_discrepancy is None:
-                        event_id = self._insert_event_unlocked(
-                            run_id=str(row["run_id"]),
-                            source="dual_agent",
-                            kind="dual_agent_workflow_terminal_discrepancy",
-                            payload=discrepancy_payload,
-                            ts=now,
-                        )
+                        idempotent_replay = True
                     else:
-                        event_id = int(existing_discrepancy["event_id"])
-                    discrepancy = True
+                        conflict_sha256 = terminal_completion_conflict_sha256(
+                            original=existing_semantics,
+                            conflicting=incoming_semantics,
+                            validation_error=validation_error,
+                        )
+                        original_record = canonical_terminal_completion_record(
+                            job_id=row["job_id"],
+                            run_id=row["run_id"],
+                            task_id=row["task_id"],
+                            result_path=row["result_path"],
+                            status=row["status"],
+                            recovery_point=row["recovery_point"],
+                            terminal_status=row["terminal_status"],
+                            terminal_outcome_json=str(existing_outcome_json),
+                            terminal_outcome_recorded_at=row[
+                                "terminal_outcome_recorded_at"
+                            ],
+                            returncode=row["returncode"],
+                            error=row["error"],
+                        )
+                        conflicting_record = canonical_terminal_completion_record(
+                            job_id=job_id,
+                            run_id=row["run_id"],
+                            task_id=row["task_id"],
+                            result_path=row["result_path"],
+                            status=status,
+                            recovery_point="terminal",
+                            terminal_status=terminal_status_value,
+                            terminal_outcome_json=outcome_json,
+                            terminal_outcome_recorded_at=now,
+                            returncode=returncode,
+                            error=error,
+                        )
+                        discrepancy_payload = {
+                                "job_id": job_id,
+                                "task_id": row["task_id"],
+                                "result_path": row["result_path"],
+                                "original_status": row["status"],
+                                "original_terminal_status": row["terminal_status"],
+                                "original_terminal_outcome": json.loads(
+                                    str(existing_outcome_json)
+                                ),
+                                "original_returncode": row["returncode"],
+                                "original_error": row["error"],
+                                "conflicting_status": status,
+                                "conflicting_terminal_status": terminal_status_value,
+                                "conflicting_terminal_outcome": json.loads(outcome_json),
+                                "conflicting_returncode": returncode,
+                                "conflicting_error": error,
+                                "conflicting_validation_error": validation_error,
+                                "conflict_sha256": conflict_sha256,
+                                "original_terminal_record": original_record,
+                                "original_terminal_record_sha256": (
+                                    terminal_completion_record_sha256(original_record)
+                                ),
+                                "conflicting_terminal_record": conflicting_record,
+                                "conflicting_terminal_record_sha256": (
+                                    terminal_completion_record_sha256(
+                                        conflicting_record
+                                    )
+                                ),
+                                "transport_recovery": "detached_cli_worker",
+                        }
+                        existing_discrepancy = self._conn.execute(
+                            """SELECT event_id
+                                 FROM events
+                                WHERE run_id=%s
+                                  AND kind='dual_agent_workflow_terminal_discrepancy'
+                                  AND payload_json->>'conflict_sha256'=%s
+                                LIMIT 1""",
+                            (str(row["run_id"]), conflict_sha256),
+                        ).fetchone()
+                        if existing_discrepancy is None:
+                            event_id = self._insert_event_unlocked(
+                                run_id=str(row["run_id"]),
+                                source="dual_agent",
+                                kind="dual_agent_workflow_terminal_discrepancy",
+                                payload=discrepancy_payload,
+                                ts=now,
+                            )
+                        else:
+                            event_id = int(existing_discrepancy["event_id"])
+                        discrepancy = True
                 else:
                     cursor = self._conn.execute(
                         """UPDATE dual_agent_workflow_jobs
@@ -3849,6 +3886,14 @@ class PostgresState:
                     if discrepancy
                     else "dual_agent_workflow_terminal_outcome"
                 )
+        if idempotent_replay:
+            if replayed_terminal_event_id is not None:
+                self._coordinate_committed_event(
+                    run_id=committed_run_id,
+                    event_id=replayed_terminal_event_id,
+                    event_kind="dual_agent_workflow_terminal_outcome",
+                )
+            return 0
         self._coordinate_committed_event(
             run_id=committed_run_id,
             event_id=event_id,

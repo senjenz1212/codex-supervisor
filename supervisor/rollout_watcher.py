@@ -49,6 +49,7 @@ _NORMALIZED_KINDS = frozenset({
     "run.completed",
     "run.failed",
     "run.cancelled",
+    "turn.aborted",
 })
 
 _KIND_ALIASES: dict[str, str] = {
@@ -73,8 +74,8 @@ _KIND_ALIASES: dict[str, str] = {
     "run_cancelled": "run.cancelled",
     "session_canceled": "run.cancelled",
     "session_cancelled": "run.cancelled",
-    "turn_aborted": "run.cancelled",
     # Turn lifecycle.
+    "turn_aborted": "turn.aborted",
     "task_started": "turn.started",
     "turn_started": "turn.started",
     "task_complete": "turn.completed",
@@ -607,6 +608,8 @@ class RolloutWatcher:
         if completion_policy == SINGLE_TURN_COMPLETION_POLICY:
             if kind == "turn.completed":
                 return "completed"
+            if kind == "turn.aborted":
+                return "cancelled"
             return _TERMINAL_STATUSES.get(kind)
         if completion_policy in {
             REUSABLE_SESSION_COMPLETION_POLICY,
@@ -1046,6 +1049,11 @@ class RolloutWatcher:
         header: dict[str, Any],
     ) -> None:
         created_at = int(header.get("created_at") or 0)
+        if not created_at:
+            try:
+                created_at = int(quarantine_path.stat().st_mtime)
+            except OSError:
+                return
         if not created_at:
             return
         if int(time.time()) - created_at <= self.quarantine_max_age_s:

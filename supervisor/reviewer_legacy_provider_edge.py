@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .agent_mailbox import critical_review_prompt
+from .agent_runtime import _allowlisted_environment, _CODEX_ENV_KEYS
 from .cursor_agent import (
     CursorInvocationRequest,
     CursorInvocationResult,
@@ -79,6 +81,7 @@ class CodexCliReviewer:
                 completed = self.runner(
                     argv,
                     cwd=str(Path(request.cwd).expanduser()),
+                    env=_codex_cli_environment(),
                     capture_output=True,
                     stdin=subprocess.DEVNULL,
                     text=True,
@@ -292,6 +295,13 @@ class CodexCliReviewer:
             attempts=attempt,
             retry_reasons=tuple(retry_reasons),
         )
+
+
+def _codex_cli_environment() -> dict[str, str]:
+    return _allowlisted_environment(
+        os.environ,
+        allowed_keys=_CODEX_ENV_KEYS,
+    )
 
 
 def _codex_cli_reviewer_prompt(

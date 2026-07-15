@@ -375,6 +375,66 @@ def test_agentic_worker_spawn_uses_scrubbed_direct_anthropic_env(
     }
 
 
+def test_legacy_worker_exit_zero_with_is_error_result_is_failed(tmp_path: Path):
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps({
+                "type": "result",
+                "subtype": "error_max_turns",
+                "is_error": True,
+                "result": "hit the max turn limit",
+                "session_id": "session-error",
+            }),
+            stderr="",
+        )
+
+    receipt = run_agentic_worker(
+        AgenticWorkerSpec(
+            task_id="workflow-1:audit",
+            worker_id="audit-error",
+            role="codebase_audit",
+            command=("claude", "--print", "audit"),
+            cwd=tmp_path,
+            timeout_s=30,
+        ),
+        runner=fake_runner,
+    )
+
+    assert receipt["status"] == "failed"
+    assert receipt["decision"] == "revise"
+    assert receipt["runtime_status"] == "failed"
+    assert "error_max_turns" in receipt["objections"][0]
+
+
+def test_orphaned_worker_cleanup_reports_distinct_status_when_all_unverifiable(
+    tmp_path: Path,
+):
+    result = cleanup_orphaned_agentic_workers(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        workers=[
+            {
+                "worker_id": "audit-1",
+                "pid": None,
+                "started_at_s": 100,
+                "timeout_s": 30,
+            },
+        ],
+        now_s=200,
+        is_pid_alive=lambda pid: True,
+        terminate=lambda pid, sig: None,
+    )
+
+    assert result["status"] == "cleanup_skipped_unverifiable_workers"
+    assert result["cleaned"] == []
+    assert result["active"] == []
+    assert result["skipped"][0]["reason"] == "missing_worker_runtime_fields"
+    assert result["cleaned_count"] == 0
+    assert result["skipped_count"] == 1
+
+
 def test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs(tmp_path: Path):
     log_ref = worker_log_ref(cwd=tmp_path, task_id="workflow-1", worker_id="audit-1")
     worker = {

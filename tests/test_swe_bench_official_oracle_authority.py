@@ -40,6 +40,8 @@ def _json_hash(value: object) -> str:
             value,
             sort_keys=True,
             separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
         ).encode("utf-8")
     ).hexdigest()
 

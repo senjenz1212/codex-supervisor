@@ -641,12 +641,6 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             trace_closure_required=trace_closure_required,
         )
-        self._ensure_workflow_run_registration(
-            run_id=run_id,
-            task_id=task_id,
-            task=instruction,
-            cwd=cwd,
-        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -656,6 +650,12 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            cwd=cwd,
         )
         if sanitize_tool_receipts:
             tool_receipts = _normalise_receipt_payloads(tool_receipts or [])
@@ -868,12 +868,6 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             trace_closure_required=trace_closure_required,
         )
-        self._ensure_workflow_run_registration(
-            run_id=run_id,
-            task_id=task_id,
-            task=instruction,
-            cwd=cwd,
-        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -883,6 +877,12 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            cwd=cwd,
         )
         artifact_preflight = _artifact_preflight(
             state=self.state,
@@ -1052,12 +1052,6 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             trace_closure_required=trace_closure_required,
         )
-        self._ensure_workflow_run_registration(
-            run_id=run_id,
-            task_id=task_id,
-            task=intent,
-            cwd=cwd,
-        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -1115,6 +1109,12 @@ class CodexSupervisorMcpAPI:
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=intent,
+            cwd=cwd,
+        )
         self._write_receipt_provenance_downgrade_events(
             run_id=run_id,
             task_id=task_id,
@@ -3723,18 +3723,25 @@ class CodexSupervisorMcpAPI:
             )
         )
         if created:
-            registration = register_submitted_workflow(
-                state=self.state,
-                registry_dir=self.cfg.orchestrator.run_registry_dir,
-                workflow_run_id=effective_run_id,
-                target_session_id=effective_target_session_id,
-                task_id=effective_task_id,
-                task=effective_intent,
-                target_kind=self.cfg.target.kind,
-                cwd=effective_cwd,
-                session_id_source=effective_session_id_source,
-                completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
-            )
+            try:
+                registration = register_submitted_workflow(
+                    state=self.state,
+                    registry_dir=self.cfg.orchestrator.run_registry_dir,
+                    workflow_run_id=effective_run_id,
+                    target_session_id=effective_target_session_id,
+                    task_id=effective_task_id,
+                    task=effective_intent,
+                    target_kind=self.cfg.target.kind,
+                    cwd=effective_cwd,
+                    session_id_source=effective_session_id_source,
+                    completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+                )
+            except Exception as exc:
+                self.state.park_dual_agent_workflow_job(
+                    job_id=reserved_job["job_id"],
+                    reason=f"workflow_run_registration_failed: {exc}",
+                )
+                raise
             self.state.write_event(
                 run_id=effective_run_id,
                 source="supervisor",
@@ -5016,9 +5023,11 @@ class CodexSupervisorMcpAPI:
             "target_kind": str(self.cfg.target.kind),
             "cwd": str(Path(cwd).expanduser().resolve()),
         }
+        skipped_fields: list[str] = []
         for field, expected_value in expected.items():
             observed = str(config_snapshot.get(field) or "").strip()
             if not observed:
+                skipped_fields.append(field)
                 continue
             if field == "cwd":
                 observed = str(Path(observed).expanduser().resolve())
@@ -5026,6 +5035,22 @@ class CodexSupervisorMcpAPI:
                 raise RuntimeError(
                     f"workflow run registration {field} mismatch"
                 )
+        if skipped_fields:
+            self.state.write_event(
+                run_id=run_id,
+                source="supervisor",
+                kind="workflow_run_registration_validation_skipped",
+                payload={
+                    "schema_version": (
+                        "supervisor-registration-validation-skip/v1"
+                    ),
+                    "task_id": task_id,
+                    "skipped_fields": sorted(skipped_fields),
+                    "reason": "sparse_config_snapshot",
+                    "observational_only": True,
+                    "gate_authority": "unchanged",
+                },
+            )
     def _register_runtime_evidence_records(
         self,
         *,

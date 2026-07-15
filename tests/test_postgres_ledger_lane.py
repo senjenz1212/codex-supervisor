@@ -1293,9 +1293,12 @@ def test_postgres_write_event_once_retry_coordinates_existing_event_after_failur
     state._ledger_checkpoint_coordinator = coordinator
     insert_calls = 0
 
-    def insert_event_unlocked(*, run_id, source, kind, payload, ts):
+    def insert_event_unlocked(
+        *, run_id, source, kind, payload, ts, prepared_payload=None
+    ):
         nonlocal insert_calls
-        del payload, ts
+        assert prepared_payload is not None
+        del payload, ts, prepared_payload
         insert_calls += 1
         assert connection.event is None
         assert connection.claim is not None

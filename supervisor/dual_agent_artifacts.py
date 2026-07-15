@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -392,6 +393,10 @@ def export_dual_agent_run_artifacts(
         state,
         run_id=run_id,
     )
+    ledger_rows = [
+        {**row, "payload": redact(row.get("payload"))}
+        for row in ledger_rows
+    ]
     events = _task_events_from_ledger_rows(
         ledger_rows,
         task_id=task_id,
@@ -417,6 +422,7 @@ def export_dual_agent_run_artifacts(
         (
             preserved_artifact_files,
             preserved_artifact_manifest,
+            unresolved_artifact_manifest,
         ) = _copy_hash_bound_export_artifacts(
             events,
             out_dir,
@@ -541,6 +547,7 @@ def export_dual_agent_run_artifacts(
             production_trace_manifest=production_trace_manifest,
             ledger_manifest=ledger_manifest,
             preserved_artifacts=preserved_artifact_manifest,
+            unresolved_artifacts=unresolved_artifact_manifest,
             trusted_workspace_root=trusted_workspace_root,
         )
         replay_manifest_text = json.dumps(
@@ -1359,6 +1366,7 @@ def _verify_preserved_artifact_manifest(
         for ref in _bound_export_artifact_refs(task_events)
     }
     described_paths: list[str] = []
+    preserved_digests: set[str] = set()
     for index, raw in enumerate(raw_descriptors):
         if not isinstance(raw, Mapping):
             issues.append(
@@ -1388,6 +1396,8 @@ def _verify_preserved_artifact_manifest(
                 f"preserved artifact bytes differ from the descriptor: "
                 f"{relative}"
             )
+        else:
+            preserved_digests.add(digest)
         if (
             source_event_id,
             source_kind,
@@ -1401,6 +1411,49 @@ def _verify_preserved_artifact_manifest(
     if described_paths != sorted(set(described_paths)):
         issues.append(
             "preserved artifact descriptors are not unique and ordered"
+        )
+    raw_unresolved = manifest.get("unresolved_artifacts")
+    if raw_unresolved is None:
+        raw_unresolved = []
+    if not isinstance(raw_unresolved, list):
+        issues.append("unresolved artifact manifest is not a list")
+        raw_unresolved = []
+    unresolved_keys: set[tuple[int, str, str, str]] = set()
+    for index, raw in enumerate(raw_unresolved):
+        if not isinstance(raw, Mapping):
+            issues.append(
+                f"unresolved artifact descriptor {index} is not an object"
+            )
+            continue
+        digest = _canonical_sha256_or_none(raw.get("sha256"))
+        source_event_id = raw.get("source_event_id")
+        source_kind = str(raw.get("source_kind") or "")
+        source_path = str(raw.get("source_path") or "")
+        if (
+            digest is None
+            or type(source_event_id) is not int
+            or not source_kind
+            or not source_path
+        ):
+            issues.append(
+                f"unresolved artifact descriptor {index} is invalid"
+            )
+            continue
+        key = (source_event_id, source_kind, source_path, digest)
+        if key not in trusted_refs:
+            issues.append(
+                "unresolved artifact ledger binding is invalid: "
+                f"{source_path}"
+            )
+            continue
+        unresolved_keys.add(key)
+    for ref_key in sorted(trusted_refs):
+        _event_id, _kind, ref_path, ref_digest = ref_key
+        if ref_digest in preserved_digests or ref_key in unresolved_keys:
+            continue
+        issues.append(
+            "ledger-hash-bound artifact is not preserved or recorded "
+            f"as unresolved: {ref_path}"
         )
     allowed_exact = {
         *_NON_PRESERVABLE_EXPORT_PATHS,
@@ -1470,7 +1523,11 @@ def _copy_hash_bound_export_artifacts(
     staging_dir: Path,
     *,
     trusted_workspace_root: str | Path | None,
-) -> tuple[tuple[Path, ...], tuple[dict[str, Any], ...]]:
+) -> tuple[
+    tuple[Path, ...],
+    tuple[dict[str, Any], ...],
+    tuple[dict[str, Any], ...],
+]:
     output_root = existing_output_dir.expanduser().absolute()
     workspace_roots = _artifact_workspace_roots(
         events,
@@ -1488,6 +1545,7 @@ def _copy_hash_bound_export_artifacts(
     ))
     copied_by_relative: dict[str, Path] = {}
     descriptors_by_relative: dict[str, dict[str, Any]] = {}
+    unresolved_by_key: dict[tuple[int, str, str, str], dict[str, Any]] = {}
     expected_hashes: dict[str, str] = {}
     for ref in _bound_export_artifact_refs(events):
         candidates = _bound_export_artifact_candidates(
@@ -1496,6 +1554,18 @@ def _copy_hash_bound_export_artifacts(
             workspace_roots=workspace_roots,
         )
         if not candidates:
+            unresolved_by_key[(
+                ref.source_event_id,
+                ref.source_kind,
+                ref.source_path,
+                ref.sha256,
+            )] = {
+                "sha256": ref.sha256,
+                "source_event_id": ref.source_event_id,
+                "source_kind": ref.source_kind,
+                "source_path": ref.source_path,
+                "reason": "no_path_candidates",
+            }
             continue
         matching: list[tuple[Path, str, bytes]] = []
         for source, relative in candidates:
@@ -1549,6 +1619,10 @@ def _copy_hash_bound_export_artifacts(
     return (
         tuple(copied_by_relative[relative] for relative in ordered),
         tuple(descriptors_by_relative[relative] for relative in ordered),
+        tuple(
+            unresolved_by_key[key]
+            for key in sorted(unresolved_by_key)
+        ),
     )
 
 
@@ -2103,9 +2177,47 @@ def _publish_staged_export(
         _fsync_directory(destination.parent)
         return
 
+    dropped = sorted(
+        _relative_file_paths(destination)
+        - _relative_file_paths(staging_dir)
+    )
+    if dropped:
+        _record_dropped_export_paths(destination, dropped=dropped)
     _atomic_exchange_directories(staging_dir, destination)
     _fsync_directory(destination.parent)
     shutil.rmtree(staging_dir)
+    _fsync_directory(destination.parent)
+
+
+def _relative_file_paths(root: Path) -> set[str]:
+    return {
+        candidate.relative_to(root).as_posix()
+        for candidate in root.rglob("*")
+        if candidate.is_file()
+    }
+
+
+def _record_dropped_export_paths(
+    destination: Path,
+    *,
+    dropped: list[str],
+) -> None:
+    log_path = destination.parent / (
+        f"{destination.name}.export-dropped-paths.jsonl"
+    )
+    record = json.dumps(
+        {
+            "schema_version": "dual-agent-export-dropped-paths/v1",
+            "ts": int(time.time()),
+            "destination": str(destination),
+            "dropped_paths": dropped,
+        },
+        sort_keys=True,
+    )
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(record + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     _fsync_directory(destination.parent)
 
 
@@ -2226,13 +2338,17 @@ def _ledger_export_manifest(
     path: str,
     authoritative_verification: Any,
 ) -> tuple[dict[str, Any], str]:
+    export_rows = [
+        {**row, "payload": redact(row.get("payload"))}
+        for row in rows
+    ]
     verification = verify_event_chain_structure(
-        rows,
+        export_rows,
         expected_run_id=run_id,
     )
     ledger_text = "".join(
-        f"{canonical_json_text({**row, 'payload': redact(row.get('payload'))})}\n"
-        for row in rows
+        f"{canonical_json_text(row)}\n"
+        for row in export_rows
     )
     complete_capture = (
         verification.valid
@@ -3710,6 +3826,7 @@ def _replay_manifest(
     production_trace_manifest: Mapping[str, Any] | None = None,
     ledger_manifest: Mapping[str, Any] | None = None,
     preserved_artifacts: Iterable[Mapping[str, Any]] = (),
+    unresolved_artifacts: Iterable[Mapping[str, Any]] = (),
     trusted_workspace_root: str | Path | None = None,
 ) -> dict[str, Any]:
     event_ids = [int(event["event_id"]) for event in events]
@@ -3778,6 +3895,10 @@ def _replay_manifest(
         "preserved_artifacts": [
             dict(descriptor)
             for descriptor in preserved_artifacts
+        ],
+        "unresolved_artifacts": [
+            dict(descriptor)
+            for descriptor in unresolved_artifacts
         ],
         "ledger": dict(
             ledger_manifest
@@ -3999,6 +4120,7 @@ def _load_acceptance_snapshot(
     content, _read_status = _read_posthoc_file(
         snapshot_ref,
         trusted_workspace_root=trusted_workspace_root,
+        expected_sha256=expected_sha256,
     )
     if content is None:
         return None
@@ -4056,6 +4178,7 @@ def _read_posthoc_file(
     path_text: str,
     *,
     trusted_workspace_root: str | Path | None,
+    expected_sha256: str | None = None,
 ) -> tuple[bytes | None, str]:
     path = Path(path_text).expanduser()
     trusted_root = _normalized_trusted_workspace_root(
@@ -4070,21 +4193,26 @@ def _read_posthoc_file(
         if not _path_is_within(candidate, trusted_root):
             return None, "outside_trusted_workspace"
         roots = (trusted_root,)
-    else:
+    elif expected_sha256 is not None:
         candidate = path.absolute()
         roots = (candidate.parent,)
+    else:
+        return None, "outside_trusted_workspace"
     try:
-        return (
-            _read_regular_path_no_follow(
-                candidate,
-                trusted_roots=roots,
-            ),
-            "captured",
+        content = _read_regular_path_no_follow(
+            candidate,
+            trusted_roots=roots,
         )
     except FileNotFoundError:
         return None, "missing_at_export"
     except (OSError, ValueError):
         return None, "untrusted_or_unreadable_at_export"
+    if (
+        expected_sha256 is not None
+        and sha256(content).hexdigest() != expected_sha256
+    ):
+        return None, "untrusted_or_unreadable_at_export"
+    return content, "captured"
 
 
 def _run_git(root: Path, *args: str) -> str:
