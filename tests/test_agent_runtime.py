@@ -9,6 +9,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ import psutil
 import pytest
 
 from supervisor import agent_runtime as agent_runtime_module
+from supervisor import process_containment as process_containment_module
 from supervisor.agent_runtime import (
     AgentRunHandle,
     AgentRunResult,
@@ -31,6 +33,115 @@ from supervisor.agent_runtime import (
 from supervisor.runtime_cleanup import cancel_runtime_after_failure
 from supervisor.runtime_execution import runtime_task_runner
 from supervisor.task_environment import default_task_platform
+
+
+_REAL_OS_KILL = os.kill
+_REAL_PSUTIL_PIDS = psutil.pids
+_REAL_PSUTIL_PROCESS = psutil.Process
+
+
+class _TaggedRuntimeCleanup:
+    def __init__(self, request: pytest.FixtureRequest) -> None:
+        self._containment_ids: set[str] = set()
+        request.addfinalizer(self._finalize)
+
+    def register(self, containment_id: str) -> None:
+        normalized = str(containment_id).strip()
+        assert normalized
+        self._containment_ids.add(normalized)
+
+    def snapshot(
+        self,
+        containment_id: str | None = None,
+    ) -> tuple[process_containment_module.ProcessIdentity, ...]:
+        ids = (
+            {str(containment_id)}
+            if containment_id is not None
+            else self._containment_ids
+        )
+        found: list[process_containment_module.ProcessIdentity] = []
+        for pid in _REAL_PSUTIL_PIDS():
+            if pid == os.getpid():
+                continue
+            try:
+                process = _REAL_PSUTIL_PROCESS(pid)
+                started_at = float(process.create_time())
+                if (
+                    not process.is_running()
+                    or process.status() == psutil.STATUS_ZOMBIE
+                ):
+                    continue
+                marker = str(
+                    process.environ().get(
+                        process_containment_module.CONTAINMENT_ENV_VAR,
+                        "",
+                    )
+                )
+            except (
+                OSError,
+                ValueError,
+                psutil.AccessDenied,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+            if marker in ids:
+                found.append(
+                    process_containment_module.ProcessIdentity(
+                        pid=pid,
+                        started_at=started_at,
+                    )
+                )
+        return tuple(sorted(found))
+
+    def cleanup(self) -> tuple[process_containment_module.ProcessIdentity, ...]:
+        deadline = time.monotonic() + 3
+        quiet_scans = 0
+        survivors: tuple[
+            process_containment_module.ProcessIdentity,
+            ...,
+        ] = ()
+        while time.monotonic() < deadline:
+            survivors = self.snapshot()
+            if not survivors:
+                quiet_scans += 1
+                if quiet_scans >= 2:
+                    break
+            else:
+                quiet_scans = 0
+                for identity in survivors:
+                    try:
+                        process = _REAL_PSUTIL_PROCESS(identity.pid)
+                        if abs(
+                            float(process.create_time())
+                            - identity.started_at
+                        ) <= 0.001:
+                            _REAL_OS_KILL(identity.pid, signal.SIGKILL)
+                    except (
+                        OSError,
+                        psutil.AccessDenied,
+                        psutil.NoSuchProcess,
+                        psutil.ZombieProcess,
+                        ProcessLookupError,
+                    ):
+                        pass
+            time.sleep(0.02)
+        return self.snapshot()
+
+    def _finalize(self) -> None:
+        survivors = self.cleanup()
+        assert survivors == (), (
+            "tagged runtime survivors after fallback cleanup: "
+            f"{survivors!r}"
+        )
+
+
+@pytest.fixture
+def tagged_runtime_cleanup(
+    request: pytest.FixtureRequest,
+) -> _TaggedRuntimeCleanup:
+    return _TaggedRuntimeCleanup(request)
 
 
 def test_experiment_and_task_core_do_not_import_provider_sdks() -> None:
@@ -775,11 +886,19 @@ async def test_oversized_runtime_stream_line_fails_explicitly() -> None:
 async def test_real_oversized_subprocess_line_fails_before_runtime_timeout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
 ) -> None:
     monkeypatch.setattr(
         agent_runtime_module,
         "_SUBPROCESS_STREAM_LIMIT",
         64 * 1024,
+    )
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
     )
     transport = SubprocessRuntimeTransport()
     started_at = asyncio.get_running_loop().time()
@@ -854,9 +973,11 @@ time.sleep(30)
         child_pid = int(
             json.loads(child_path.read_text(encoding="utf-8"))["pid"]
         )
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert asyncio.get_running_loop().time() - started_at < 10
         assert not psutil.pid_exists(root_pid)
         assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid <= 0 and child_path.exists():
             with contextlib.suppress(
@@ -880,6 +1001,7 @@ time.sleep(30)
         if child_pid and psutil.pid_exists(child_pid):
             with contextlib.suppress(ProcessLookupError):
                 os.kill(child_pid, signal.SIGKILL)
+        tagged_runtime_cleanup.cleanup()
 
 
 @pytest.mark.asyncio
@@ -1372,6 +1494,8 @@ async def test_subprocess_timeout_budget_starts_when_process_starts(
 )
 async def test_subprocess_cancel_kills_setsid_descendant_and_records_cancelled(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
 ) -> None:
     ready_path = tmp_path / "runtime-tree.json"
     child_code = """
@@ -1409,6 +1533,13 @@ subprocess.Popen([
 while True:
     time.sleep(1)
 """
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     transport = SubprocessRuntimeTransport()
     token = await transport.start(
         run_id="cancel-setsid-tree",
@@ -1446,12 +1577,14 @@ while True:
         await transport.cancel(token)
         result = await transport.collect(token)
 
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert {"type": "run.cancelled"} in result.raw_events
         for pid in (root_pid, child_pid):
             if not psutil.pid_exists(pid):
                 continue
             process = psutil.Process(pid)
             assert process.status() == psutil.STATUS_ZOMBIE
+        assert product_survivors == ()
     finally:
         for pid in (root_pid, child_pid):
             if pid <= 0:
@@ -1460,6 +1593,7 @@ while True:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        tagged_runtime_cleanup.cleanup()
 
 
 @pytest.mark.asyncio
@@ -1500,6 +1634,8 @@ async def test_subprocess_resume_rejects_overlapping_process_generation(
 )
 async def test_subprocess_collect_reaps_detached_child_after_root_exit(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
 ) -> None:
     child_path = tmp_path / "normal-exit-child.json"
     child_code = """
@@ -1534,6 +1670,13 @@ while time.monotonic() < deadline and not Path(sys.argv[2]).exists():
     time.sleep(0.01)
 print('root-complete')
 """
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     transport = SubprocessRuntimeTransport()
     token = await transport.start(
         run_id="normal-exit-detached-child",
@@ -1561,14 +1704,17 @@ print('root-complete')
         child_pid = int(
             json.loads(child_path.read_text(encoding="utf-8"))["pid"]
         )
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert result.returncode == 0
         assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid and psutil.pid_exists(child_pid):
             try:
                 os.kill(child_pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        tagged_runtime_cleanup.cleanup()
 
 
 @pytest.mark.asyncio
@@ -1578,6 +1724,8 @@ print('root-complete')
 )
 async def test_subprocess_cancel_reaps_child_spawned_on_sigterm(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
 ) -> None:
     ready_path = tmp_path / "runtime-term-ready.json"
     child_path = tmp_path / "runtime-term-child.json"
@@ -1629,6 +1777,13 @@ Path(sys.argv[2]).write_text(
 while True:
     time.sleep(0.01)
 """
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     transport = SubprocessRuntimeTransport()
     token = await transport.start(
         run_id="spawn-on-term-runtime",
@@ -1662,15 +1817,18 @@ while True:
             child_pid = int(
                 json.loads(child_path.read_text(encoding="utf-8"))["pid"]
             )
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert {"type": "run.cancelled"} in result.raw_events
         assert child_pid > 0
         assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid and psutil.pid_exists(child_pid):
             try:
                 os.kill(child_pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        tagged_runtime_cleanup.cleanup()
 
 
 @pytest.mark.asyncio
@@ -2138,6 +2296,19 @@ def test_containment_scan_scopes_unreadable_processes_to_launched_tree(
 
     unrelated = unreadable(50010, 1)
     descendant = unreadable(50011, 41003)
+
+    class MatchingRoot:
+        pid = 41003
+        info = {
+            "pid": 41003,
+            "ppid": 1,
+            "username": "test-user",
+            "create_time": 100.0,
+        }
+
+        def environ(self) -> dict[str, str]:
+            return {}
+
     monkeypatch.setattr(
         process_containment_module.psutil,
         "Process",
@@ -2184,7 +2355,7 @@ def test_containment_scan_scopes_unreadable_processes_to_launched_tree(
     monkeypatch.setattr(
         process_containment_module.psutil,
         "process_iter",
-        lambda _attrs: [descendant],
+        lambda _attrs: [MatchingRoot(), descendant],
     )
     descendant_scope = process_containment_module.scan_containment(
         "containment-transport-scope",
@@ -2208,9 +2379,8 @@ def test_containment_scan_scopes_unreadable_processes_to_launched_tree(
 async def test_subprocess_collect_ignores_unreadable_unrelated_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
 ) -> None:
-    from supervisor import process_containment as process_containment_module
-
     current_username = psutil.Process().username()
 
     class UnreadableUnrelatedProcess:
@@ -2232,6 +2402,13 @@ async def test_subprocess_collect_ignores_unreadable_unrelated_process(
         lambda _attrs: [UnreadableUnrelatedProcess()],
     )
 
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     transport = SubprocessRuntimeTransport()
     token = await transport.start(
         run_id="unreadable-unrelated-process",
@@ -2242,9 +2419,19 @@ async def test_subprocess_collect_ignores_unreadable_unrelated_process(
         metadata={},
     )
 
-    result = await transport.collect(token)
+    try:
+        result = await transport.collect(token)
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
 
-    assert result.returncode == 0
+        assert result.returncode == 0
+        assert product_survivors == ()
+    finally:
+        if transport.is_active(token):
+            with contextlib.suppress(Exception):
+                await transport.cancel(token)
+        with contextlib.suppress(Exception):
+            await transport.collect(token)
+        tagged_runtime_cleanup.cleanup()
 
 
 def test_codex_runtime_read_only_review_pins_read_only_sandbox(
@@ -2284,6 +2471,8 @@ def test_codex_runtime_read_only_review_pins_read_only_sandbox(
 )
 async def test_provider_command_shim_cancellation_reaps_detached_descendant(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tagged_runtime_cleanup: _TaggedRuntimeCleanup,
     runtime_cls: type[ClaudeCodeRuntime] | type[CodexRuntime],
     binary_name: str,
     model: str,
@@ -2336,6 +2525,13 @@ while True:
         encoding="utf-8",
     )
     shim.chmod(0o755)
+    containment_id = process_containment_module.new_containment_id()
+    tagged_runtime_cleanup.register(containment_id)
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     runtime = runtime_cls(binary=str(shim))
     handle = await runtime.start(
         AgentTask(
@@ -2380,6 +2576,7 @@ while True:
         await runtime.cancel(handle)
         result = await runtime.collect(handle)
 
+        product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert result.status == "cancelled"
         assert handle.exercised_capabilities["cancel"] is True
         assert result.metadata["capability_evidence"]["exercised"]["cancel"] is True
@@ -2387,6 +2584,7 @@ while True:
             if not psutil.pid_exists(pid):
                 continue
             assert psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+        assert product_survivors == ()
     finally:
         for pid in (root_pid, child_pid):
             if pid <= 0:
@@ -2395,3 +2593,4 @@ while True:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        tagged_runtime_cleanup.cleanup()
