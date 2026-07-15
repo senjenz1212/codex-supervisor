@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
-POSTGRES_ALEMBIC_HEAD = "20260712_0004"
+POSTGRES_ALEMBIC_HEAD = "20260715_0001"
 
 
 def _alembic_script_directory_head() -> str | None:
@@ -88,7 +88,7 @@ WITH c AS MATERIALIZED (
      WHERE recovery_point IN ('reserved', 'request_written')
        AND status NOT IN ('parked', 'accepted', 'blocked', 'cancelled', 'completed', 'denied', 'failed')
        AND terminal_outcome_json IS NULL
-       AND pid IS NULL
+       AND (pid IS NULL OR worker_reaped_at IS NOT NULL)
        AND (next_dispatch_at IS NULL OR next_dispatch_at <= %(now)s)
        AND (
              leased_by IS NULL
@@ -117,7 +117,7 @@ UPDATE dual_agent_workflow_jobs AS j
        heartbeat_at = %(now)s,
        updated_at = %(now)s
  WHERE j.job_id = %(job_id)s
-   AND j.recovery_point = 'spawned'
+   AND j.recovery_point IN ('spawn_prepared', 'spawned')
    AND j.status = 'running'
    AND j.terminal_outcome_json IS NULL
    AND j.worker_reaped_at IS NULL
@@ -287,8 +287,11 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   pid INTEGER,
   worker_pgid INTEGER,
   worker_started_at DOUBLE PRECISION,
+  worker_prepared_at DOUBLE PRECISION,
   worker_containment_id TEXT,
   worker_reaped_at BIGINT,
+  cleanup_attempts INTEGER NOT NULL DEFAULT 0,
+  cleanup_escalated_at BIGINT,
   request_path TEXT NOT NULL,
   result_path TEXT NOT NULL,
   log_path TEXT NOT NULL,
@@ -322,7 +325,7 @@ CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_dispatchable
   ON dual_agent_workflow_jobs(priority, created_at, id)
   WHERE recovery_point IN ('reserved', 'request_written')
     AND terminal_outcome_json IS NULL
-    AND pid IS NULL;
+    AND (pid IS NULL OR worker_reaped_at IS NOT NULL);
 
 CREATE TABLE IF NOT EXISTS supervisor_lessons (
   lesson_id TEXT PRIMARY KEY,
@@ -431,9 +434,15 @@ ALTER TABLE dual_agent_workflow_jobs
 ALTER TABLE dual_agent_workflow_jobs
   ADD COLUMN IF NOT EXISTS worker_started_at DOUBLE PRECISION;
 ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS worker_prepared_at DOUBLE PRECISION;
+ALTER TABLE dual_agent_workflow_jobs
   ADD COLUMN IF NOT EXISTS worker_containment_id TEXT;
 ALTER TABLE dual_agent_workflow_jobs
   ADD COLUMN IF NOT EXISTS worker_reaped_at BIGINT;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS cleanup_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS cleanup_escalated_at BIGINT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_hash ON events(event_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_sequence
   ON events(run_id, event_sequence);
@@ -594,8 +603,12 @@ BEGIN
        OR NEW.pid IS DISTINCT FROM OLD.pid
        OR NEW.worker_pgid IS DISTINCT FROM OLD.worker_pgid
        OR NEW.worker_started_at IS DISTINCT FROM OLD.worker_started_at
+       OR NEW.worker_prepared_at IS DISTINCT FROM OLD.worker_prepared_at
        OR NEW.worker_containment_id
             IS DISTINCT FROM OLD.worker_containment_id
+       OR NEW.cleanup_attempts IS DISTINCT FROM OLD.cleanup_attempts
+       OR NEW.cleanup_escalated_at
+            IS DISTINCT FROM OLD.cleanup_escalated_at
      )
   THEN
     RAISE EXCEPTION 'terminal workflow job fields are immutable';
@@ -625,6 +638,18 @@ AS $$
 BEGIN
   IF OLD.worker_reaped_at IS NOT NULL
      AND NEW.worker_reaped_at IS DISTINCT FROM OLD.worker_reaped_at
+     AND NOT (
+          OLD.terminal_outcome_json IS NULL
+      AND OLD.recovery_point = 'request_written'
+      AND NEW.recovery_point = 'spawn_prepared'
+      AND NEW.worker_reaped_at IS NULL
+      AND NEW.pid IS NULL
+      AND NEW.worker_pgid IS NULL
+      AND NEW.worker_started_at IS NULL
+      AND NEW.worker_containment_id IS NOT NULL
+      AND NEW.worker_containment_id
+           IS DISTINCT FROM OLD.worker_containment_id
+     )
   THEN
     RAISE EXCEPTION 'worker_reaped_at is immutable once recorded';
   END IF;
@@ -3298,7 +3323,7 @@ class PostgresState:
         row = self._conn.execute(
             """SELECT COUNT(*) AS count
                FROM dual_agent_workflow_jobs
-               WHERE recovery_point='spawned'
+               WHERE recovery_point IN ('spawn_prepared', 'spawned')
                  AND status='running'
                  AND terminal_outcome_json IS NULL
                  AND leased_by IS NOT NULL
@@ -3307,6 +3332,274 @@ class PostgresState:
             (int(now),),
         ).fetchone()
         return int(row["count"] if row is not None else 0)
+
+    def prepare_dual_agent_workflow_job_spawn(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        lease_ttl_s: int,
+        now: int,
+    ) -> dict[str, Any] | None:
+        """Persist cleanup ownership before crossing the subprocess seam."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(lease_ttl_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              pid=NULL,
+                              worker_pgid=NULL,
+                              worker_started_at=NULL,
+                              worker_prepared_at=%s,
+                              recovery_point='spawn_prepared',
+                              worker_containment_id=%s,
+                              worker_reaped_at=NULL,
+                              leased_by=%s,
+                              lease_expires_at=%s,
+                              heartbeat_at=%s,
+                              cleanup_attempts=0,
+                              cleanup_escalated_at=NULL,
+                              next_dispatch_at=NULL,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND recovery_point='request_written'
+                          AND terminal_outcome_json IS NULL
+                          AND (
+                                pid IS NULL
+                             OR worker_reaped_at IS NOT NULL
+                          )
+                          AND leased_by=%s
+                        RETURNING *""",
+                    (
+                        float(now),
+                        containment_id,
+                        cleanup_owner,
+                        lease_expires_at,
+                        now_value,
+                        now_value,
+                        job_id,
+                        dispatcher_id,
+                    ),
+                ).fetchone()
+
+    def record_dual_agent_workflow_job_spawned(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        pid: int,
+        worker_pgid: int,
+        worker_started_at: float | None,
+        lease_ttl_s: int,
+        now: int,
+    ) -> dict[str, Any] | None:
+        """Atomically bind one prepared containment to its worker identity."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(lease_ttl_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        worker_owner = f"worker:{int(pid)}"
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              pid=%s,
+                              worker_pgid=%s,
+                              worker_started_at=%s,
+                              recovery_point='spawned',
+                              leased_by=%s,
+                              lease_expires_at=%s,
+                              heartbeat_at=%s,
+                              next_dispatch_at=NULL,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND recovery_point='spawn_prepared'
+                          AND worker_containment_id=%s
+                          AND leased_by=%s
+                          AND terminal_outcome_json IS NULL
+                          AND worker_reaped_at IS NULL
+                        RETURNING *""",
+                    (
+                        int(pid),
+                        int(worker_pgid),
+                        (
+                            float(worker_started_at)
+                            if worker_started_at is not None
+                            else None
+                        ),
+                        worker_owner,
+                        lease_expires_at,
+                        now_value,
+                        now_value,
+                        job_id,
+                        containment_id,
+                        cleanup_owner,
+                    ),
+                ).fetchone()
+
+    def release_dual_agent_workflow_job_spawn_preparation(
+        self,
+        *,
+        job_id: str,
+        containment_id: str,
+        dispatch_attempts: int,
+        error: str,
+        next_dispatch_at: int | None = None,
+        parked_reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Release a prepared containment after Popen failed to create a worker."""
+        now = int(time.time())
+        status = "parked" if parked_reason is not None else "submitted"
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status=%s,
+                              pid=NULL,
+                              worker_pgid=NULL,
+                              worker_started_at=NULL,
+                              worker_prepared_at=NULL,
+                              worker_containment_id=NULL,
+                              worker_reaped_at=NULL,
+                              recovery_point='request_written',
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              heartbeat_at=NULL,
+                              dispatch_attempts=%s,
+                              next_dispatch_at=%s,
+                              parked_reason=%s,
+                              error=%s,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND recovery_point='spawn_prepared'
+                          AND pid IS NULL
+                          AND worker_reaped_at IS NULL
+                          AND worker_containment_id=%s
+                          AND terminal_outcome_json IS NULL
+                        RETURNING *""",
+                    (
+                        status,
+                        int(dispatch_attempts),
+                        next_dispatch_at,
+                        parked_reason,
+                        error,
+                        now,
+                        job_id,
+                        containment_id,
+                    ),
+                ).fetchone()
+
+    def reschedule_dual_agent_workflow_job_after_reap(
+        self,
+        *,
+        job_id: str,
+        containment_id: str,
+        dispatch_attempts: int,
+        error: str,
+        next_dispatch_at: int | None = None,
+        parked_reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Resubmit only after the prior worker's reap proof is durable."""
+        now = int(time.time())
+        status = "parked" if parked_reason is not None else "submitted"
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status=%s,
+                              recovery_point='request_written',
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              heartbeat_at=NULL,
+                              dispatch_attempts=%s,
+                              next_dispatch_at=%s,
+                              parked_reason=%s,
+                              error=%s,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND recovery_point IN (
+                                'spawn_prepared', 'spawned'
+                              )
+                          AND worker_reaped_at IS NOT NULL
+                          AND worker_containment_id=%s
+                          AND terminal_outcome_json IS NULL
+                        RETURNING *""",
+                    (
+                        status,
+                        int(dispatch_attempts),
+                        next_dispatch_at,
+                        parked_reason,
+                        error,
+                        now,
+                        job_id,
+                        containment_id,
+                    ),
+                ).fetchone()
+
+    def defer_dual_agent_workflow_job_cleanup(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        reason: str,
+        retry_delay_s: int,
+        max_cleanup_retry_attempts: int,
+        now: int,
+    ) -> dict[str, Any] | None:
+        """Durably retain cleanup ownership and escalate without parking."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(retry_delay_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        threshold = max(1, int(max_cleanup_retry_attempts))
+        escalated_error = f"cleanup_retry_attempts_exhausted: {reason}"
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              error=CASE
+                                WHEN cleanup_attempts + 1 > %s
+                                THEN %s
+                                ELSE %s
+                              END,
+                              leased_by=%s,
+                              lease_expires_at=%s,
+                              heartbeat_at=%s,
+                              cleanup_attempts=cleanup_attempts + 1,
+                              cleanup_escalated_at=CASE
+                                WHEN cleanup_attempts + 1 > %s
+                                  THEN COALESCE(cleanup_escalated_at, %s)
+                                ELSE cleanup_escalated_at
+                              END,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND recovery_point IN (
+                                'spawn_prepared', 'spawned'
+                              )
+                          AND terminal_outcome_json IS NULL
+                          AND worker_reaped_at IS NULL
+                          AND worker_containment_id=%s
+                        RETURNING *""",
+                    (
+                        threshold,
+                        escalated_error,
+                        reason,
+                        cleanup_owner,
+                        lease_expires_at,
+                        now_value,
+                        threshold,
+                        now_value,
+                        now_value,
+                        job_id,
+                        containment_id,
+                    ),
+                ).fetchone()
 
     def claim_dual_agent_workflow_jobs_for_dispatch(
         self,
@@ -3525,6 +3818,9 @@ class PostgresState:
         job_id: str,
         worker_reaped_at: int,
         termination: dict[str, Any],
+        observed_pid: int | None = None,
+        observed_worker_pgid: int | None = None,
+        observed_worker_started_at: float | None = None,
     ) -> int:
         reaped_at = int(worker_reaped_at)
         if (
@@ -3541,7 +3837,7 @@ class PostgresState:
                 row = self._conn.execute(
                     """SELECT job_id, run_id, task_id, pid, worker_pgid,
                               worker_started_at, worker_containment_id,
-                              worker_reaped_at
+                              worker_reaped_at, recovery_point
                          FROM dual_agent_workflow_jobs
                         WHERE job_id=%s
                         FOR UPDATE""",
@@ -3549,7 +3845,11 @@ class PostgresState:
                 ).fetchone()
                 if row is None:
                     raise KeyError(f"workflow job not found: {job_id}")
-                if row["pid"] is None:
+                if (
+                    row["pid"] is None
+                    and str(row["recovery_point"] or "")
+                    != "spawn_prepared"
+                ):
                     raise RuntimeError(
                         "cannot record a worker reap for an in-process job"
                     )
@@ -3570,13 +3870,52 @@ class PostgresState:
                     raise RuntimeError(
                         "worker reap containment identity mismatch"
                     )
+                effective_pid = (
+                    int(row["pid"])
+                    if row["pid"] is not None
+                    else (
+                        int(observed_pid)
+                        if observed_pid is not None
+                        else None
+                    )
+                )
+                effective_pgid = (
+                    int(row["worker_pgid"])
+                    if row["worker_pgid"] is not None
+                    else (
+                        int(observed_worker_pgid)
+                        if observed_worker_pgid is not None
+                        else None
+                    )
+                )
+                effective_started_at = (
+                    float(row["worker_started_at"])
+                    if row["worker_started_at"] is not None
+                    else (
+                        float(observed_worker_started_at)
+                        if observed_worker_started_at is not None
+                        else None
+                    )
+                )
                 cursor = self._conn.execute(
                     """UPDATE dual_agent_workflow_jobs
-                          SET worker_reaped_at=%s,
+                          SET pid=COALESCE(pid, %s),
+                              worker_pgid=COALESCE(worker_pgid, %s),
+                              worker_started_at=COALESCE(
+                                  worker_started_at, %s
+                              ),
+                              worker_reaped_at=%s,
                               updated_at=%s
                         WHERE job_id=%s
                           AND worker_reaped_at IS NULL""",
-                    (reaped_at, int(time.time()), job_id),
+                    (
+                        effective_pid,
+                        effective_pgid,
+                        effective_started_at,
+                        reaped_at,
+                        int(time.time()),
+                        job_id,
+                    ),
                 )
                 if cursor.rowcount != 1:
                     raise RuntimeError(
@@ -3590,9 +3929,9 @@ class PostgresState:
                     payload={
                         "job_id": job_id,
                         "task_id": row["task_id"],
-                        "pid": row["pid"],
-                        "worker_pgid": row["worker_pgid"],
-                        "worker_started_at": row["worker_started_at"],
+                        "pid": effective_pid,
+                        "worker_pgid": effective_pgid,
+                        "worker_started_at": effective_started_at,
                         "worker_containment_id": row[
                             "worker_containment_id"
                         ],

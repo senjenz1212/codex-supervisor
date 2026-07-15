@@ -83,8 +83,11 @@ TERMINAL_WORKFLOW_JOB_PROTECTED_FIELDS: tuple[str, ...] = (
     "pid",
     "worker_pgid",
     "worker_started_at",
+    "worker_prepared_at",
     "worker_containment_id",
     "worker_reaped_at",
+    "cleanup_attempts",
+    "cleanup_escalated_at",
     "recovery_point",
     "terminal_status",
     "terminal_outcome_json",
@@ -600,8 +603,11 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   pid          INTEGER,
   worker_pgid  INTEGER,
   worker_started_at REAL,
+  worker_prepared_at REAL,
   worker_containment_id TEXT,
   worker_reaped_at INTEGER,
+  cleanup_attempts INTEGER NOT NULL DEFAULT 0,
+  cleanup_escalated_at INTEGER,
   request_path TEXT NOT NULL,
   result_path  TEXT NOT NULL,
   log_path     TEXT NOT NULL,
@@ -3775,7 +3781,7 @@ class State:
         row = self._conn.execute(
             """SELECT COUNT(*) AS count
                FROM dual_agent_workflow_jobs
-               WHERE recovery_point='spawned'
+               WHERE recovery_point IN ('spawn_prepared', 'spawned')
                  AND status='running'
                  AND terminal_outcome_json IS NULL
                  AND leased_by IS NOT NULL
@@ -3784,6 +3790,344 @@ class State:
             (now,),
         ).fetchone()
         return int(row["count"] if row is not None else 0)
+
+    def prepare_dual_agent_workflow_job_spawn(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        lease_ttl_s: int,
+        now: int,
+    ) -> sqlite3.Row | None:
+        """Persist cleanup ownership before crossing the subprocess seam."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(lease_ttl_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              pid=NULL,
+                              worker_pgid=NULL,
+                              worker_started_at=NULL,
+                              worker_prepared_at=?,
+                              recovery_point='spawn_prepared',
+                              worker_containment_id=?,
+                              worker_reaped_at=NULL,
+                              leased_by=?,
+                              lease_expires_at=?,
+                              heartbeat_at=?,
+                              cleanup_attempts=0,
+                              cleanup_escalated_at=NULL,
+                              next_dispatch_at=NULL,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point='request_written'
+                          AND terminal_outcome_json IS NULL
+                          AND (
+                                pid IS NULL
+                             OR worker_reaped_at IS NOT NULL
+                          )
+                          AND leased_by=?""",
+                    (
+                        float(now),
+                        containment_id,
+                        cleanup_owner,
+                        lease_expires_at,
+                        now_value,
+                        now_value,
+                        job_id,
+                        dispatcher_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def record_dual_agent_workflow_job_spawned(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        pid: int,
+        worker_pgid: int,
+        worker_started_at: float | None,
+        lease_ttl_s: int,
+        now: int,
+    ) -> sqlite3.Row | None:
+        """Atomically bind one prepared containment to its worker identity."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(lease_ttl_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        worker_owner = f"worker:{int(pid)}"
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              pid=?,
+                              worker_pgid=?,
+                              worker_started_at=?,
+                              recovery_point='spawned',
+                              leased_by=?,
+                              lease_expires_at=?,
+                              heartbeat_at=?,
+                              next_dispatch_at=NULL,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point='spawn_prepared'
+                          AND worker_containment_id=?
+                          AND leased_by=?
+                          AND terminal_outcome_json IS NULL
+                          AND worker_reaped_at IS NULL""",
+                    (
+                        int(pid),
+                        int(worker_pgid),
+                        (
+                            float(worker_started_at)
+                            if worker_started_at is not None
+                            else None
+                        ),
+                        worker_owner,
+                        lease_expires_at,
+                        now_value,
+                        now_value,
+                        job_id,
+                        containment_id,
+                        cleanup_owner,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def release_dual_agent_workflow_job_spawn_preparation(
+        self,
+        *,
+        job_id: str,
+        containment_id: str,
+        dispatch_attempts: int,
+        error: str,
+        next_dispatch_at: int | None = None,
+        parked_reason: str | None = None,
+    ) -> sqlite3.Row | None:
+        """Release a prepared containment after Popen failed to create a worker."""
+        now = int(time.time())
+        status = "parked" if parked_reason is not None else "submitted"
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status=?,
+                              pid=NULL,
+                              worker_pgid=NULL,
+                              worker_started_at=NULL,
+                              worker_prepared_at=NULL,
+                              worker_containment_id=NULL,
+                              worker_reaped_at=NULL,
+                              recovery_point='request_written',
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              heartbeat_at=NULL,
+                              dispatch_attempts=?,
+                              next_dispatch_at=?,
+                              parked_reason=?,
+                              error=?,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point='spawn_prepared'
+                          AND pid IS NULL
+                          AND worker_reaped_at IS NULL
+                          AND worker_containment_id=?
+                          AND terminal_outcome_json IS NULL""",
+                    (
+                        status,
+                        int(dispatch_attempts),
+                        next_dispatch_at,
+                        parked_reason,
+                        error,
+                        now,
+                        job_id,
+                        containment_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def reschedule_dual_agent_workflow_job_after_reap(
+        self,
+        *,
+        job_id: str,
+        containment_id: str,
+        dispatch_attempts: int,
+        error: str,
+        next_dispatch_at: int | None = None,
+        parked_reason: str | None = None,
+    ) -> sqlite3.Row | None:
+        """Resubmit only after the prior worker's reap proof is durable."""
+        now = int(time.time())
+        status = "parked" if parked_reason is not None else "submitted"
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status=?,
+                              recovery_point='request_written',
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              heartbeat_at=NULL,
+                              dispatch_attempts=?,
+                              next_dispatch_at=?,
+                              parked_reason=?,
+                              error=?,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point IN (
+                                'spawn_prepared', 'spawned'
+                              )
+                          AND worker_reaped_at IS NOT NULL
+                          AND worker_containment_id=?
+                          AND terminal_outcome_json IS NULL""",
+                    (
+                        status,
+                        int(dispatch_attempts),
+                        next_dispatch_at,
+                        parked_reason,
+                        error,
+                        now,
+                        job_id,
+                        containment_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def defer_dual_agent_workflow_job_cleanup(
+        self,
+        *,
+        job_id: str,
+        dispatcher_id: str,
+        containment_id: str,
+        reason: str,
+        retry_delay_s: int,
+        max_cleanup_retry_attempts: int,
+        now: int,
+    ) -> sqlite3.Row | None:
+        """Durably retain cleanup ownership and escalate without parking."""
+        now_value = int(now)
+        lease_expires_at = now_value + max(1, int(retry_delay_s))
+        cleanup_owner = f"cleanup:{dispatcher_id}"
+        threshold = max(1, int(max_cleanup_retry_attempts))
+        escalated_error = f"cleanup_retry_attempts_exhausted: {reason}"
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status='running',
+                              error=CASE
+                                WHEN cleanup_attempts + 1 > ?
+                                THEN ?
+                                ELSE ?
+                              END,
+                              leased_by=?,
+                              lease_expires_at=?,
+                              heartbeat_at=?,
+                              cleanup_attempts=cleanup_attempts + 1,
+                              cleanup_escalated_at=CASE
+                                WHEN cleanup_attempts + 1 > ?
+                                  THEN COALESCE(cleanup_escalated_at, ?)
+                                ELSE cleanup_escalated_at
+                              END,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point IN (
+                                'spawn_prepared', 'spawned'
+                              )
+                          AND terminal_outcome_json IS NULL
+                          AND worker_reaped_at IS NULL
+                          AND worker_containment_id=?""",
+                    (
+                        threshold,
+                        escalated_error,
+                        reason,
+                        cleanup_owner,
+                        lease_expires_at,
+                        now_value,
+                        threshold,
+                        now_value,
+                        now_value,
+                        job_id,
+                        containment_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def claim_next_dual_agent_workflow_job_for_dispatch(
         self,
@@ -3802,7 +4146,7 @@ class State:
                     """status NOT IN ('parked', 'accepted', 'blocked',
                                       'cancelled', 'completed', 'denied', 'failed')""",
                     "terminal_outcome_json IS NULL",
-                    "pid IS NULL",
+                    "(pid IS NULL OR worker_reaped_at IS NOT NULL)",
                     "(next_dispatch_at IS NULL OR next_dispatch_at <= ?)",
                     """(
                            leased_by IS NULL
@@ -3949,7 +4293,9 @@ class State:
                               heartbeat_at=?,
                               updated_at=?
                         WHERE job_id=?
-                          AND recovery_point='spawned'
+                          AND recovery_point IN (
+                                'spawn_prepared', 'spawned'
+                              )
                           AND status='running'
                           AND terminal_outcome_json IS NULL
                           AND worker_reaped_at IS NULL
@@ -4062,6 +4408,9 @@ class State:
         job_id: str,
         worker_reaped_at: int,
         termination: dict[str, Any],
+        observed_pid: int | None = None,
+        observed_worker_pgid: int | None = None,
+        observed_worker_started_at: float | None = None,
     ) -> int:
         """Atomically append reap evidence and freeze the one-way reap time."""
         reaped_at = int(worker_reaped_at)
@@ -4078,14 +4427,18 @@ class State:
                 row = self._conn.execute(
                     """SELECT job_id, run_id, task_id, pid, worker_pgid,
                               worker_started_at, worker_containment_id,
-                              worker_reaped_at
+                              worker_reaped_at, recovery_point
                          FROM dual_agent_workflow_jobs
                         WHERE job_id=?""",
                     (job_id,),
                 ).fetchone()
                 if row is None:
                     raise KeyError(f"workflow job not found: {job_id}")
-                if row["pid"] is None:
+                if (
+                    row["pid"] is None
+                    and str(row["recovery_point"] or "")
+                    != "spawn_prepared"
+                ):
                     raise RuntimeError(
                         "cannot record a worker reap for an in-process job"
                     )
@@ -4107,13 +4460,52 @@ class State:
                     raise RuntimeError(
                         "worker reap containment identity mismatch"
                     )
+                effective_pid = (
+                    int(row["pid"])
+                    if row["pid"] is not None
+                    else (
+                        int(observed_pid)
+                        if observed_pid is not None
+                        else None
+                    )
+                )
+                effective_pgid = (
+                    int(row["worker_pgid"])
+                    if row["worker_pgid"] is not None
+                    else (
+                        int(observed_worker_pgid)
+                        if observed_worker_pgid is not None
+                        else None
+                    )
+                )
+                effective_started_at = (
+                    float(row["worker_started_at"])
+                    if row["worker_started_at"] is not None
+                    else (
+                        float(observed_worker_started_at)
+                        if observed_worker_started_at is not None
+                        else None
+                    )
+                )
                 cursor = self._conn.execute(
                     """UPDATE dual_agent_workflow_jobs
-                          SET worker_reaped_at=?,
+                          SET pid=COALESCE(pid, ?),
+                              worker_pgid=COALESCE(worker_pgid, ?),
+                              worker_started_at=COALESCE(
+                                  worker_started_at, ?
+                              ),
+                              worker_reaped_at=?,
                               updated_at=?
                         WHERE job_id=?
                           AND worker_reaped_at IS NULL""",
-                    (reaped_at, int(time.time()), job_id),
+                    (
+                        effective_pid,
+                        effective_pgid,
+                        effective_started_at,
+                        reaped_at,
+                        int(time.time()),
+                        job_id,
+                    ),
                 )
                 if cursor.rowcount != 1:
                     raise RuntimeError(
@@ -4126,9 +4518,9 @@ class State:
                     payload={
                         "job_id": job_id,
                         "task_id": row["task_id"],
-                        "pid": row["pid"],
-                        "worker_pgid": row["worker_pgid"],
-                        "worker_started_at": row["worker_started_at"],
+                        "pid": effective_pid,
+                        "worker_pgid": effective_pgid,
+                        "worker_started_at": effective_started_at,
                         "worker_containment_id": row[
                             "worker_containment_id"
                         ],

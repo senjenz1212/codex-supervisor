@@ -190,7 +190,11 @@ def persist_detached_workflow_terminal_outcome(
     if not job_id:
         return False
     row = state.get_dual_agent_workflow_job(job_id=job_id)
-    if row is not None and row["pid"] is not None:
+    if row is not None and (
+        row["pid"] is not None
+        or str(row["recovery_point"] or "")
+        in {"spawn_prepared", "spawned"}
+    ):
         # Detached workers publish only an atomic result candidate.  The
         # dispatcher owns process reap and terminal ledger publication.
         return False

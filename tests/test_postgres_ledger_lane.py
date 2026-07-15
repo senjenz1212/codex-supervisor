@@ -172,6 +172,7 @@ def test_postgres_claim_sql_uses_fenced_skip_locked_cte():
     assert f"ORDER BY {POSTGRES_LOCK_ORDER} LIMIT %(limit)s FOR UPDATE SKIP LOCKED" in normalized
     assert normalized.index("LIMIT %(limit)s") < normalized.index(") UPDATE")
     assert "WHERE j.id = c.id" in normalized
+    assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in normalized
 
 
 def test_postgres_reap_claim_sql_is_full_snapshot_cas():
@@ -194,7 +195,7 @@ def test_postgres_reap_claim_sql_is_full_snapshot_cas():
         "j.worker_containment_id IS NOT DISTINCT FROM %(expected_worker_containment_id)s",
     ):
         assert comparison in normalized
-    assert "j.recovery_point = 'spawned'" in normalized
+    assert "j.recovery_point IN ('spawn_prepared', 'spawned')" in normalized
     assert "j.status = 'running'" in normalized
     assert "j.terminal_outcome_json IS NULL" in normalized
     assert "j.worker_reaped_at IS NULL" in normalized
@@ -372,6 +373,9 @@ def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "WHERE idempotency_token IS NOT NULL AND recovery_point != 'terminal'" in POSTGRES_SCHEMA_SQL
     assert "idx_dual_agent_workflow_jobs_dispatchable" in POSTGRES_SCHEMA_SQL
     assert "ON dual_agent_workflow_jobs(priority, created_at, id)" in POSTGRES_SCHEMA_SQL
+    assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in (
+        POSTGRES_SCHEMA_SQL
+    )
 
 
 def test_postgres_historical_reservation_does_not_read_terminal_variables():
@@ -692,7 +696,7 @@ def test_postgres_startup_refuses_to_rewrite_existing_unmigrated_schema():
     with pytest.raises(RuntimeError, match="make migrate"):
         state.apply_schema()
 
-    assert POSTGRES_ALEMBIC_HEAD == "20260712_0004"
+    assert POSTGRES_ALEMBIC_HEAD == "20260715_0001"
     assert not any("UPDATE events" in sql for sql in connection.statements)
     assert not any("DROP TRIGGER" in sql for sql in connection.statements)
 
@@ -2696,6 +2700,127 @@ def test_postgres_reap_claim_loses_to_heartbeat_and_other_reaper(
     assert stored["leased_by"] == winners[0]["leased_by"]
     assert stored["lease_expires_at"] == 1060
     assert stored["heartbeat_at"] == 1000
+    _assert_postgres_spawn_ownership_survives_reap_retry_and_escalation(
+        postgres_state,
+        tmp_path,
+    )
+
+
+def _assert_postgres_spawn_ownership_survives_reap_retry_and_escalation(
+    postgres_state,
+    tmp_path,
+) -> None:
+    row, created = _reserve_job(
+        postgres_state,
+        tmp_path,
+        job_id="postgres-spawn-ownership",
+        token="postgres-spawn-ownership-token",
+    )
+    assert created is True
+    postgres_state.update_dual_agent_workflow_job(
+        job_id=row["job_id"],
+        status="submitted",
+        recovery_point="request_written",
+    )
+    claimed = postgres_state.claim_next_dual_agent_workflow_job_for_dispatch(
+        dispatcher_id="dispatcher-before-reap",
+        lease_ttl_s=60,
+        now=1000,
+        job_id=row["job_id"],
+    )
+    assert claimed is not None
+    active_before_prepare = (
+        postgres_state.count_active_dual_agent_workflow_job_leases(now=1001)
+    )
+    prepared = postgres_state.prepare_dual_agent_workflow_job_spawn(
+        job_id=row["job_id"],
+        dispatcher_id="dispatcher-before-reap",
+        containment_id="containment-before-reap",
+        lease_ttl_s=60,
+        now=1000,
+    )
+    assert prepared is not None
+    assert prepared["recovery_point"] == "spawn_prepared"
+    assert (
+        postgres_state.count_active_dual_agent_workflow_job_leases(now=1001)
+        == active_before_prepare + 1
+    )
+    spawned = postgres_state.record_dual_agent_workflow_job_spawned(
+        job_id=row["job_id"],
+        dispatcher_id="dispatcher-before-reap",
+        containment_id="containment-before-reap",
+        pid=41030,
+        worker_pgid=41030,
+        worker_started_at=123.5,
+        lease_ttl_s=60,
+        now=1000,
+    )
+    assert spawned is not None
+    postgres_state.record_dual_agent_workflow_worker_reaped(
+        job_id=row["job_id"],
+        worker_reaped_at=1001,
+        termination={
+            "status": "worker_tree_terminated",
+            "safe_to_finalize": True,
+            "pid": 41030,
+            "pgid": 41030,
+            "containment_id": "containment-before-reap",
+        },
+    )
+    retried = postgres_state.reschedule_dual_agent_workflow_job_after_reap(
+        job_id=row["job_id"],
+        containment_id="containment-before-reap",
+        dispatch_attempts=1,
+        error="fast_exit_without_result",
+    )
+    assert retried is not None
+    assert retried["recovery_point"] == "request_written"
+    assert retried["pid"] == 41030
+    assert retried["worker_reaped_at"] == 1001
+
+    claimed_retry = (
+        postgres_state.claim_next_dual_agent_workflow_job_for_dispatch(
+            dispatcher_id="dispatcher-after-reap",
+            lease_ttl_s=60,
+            now=1002,
+            job_id=row["job_id"],
+        )
+    )
+    assert claimed_retry is not None
+    prepared_retry = postgres_state.prepare_dual_agent_workflow_job_spawn(
+        job_id=row["job_id"],
+        dispatcher_id="dispatcher-after-reap",
+        containment_id="containment-after-reap",
+        lease_ttl_s=60,
+        now=1002,
+    )
+    assert prepared_retry is not None
+    assert prepared_retry["pid"] is None
+    assert prepared_retry["worker_reaped_at"] is None
+    assert (
+        prepared_retry["worker_containment_id"]
+        == "containment-after-reap"
+    )
+
+    deferred = prepared_retry
+    for cleanup_attempt, now in enumerate((2000, 2001, 2002), start=1):
+        deferred = postgres_state.defer_dual_agent_workflow_job_cleanup(
+            job_id=row["job_id"],
+            dispatcher_id="dispatcher-after-reap",
+            containment_id="containment-after-reap",
+            reason="containment_scan_incomplete",
+            retry_delay_s=1,
+            max_cleanup_retry_attempts=2,
+            now=now,
+        )
+        assert deferred is not None
+        assert deferred["cleanup_attempts"] == cleanup_attempt
+        assert deferred["status"] == "running"
+        assert deferred["parked_reason"] is None
+    assert deferred["cleanup_escalated_at"] == 2002
+    assert str(deferred["error"]).startswith(
+        "cleanup_retry_attempts_exhausted"
+    )
 
 
 def test_postgres_concurrent_skip_locked_claimers_get_disjoint_jobs(postgres_state, tmp_path):

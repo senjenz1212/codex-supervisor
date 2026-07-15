@@ -351,6 +351,41 @@ def _migration_workflow_job_process_identity(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_workflow_job_spawn_ownership(
+    conn: sqlite3.Connection,
+) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = _columns(conn, "dual_agent_workflow_jobs")
+    if "worker_prepared_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN worker_prepared_at REAL"
+        )
+    if "cleanup_attempts" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN cleanup_attempts INTEGER NOT NULL DEFAULT 0"
+        )
+    if "cleanup_escalated_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN cleanup_escalated_at INTEGER"
+        )
+    conn.execute(
+        "DROP INDEX IF EXISTS idx_dual_agent_workflow_jobs_dispatchable"
+    )
+    conn.execute(
+        """CREATE INDEX idx_dual_agent_workflow_jobs_dispatchable
+           ON dual_agent_workflow_jobs(
+             status, recovery_point, next_dispatch_at, lease_expires_at
+           )
+           WHERE recovery_point IN ('reserved', 'request_written')
+             AND terminal_outcome_json IS NULL
+             AND (pid IS NULL OR worker_reaped_at IS NOT NULL)"""
+    )
+
+
 def _migration_historical_operation_claims(
     conn: sqlite3.Connection,
 ) -> None:
@@ -1501,8 +1536,11 @@ def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
             "pid",
             "worker_pgid",
             "worker_started_at",
+            "worker_prepared_at",
             "worker_containment_id",
             "worker_reaped_at",
+            "cleanup_attempts",
+            "cleanup_escalated_at",
         }
         if required_columns <= _columns(conn, "dual_agent_workflow_jobs"):
             conn.execute(
@@ -1537,8 +1575,12 @@ def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
                       OR NEW.pid IS NOT OLD.pid
                       OR NEW.worker_pgid IS NOT OLD.worker_pgid
                       OR NEW.worker_started_at IS NOT OLD.worker_started_at
+                      OR NEW.worker_prepared_at IS NOT OLD.worker_prepared_at
                       OR NEW.worker_containment_id
                            IS NOT OLD.worker_containment_id
+                      OR NEW.cleanup_attempts IS NOT OLD.cleanup_attempts
+                      OR NEW.cleanup_escalated_at
+                           IS NOT OLD.cleanup_escalated_at
                     )
                    BEGIN
                      SELECT RAISE(
@@ -1568,6 +1610,18 @@ def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
                    BEFORE UPDATE ON dual_agent_workflow_jobs
                    WHEN OLD.worker_reaped_at IS NOT NULL
                     AND NEW.worker_reaped_at IS NOT OLD.worker_reaped_at
+                    AND NOT (
+                         OLD.terminal_outcome_json IS NULL
+                     AND OLD.recovery_point = 'request_written'
+                     AND NEW.recovery_point = 'spawn_prepared'
+                     AND NEW.worker_reaped_at IS NULL
+                     AND NEW.pid IS NULL
+                     AND NEW.worker_pgid IS NULL
+                     AND NEW.worker_started_at IS NULL
+                     AND NEW.worker_containment_id IS NOT NULL
+                     AND NEW.worker_containment_id
+                          IS NOT OLD.worker_containment_id
+                    )
                    BEGIN
                      SELECT RAISE(
                        ABORT,
@@ -1846,5 +1900,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         16,
         "event_idempotency_claims",
         _migration_event_idempotency_claims,
+    ),
+    SchemaMigration(
+        17,
+        "dual_agent_workflow_jobs.spawn_ownership",
+        _migration_workflow_job_spawn_ownership,
     ),
 )

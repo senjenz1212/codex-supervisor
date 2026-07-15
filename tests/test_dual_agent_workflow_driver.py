@@ -3048,16 +3048,19 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
 
     server, state = _server(tmp_path)
     popen_calls: list[dict] = []
-    phase_at_spawn: list[str] = []
+    ownership_at_spawn: list[dict[str, object]] = []
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
             row = state._conn.execute(
-                "SELECT recovery_point FROM dual_agent_workflow_jobs"
+                """SELECT recovery_point, worker_containment_id, leased_by
+                     FROM dual_agent_workflow_jobs"""
             ).fetchone()
-            phase_at_spawn.append(row["recovery_point"] if row else "missing")
+            ownership_at_spawn.append(
+                dict(row) if row is not None else {"recovery_point": "missing"}
+            )
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
 
     class ForbiddenDispatcher:
@@ -3097,7 +3100,7 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
 
     assert poll["status"] == "submitted"
     assert poll["recovery_point"] == "reserved"
-    assert phase_at_spawn == []
+    assert ownership_at_spawn == []
     assert popen_calls == []
     assert not Path(result["request_path"]).exists()
 
@@ -3112,7 +3115,15 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
 
     assert dispatch["status"] == "spawned"
     assert dispatch["job_id"] == result["job_id"]
-    assert phase_at_spawn == ["request_written"]
+    assert ownership_at_spawn == [
+        {
+            "recovery_point": "spawn_prepared",
+            "worker_containment_id": popen_calls[0]["kwargs"]["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ],
+            "leased_by": "cleanup:dispatcher-test",
+        }
+    ]
     assert popen_calls
     assert popen_calls[0]["argv"][1:3] == ["-m", "mcp_tools.codex_supervisor_workflow_cli"]
     assert popen_calls[0]["kwargs"]["start_new_session"] is True
@@ -3616,6 +3627,15 @@ def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path)
     state = State(str(tmp_path / "state.db"))
     _reserve_dispatcher_test_job(state, tmp_path)
     popen_calls: list[list[str]] = []
+
+    def forbidden_non_atomic_upsert(**_kwargs):
+        raise AssertionError("spawn identity must use the atomic transition")
+
+    monkeypatch.setattr(
+        state,
+        "upsert_dual_agent_workflow_job",
+        forbidden_non_atomic_upsert,
+    )
 
     class FakePopen:
         pid = 43210
@@ -4926,6 +4946,48 @@ def test_workflow_cli_records_terminal_outcome_in_ledger(tmp_path):
     ]
     assert terminal_events
     assert terminal_events[-1]["payload"]["job_id"] == "job-cli"
+
+
+def test_workflow_cli_does_not_publish_terminal_for_prepared_worker(tmp_path):
+    from mcp_tools.codex_supervisor_workflow_cli import (
+        persist_detached_workflow_terminal_outcome,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-cli-prepared"
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-cli-prepared",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path=str(job_dir / "request.json"),
+        result_path=str(job_dir / "result.json"),
+        log_path=str(job_dir / "worker.log"),
+        recovery_point="spawn_prepared",
+        worker_containment_id="containment-cli-prepared",
+    )
+    terminal_outcome = {
+        "status": "accepted",
+        "run_id": "workflow-run",
+        "task_id": "workflow-1",
+    }
+
+    assert (
+        persist_detached_workflow_terminal_outcome(
+            request_payload={"job_id": "job-cli-prepared"},
+            result=terminal_outcome,
+            state=state,
+            output_path=job_dir / "result.json",
+            returncode=0,
+        )
+        is False
+    )
+
+    job = state.get_dual_agent_workflow_job(job_id="job-cli-prepared")
+    assert job is not None
+    assert job["recovery_point"] == "spawn_prepared"
+    assert job["terminal_outcome_json"] is None
 
 
 @pytest.mark.asyncio

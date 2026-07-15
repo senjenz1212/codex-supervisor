@@ -45,6 +45,7 @@ EXPECTED_MIGRATIONS = [
     {"version": 14, "name": "dual_agent_workflow_jobs.process_identity"},
     {"version": 15, "name": "historical_operation_claims"},
     {"version": 16, "name": "event_idempotency_claims"},
+    {"version": 17, "name": "dual_agent_workflow_jobs.spawn_ownership"},
 ]
 
 
@@ -788,6 +789,68 @@ def test_forward_migration_adds_workflow_job_process_identity(tmp_path):
     assert applied_migrations(conn) == EXPECTED_MIGRATIONS
 
 
+def test_forward_migration_adds_workflow_job_spawn_ownership(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE dual_agent_workflow_jobs (
+             job_id TEXT PRIMARY KEY,
+             run_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             cwd TEXT NOT NULL,
+             status TEXT NOT NULL,
+             pid INTEGER,
+             request_path TEXT NOT NULL,
+             result_path TEXT NOT NULL,
+             log_path TEXT NOT NULL,
+             returncode INTEGER,
+             error TEXT,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO dual_agent_workflow_jobs(
+             job_id, run_id, task_id, cwd, status, request_path,
+             result_path, log_path, created_at, updated_at)
+           VALUES(
+             'retryable-job', 'run', 'task', '.', 'submitted',
+             'req', 'res', 'log', 1, 1
+           )"""
+    )
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA table_info(dual_agent_workflow_jobs)"
+        ).fetchall()
+    }
+    assert {
+        "worker_prepared_at",
+        "cleanup_attempts",
+        "cleanup_escalated_at",
+    } <= columns
+    row = conn.execute(
+        """SELECT cleanup_attempts
+             FROM dual_agent_workflow_jobs
+            WHERE job_id='retryable-job'"""
+    ).fetchone()
+    assert row["cleanup_attempts"] == 0
+    index = conn.execute(
+        """SELECT sql
+             FROM sqlite_master
+            WHERE type='index'
+              AND name='idx_dual_agent_workflow_jobs_dispatchable'"""
+    ).fetchone()
+    assert index is not None
+    normalized = " ".join(str(index["sql"]).split())
+    assert "terminal_outcome_json IS NULL" in normalized
+    assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in normalized
+    assert applied_migrations(conn) == EXPECTED_MIGRATIONS
+
+
 def test_process_identity_migration_requires_quiescent_pre_identity_jobs(
     tmp_path,
 ):
@@ -864,8 +927,11 @@ def test_process_identity_migration_requires_quiescent_pre_identity_jobs(
         ("pid", 22),
         ("worker_pgid", 23),
         ("worker_started_at", 2.5),
+        ("worker_prepared_at", 2.0),
         ("worker_containment_id", "containment-2"),
         ("worker_reaped_at", 200),
+        ("cleanup_attempts", 2),
+        ("cleanup_escalated_at", 200),
     ),
 )
 def test_terminal_freeze_includes_process_identity_fields(
@@ -1951,6 +2017,12 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     idempotency_migration = Path(
         "migrations/versions/20260712_0004_event_idempotency_claims.py"
     ).read_text(encoding="utf-8")
+    spawn_ownership_migration = Path(
+        "migrations/versions/20260715_0001_workflow_spawn_ownership.py"
+    ).read_text(encoding="utf-8")
+    normalized_spawn_ownership_migration = " ".join(
+        spawn_ownership_migration.split()
+    )
 
     assert "LOCK TABLE events IN SHARE ROW EXCLUSIVE MODE" in evidence_migration
     assert "payload_json=CAST(:payload_json AS jsonb)" not in evidence_migration
@@ -1990,3 +2062,20 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     assert "production-trace:" in idempotency_migration
     assert "duplicate production trace events" in idempotency_migration
     assert "forward-only migration" in idempotency_migration
+    assert "worker_prepared_at DOUBLE PRECISION" in (
+        normalized_spawn_ownership_migration
+    )
+    assert "cleanup_attempts" in normalized_spawn_ownership_migration
+    assert "INTEGER NOT NULL DEFAULT 0" in (
+        normalized_spawn_ownership_migration
+    )
+    assert "cleanup_escalated_at BIGINT" in (
+        normalized_spawn_ownership_migration
+    )
+    assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in (
+        normalized_spawn_ownership_migration
+    )
+    assert "NEW.worker_prepared_at" in spawn_ownership_migration
+    assert "NEW.cleanup_attempts" in spawn_ownership_migration
+    assert "reject_worker_reaped_at_rewrite" in spawn_ownership_migration
+    assert "forward-only migration" in spawn_ownership_migration
