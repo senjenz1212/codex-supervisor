@@ -9,8 +9,10 @@ Replay artifacts are allowed to outlive the code that produced them. The supervi
 - Current replay schemas are declared in `supervisor/replay_versions.py`.
 - Known forward migrations are named and deterministic.
 - Unknown or incompatible versions, manifests missing any current schema
-  (`missing_current_schemas`), and manifests that still require a known forward
-  migration (`migrations_required`) all fail closed with `status: incompatible`.
+  (`missing_current_schemas`), manifests that still require a known forward
+  migration (`migrations_required`), and manifests whose missing schemas have a
+  declared absent-schema migration (`missing_schema_migrations`) all fail
+  closed with `status: incompatible`.
 - The replay checker is pure and does not invoke live tools, model calls, or subprocesses.
 
 ## Current Schemas

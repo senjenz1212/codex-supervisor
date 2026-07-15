@@ -30,7 +30,7 @@ Planning validation writes this event when the runner receives a `State` handle:
   "payload": {
     "task_id": "planning-artifact-validator-20260524",
     "gate": "execution",
-    "validator_version": "1.0.0",
+    "validator_version": "1.4.0",
     "artifact_hashes": {
       "prd": "..."
     },

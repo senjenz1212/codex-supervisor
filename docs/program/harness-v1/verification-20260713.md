@@ -32,6 +32,23 @@ pinned by implementation commit:
 The follow-up receipt commit only records this immutable implementation
 identity; it does not change the tested implementation.
 
+Two later fix commits landed after this receipt (review-finding fixes and
+workflow-resubmission/containment/read-lock regression fixes). The full suite
+was re-run on July 15, 2026 at the resulting branch head:
+
+```text
+fb93590142d53a8df3667e93d2de068440318c23
+uv run pytest -q
+2675 passed, 33 skipped in 1613.13s
+uv run pytest --collect-only -q
+2708 tests collected
+make test-projection-registry
+7 exact hermetic projection proofs passed
+48 PostgreSQL conformance tests passed
+```
+
+The claim boundary below is unchanged by that re-run.
+
 Final full-suite command:
 
 ```text

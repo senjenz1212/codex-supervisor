@@ -394,17 +394,19 @@ make test-projection-registry
 Current verified result:
 
 ```text
-2674 tests collected
-2641 passed, 33 skipped
+2708 tests collected
+2675 passed, 33 skipped
 PostgreSQL conformance: 48 passed
 ```
 
 `make test-postgres` uses `CODEX_SUPERVISOR_POSTGRES_TEST_DSN` when supplied.
-Otherwise it starts and removes an isolated `postgres:16-alpine` container on
-an ephemeral localhost port, so the PostgreSQL lane does not silently remain
-skipped during release verification. These results were observed on July 14,
-2026; see `docs/program/harness-v1/verification-20260713.md` for the exact
-commands and claim boundary.
+Otherwise it starts and removes an isolated, digest-pinned
+`postgres:16-alpine` container (override the image with
+`CODEX_SUPERVISOR_POSTGRES_TEST_IMAGE`) on an ephemeral localhost port, so the
+PostgreSQL lane does not silently remain skipped during release verification.
+These results were observed on July 15, 2026 at the branch head; see
+`docs/program/harness-v1/verification-20260713.md` for the exact commands and
+claim boundary.
 
 ## Replay Fixtures
 
@@ -451,7 +453,8 @@ Two related config blocks under `supervisor:` are documented in
   implements distinct rerun, regrade, and deterministic replay operations.
 
 Smoke Claude Code / Codex runtime compatibility (requires both CLIs on PATH;
-writes a JSON receipt):
+writes a JSON receipt — override the defaults with `--claude-model`,
+`--codex-model`, and `--output`):
 
 ```bash
 python scripts/run_harness_v1_runtime_smoke.py
