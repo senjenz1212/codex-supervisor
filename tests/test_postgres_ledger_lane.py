@@ -1568,6 +1568,95 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
         terminal_event_id=terminal_event_id,
     ) == 0
 
+    for retry_state in ("stale", "preflight_released"):
+        retry_operation_id = (
+            f"historical-postgres-retry-{retry_state}"
+        )
+        retry_request_hash = "d" * 64
+        claim, reserved = postgres_state.reserve_historical_operation(
+            operation_id=retry_operation_id,
+            request_hash=retry_request_hash,
+            operation="replay",
+        )
+        assert reserved is True
+        if retry_state == "stale":
+            claim = dict(
+                postgres_state._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET updated_at=0
+                        WHERE operation_id=%s
+                    RETURNING *""",
+                    (retry_operation_id,),
+                ).fetchone()
+            )
+        else:
+            postgres_state.write_historical_operation_event(
+                run_id=retry_operation_id,
+                kind="historical_operation.preflight_released",
+                payload={
+                    "operation_id": retry_operation_id,
+                    "request_hash": retry_request_hash,
+                    "operation": "replay",
+                    "error_type": "HistoricalEvidenceError",
+                    "error": "retryable preflight failure",
+                },
+            )
+
+        second_state = PostgresState(
+            postgres_state.dsn,
+            schema=postgres_state.schema,
+            apply_schema=False,
+        )
+        barrier = Barrier(2)
+
+        def claim_execution(state):
+            barrier.wait(timeout=5)
+            return state.claim_historical_operation_execution(
+                operation_id=retry_operation_id,
+                request_hash=retry_request_hash,
+                operation="replay",
+                request={"operation": "replay"},
+                expected_claim_updated_at=claim["updated_at"],
+            )
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(
+                    pool.map(
+                        claim_execution,
+                        (postgres_state, second_state),
+                    )
+                )
+        finally:
+            second_state.close()
+
+        assert sum(
+            acquired
+            for _claim, _event_id, acquired in results
+        ) == 1
+        requested_event_ids = {
+            event_id
+            for _claim, event_id, _acquired in results
+            if event_id is not None
+        }
+        assert len(requested_event_ids) == 1
+        expected_kinds = (
+            [
+                "historical_operation.preflight_released",
+                "historical_operation.requested",
+            ]
+            if retry_state == "preflight_released"
+            else ["historical_operation.requested"]
+        )
+        assert [
+            event["kind"]
+            for event in postgres_state.read_events_since(
+                retry_operation_id,
+                after_event_id=0,
+                limit=10,
+            )
+        ] == expected_kinds
+
 
 def test_postgres_reapplying_schema_preserves_native_event_hashes(postgres_state):
     postgres_state.write_event(

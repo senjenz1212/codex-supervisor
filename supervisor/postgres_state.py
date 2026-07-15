@@ -2811,6 +2811,101 @@ class PostgresState:
                     )
                 return dict(existing), False
 
+    def claim_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        request: dict[str, Any],
+        expected_claim_updated_at: Any,
+    ) -> tuple[dict[str, Any], int | None, bool]:
+        """Atomically append requested while claiming the side-effect boundary."""
+        now = int(time.time())
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s
+                        FOR UPDATE""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                requested_events = self._conn.execute(
+                    """SELECT event_id
+                         FROM events
+                        WHERE run_id=%s
+                          AND kind='historical_operation.requested'
+                        ORDER BY event_id ASC
+                        LIMIT 2""",
+                    (operation_id,),
+                ).fetchall()
+                requested_event_id = (
+                    int(requested_events[0]["event_id"])
+                    if requested_events
+                    else None
+                )
+                claim_dict = dict(claim)
+                may_claim = (
+                    str(claim["request_hash"]) == request_hash
+                    and str(claim["operation"]) == operation
+                    and str(claim["status"]) == "running"
+                    and claim["terminal_event_id"] is None
+                    and claim["updated_at"] == expected_claim_updated_at
+                    and requested_event_id is None
+                )
+                if not may_claim:
+                    return claim_dict, requested_event_id, False
+                claimed = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET updated_at=%s
+                        WHERE operation_id=%s
+                          AND request_hash=%s
+                          AND operation=%s
+                          AND status='running'
+                          AND terminal_event_id IS NULL
+                          AND updated_at IS NOT DISTINCT FROM %s
+                    RETURNING *""",
+                    (
+                        now,
+                        operation_id,
+                        request_hash,
+                        operation,
+                        expected_claim_updated_at,
+                    ),
+                ).fetchone()
+                if claimed is None:
+                    current = self._conn.execute(
+                        """SELECT * FROM historical_operation_claims
+                           WHERE operation_id=%s""",
+                        (operation_id,),
+                    ).fetchone()
+                    if current is None:
+                        raise KeyError(
+                            f"historical operation not found: {operation_id}"
+                        )
+                    return dict(current), None, False
+                requested_event_id = self._insert_event_unlocked(
+                    run_id=operation_id,
+                    source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                    kind="historical_operation.requested",
+                    payload={
+                        "operation_id": operation_id,
+                        "request_hash": request_hash,
+                        "request": request,
+                    },
+                )
+                claimed_dict = dict(claimed)
+            self._coordinate_committed_event(
+                run_id=operation_id,
+                event_id=requested_event_id,
+                event_kind="historical_operation.requested",
+            )
+            return claimed_dict, requested_event_id, True
+
     def complete_historical_operation(
         self,
         *,

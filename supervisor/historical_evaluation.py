@@ -409,6 +409,17 @@ class HistoricalState(Protocol):
     ) -> tuple[Mapping[str, Any], bool]:
         ...
 
+    def claim_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        request: dict[str, Any],
+        expected_claim_updated_at: Any,
+    ) -> tuple[Mapping[str, Any], int | None, bool]:
+        ...
+
     def complete_historical_operation(
         self,
         *,
@@ -587,15 +598,61 @@ class HistoricalEvaluationService:
                 },
             )
             raise
-        requested_event_id = self._state.write_historical_operation_event(
-            run_id=request.operation_id,
-            kind="historical_operation.requested",
-            payload={
-                "operation_id": request.operation_id,
-                "request_hash": request.request_hash,
-                "request": request.to_dict(),
-            },
+        execution_claim, requested_event_id, execution_claimed = (
+            self._state.claim_historical_operation_execution(
+                operation_id=request.operation_id,
+                request_hash=request.request_hash,
+                operation=request.operation.value,
+                request=request.to_dict(),
+                expected_claim_updated_at=claim.get("updated_at"),
+            )
         )
+        self._validate_claim(request, execution_claim)
+        if not execution_claimed:
+            prior_requested_event_id, _released, existing = (
+                self._existing_terminal_receipt(request)
+            )
+            if existing is not None:
+                self._state.complete_historical_operation(
+                    operation_id=request.operation_id,
+                    request_hash=request.request_hash,
+                    status="completed",
+                    terminal_event_id=existing.completed_event_id,
+                )
+                self._verify_receipt_evidence(request, existing)
+                self._verify_terminal_checkpoint(
+                    operation_id=request.operation_id,
+                    event_id=existing.completed_event_id,
+                    event_kind="historical_operation.completed",
+                )
+                return existing
+            status = str(execution_claim.get("status") or "")
+            if status == "failed":
+                raise HistoricalEvidenceError(
+                    "historical operation claim is failed but its failure "
+                    "event is missing"
+                )
+            if status == "completed":
+                raise HistoricalEvidenceError(
+                    "historical operation claim is completed but its "
+                    "completion event is missing"
+                )
+            if (
+                prior_requested_event_id is not None
+                and self._claim_is_stale(execution_claim)
+            ):
+                self._resolve_stale_claim_as_failed(
+                    request,
+                    requested_event_id=prior_requested_event_id,
+                )
+            raise HistoricalOperationInProgress(
+                "historical operation execution was claimed by another "
+                "process"
+            )
+        if requested_event_id is None:
+            raise HistoricalEvidenceError(
+                "historical operation execution claim has no requested event"
+            )
 
         try:
             raw_result = self._executors[request.operation](request)

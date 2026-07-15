@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -639,6 +642,158 @@ async def test_two_service_instances_fail_closed_while_same_request_runs(
     await first_task
 
     assert calls == 1
+
+
+@pytest.mark.parametrize(
+    ("retry_state", "expected_events"),
+    [
+        (
+            "stale",
+            [
+                "historical_operation.requested",
+                "historical_operation.completed",
+            ],
+        ),
+        (
+            "preflight_released",
+            [
+                "historical_operation.preflight_released",
+                "historical_operation.requested",
+                "historical_operation.completed",
+            ],
+        ),
+    ],
+)
+def test_two_sqlite_service_instances_claim_retry_execution_once(
+    tmp_path,
+    retry_state,
+    expected_events,
+):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    second_state = State(
+        state.db_path,
+        ledger_checkpoint_coordinator=(
+            state._ledger_checkpoint_coordinator
+        ),
+    )
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="cross-service-stale-retry",
+    )
+    state.reserve_historical_operation(
+        operation_id=request.operation_id,
+        request_hash=request.request_hash,
+        operation=request.operation.value,
+    )
+    if retry_state == "stale":
+        _mark_claim_stale(state, request.operation_id)
+    else:
+        state.write_historical_operation_event(
+            run_id=request.operation_id,
+            kind="historical_operation.preflight_released",
+            payload={
+                "operation_id": request.operation_id,
+                "request_hash": request.request_hash,
+                "operation": request.operation.value,
+                "error_type": "HistoricalEvidenceError",
+                "error": "retryable preflight failure",
+            },
+        )
+
+    result_ref, result_sha256 = _write(
+        tmp_path,
+        "outputs/cross-service-stale-retry.json",
+        b'{"decision":"same"}',
+    )
+    artifacts[result_ref] = Path(result_ref).read_bytes()
+    preflight_barrier = threading.Barrier(2)
+    preflight_seen = threading.local()
+    executor_release = threading.Event()
+    calls_changed = threading.Condition()
+    calls = 0
+
+    def resolver(ref):
+        if (
+            ref == source.source_manifest_ref
+            and not getattr(preflight_seen, "synchronized", False)
+        ):
+            preflight_seen.synchronized = True
+            preflight_barrier.wait(timeout=5)
+        return artifacts.get(ref)
+
+    def replay(retry_request):
+        nonlocal calls
+        with calls_changed:
+            calls += 1
+            calls_changed.notify_all()
+        if not executor_release.wait(timeout=5):
+            raise TimeoutError("test did not release historical executor")
+        return {
+            "status": "completed",
+            "execution_performed": False,
+            "source_frozen_result_sha256": (
+                retry_request.source.frozen_result_sha256
+            ),
+            "source_manifest_sha256": (
+                retry_request.source.source_manifest_sha256
+            ),
+            "deterministic": True,
+            "replay_schema_version": "replay/v1",
+            "artifact_ref": result_ref,
+            "artifact_sha256": result_sha256,
+        }
+
+    def build_service(bound_state):
+        return HistoricalEvaluationService(
+            state=bound_state,
+            evidence_resolver=resolver,
+            rerun_executor=lambda _request: {},
+            regrade_executor=lambda _request: {},
+            replay_executor=replay,
+            claim_stale_after_s=60,
+        )
+
+    def invoke(service):
+        try:
+            return asyncio.run(service.replay(request))
+        except HistoricalOperationInProgress as exc:
+            return exc
+
+    services = (build_service(state), build_service(second_state))
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(invoke, service) for service in services]
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                with calls_changed:
+                    observed_calls = calls
+                    if observed_calls >= 2:
+                        break
+                    calls_changed.wait(timeout=0.05)
+                if any(future.done() for future in futures):
+                    break
+            executor_release.set()
+            outcomes = [future.result(timeout=5) for future in futures]
+    finally:
+        executor_release.set()
+        second_state._conn.close()
+
+    assert calls == 1
+    assert sum(
+        isinstance(outcome, HistoricalOperationReceipt)
+        for outcome in outcomes
+    ) == 1
+    assert sum(
+        isinstance(outcome, HistoricalOperationInProgress)
+        for outcome in outcomes
+    ) == 1
+    events = state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == expected_events
 
 
 def _mark_claim_stale(state, operation_id: str) -> None:

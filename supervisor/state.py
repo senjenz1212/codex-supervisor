@@ -3187,6 +3187,121 @@ class State:
                 self._conn.rollback()
                 raise
 
+    def claim_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        request: dict[str, Any],
+        expected_claim_updated_at: Any,
+    ) -> tuple[dict[str, Any], int | None, bool]:
+        """Atomically append requested while claiming the side-effect boundary."""
+        now = int(time.time())
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                       WHERE operation_id=?""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                requested_events = self._conn.execute(
+                    """SELECT event_id
+                         FROM events
+                        WHERE run_id=?
+                          AND kind='historical_operation.requested'
+                        ORDER BY event_id ASC
+                        LIMIT 2""",
+                    (operation_id,),
+                ).fetchall()
+                requested_event_id = (
+                    int(requested_events[0]["event_id"])
+                    if requested_events
+                    else None
+                )
+                claim_dict = dict(claim)
+                may_claim = (
+                    str(claim["request_hash"]) == request_hash
+                    and str(claim["operation"]) == operation
+                    and str(claim["status"]) == "running"
+                    and claim["terminal_event_id"] is None
+                    and claim["updated_at"] == expected_claim_updated_at
+                    and requested_event_id is None
+                )
+                if not may_claim:
+                    self._conn.commit()
+                    return claim_dict, requested_event_id, False
+                cursor = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET updated_at=?
+                        WHERE operation_id=?
+                          AND request_hash=?
+                          AND operation=?
+                          AND status='running'
+                          AND terminal_event_id IS NULL
+                          AND updated_at=?""",
+                    (
+                        now,
+                        operation_id,
+                        request_hash,
+                        operation,
+                        expected_claim_updated_at,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    current = self._conn.execute(
+                        """SELECT * FROM historical_operation_claims
+                           WHERE operation_id=?""",
+                        (operation_id,),
+                    ).fetchone()
+                    if current is None:
+                        raise KeyError(
+                            f"historical operation not found: {operation_id}"
+                        )
+                    self._conn.commit()
+                    return dict(current), None, False
+                payload = {
+                    "operation_id": operation_id,
+                    "request_hash": request_hash,
+                    "request": request,
+                }
+                prepared_payload = self._event_payload(
+                    run_id=operation_id,
+                    source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                    kind="historical_operation.requested",
+                    payload=payload,
+                )
+                requested_event_id = self._insert_event_unlocked(
+                    run_id=operation_id,
+                    source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                    kind="historical_operation.requested",
+                    payload=prepared_payload,
+                )
+                claimed = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                       WHERE operation_id=?""",
+                    (operation_id,),
+                ).fetchone()
+                if claimed is None:
+                    raise RuntimeError(
+                        "historical operation execution claim disappeared"
+                    )
+                self._conn.commit()
+                self._coordinate_committed_event(
+                    run_id=operation_id,
+                    event_id=requested_event_id,
+                    event_kind="historical_operation.requested",
+                )
+                return dict(claimed), requested_event_id, True
+            except Exception:
+                self._conn.rollback()
+                raise
+
     def complete_historical_operation(
         self,
         *,
