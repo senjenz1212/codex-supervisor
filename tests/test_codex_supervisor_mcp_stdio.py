@@ -3320,44 +3320,51 @@ def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_provenance
     assert statuses == ["released"]
 
 
-def test_ensure_workflow_run_registration_accepts_legacy_snapshot(tmp_path):
-    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+@pytest.mark.asyncio
+async def test_start_gate_rejects_sparse_registration_before_runtime(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 
+    runner_calls = []
     state = State(str(tmp_path / "state.db"))
-    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
     state.register_run(
-        run_id="legacy-run",
-        session_id="legacy-session",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
-        task="Legacy task",
+        run_id="sparse-run",
+        session_id="",
+        rollout_path="",
+        task=None,
         scope=ScopeContract(),
-        target_kind="codex",
-        config_snapshot={"legacy_field": "yes"},
+        target_kind=None,
+        config_snapshot=None,
     )
 
-    api._ensure_workflow_run_registration(
-        run_id="legacy-run",
-        task_id="task-legacy",
-        task="Legacy task",
-        cwd=str(tmp_path),
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
     )
 
-    skip_events = [
-        json.loads(row["payload_json"])
-        for row in state._conn.execute(
-            """SELECT payload_json FROM events
-                WHERE run_id='legacy-run'
-                  AND kind='workflow_run_registration_validation_skipped'"""
-        ).fetchall()
-    ]
-    assert len(skip_events) == 1
-    assert skip_events[0]["skipped_fields"] == [
-        "cwd",
-        "target_kind",
-        "task_id",
-        "workflow_run_id",
-    ]
-    assert skip_events[0]["reason"] == "sparse_config_snapshot"
+    with pytest.raises(
+        RuntimeError,
+        match="workflow run registration session_id is missing",
+    ):
+        await _maybe_await(server.tools["start_dual_agent_gate"](
+            task_id="task-sparse",
+            run_id="sparse-run",
+            gate="prd_review",
+            instruction="Review the sparse registration.",
+            cwd=str(tmp_path),
+            expected_specialists=["Planner"],
+            expected_decisions=["accept plan"],
+            expected_objections=[],
+            planning_artifacts=_write_planning_artifacts(tmp_path),
+            required_planning_kinds=[],
+        ))
+
+    assert runner_calls == []
 
 
 def test_submit_parks_reserved_job_when_registration_fails(
@@ -3403,14 +3410,21 @@ def test_ensure_workflow_run_registration_rejects_conflicting_snapshot(tmp_path)
     api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
     state.register_run(
         run_id="conflict-run",
-        session_id="conflict-session",
-        rollout_path=str(tmp_path / "rollout.jsonl"),
+        session_id="pending:conflict-run",
+        rollout_path="pending://codex/conflict-run",
         task="Conflicting task",
         scope=ScopeContract(),
         target_kind="codex",
         config_snapshot={
+            "source": "workflow_submission",
+            "schema_version": "supervisor-run-registration/v2",
             "workflow_run_id": "conflict-run",
+            "target_session_id": None,
             "task_id": "some-other-task",
+            "target_kind": "codex",
+            "cwd": str(tmp_path.resolve()),
+            "session_id_source": "pending_runtime_receipt",
+            "completion_policy": "workflow_aggregate",
         },
     )
 

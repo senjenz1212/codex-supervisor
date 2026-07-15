@@ -189,6 +189,7 @@ from supervisor.run_registry import (
     release_launch_receipt,
     reserve_launch_receipt,
     resolve_target_session_id,
+    validate_run_registration_authority,
 )
 from supervisor.runtime_execution import (
     RuntimeTaskRunner,
@@ -5007,50 +5008,19 @@ class CodexSupervisorMcpAPI:
             raise RuntimeError(
                 f"workflow run registration is incomplete: {run_id}"
             )
-        try:
-            config_snapshot = json.loads(
-                str(existing_snapshot["config_json"] or "{}")
-            )
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                "workflow run config snapshot is not valid JSON"
-            ) from exc
-        if not isinstance(config_snapshot, dict):
-            raise RuntimeError("workflow run config snapshot is not an object")
-        expected = {
-            "workflow_run_id": str(run_id),
-            "task_id": str(task_id),
-            "target_kind": str(self.cfg.target.kind),
-            "cwd": str(Path(cwd).expanduser().resolve()),
-        }
-        skipped_fields: list[str] = []
-        for field, expected_value in expected.items():
-            observed = str(config_snapshot.get(field) or "").strip()
-            if not observed:
-                skipped_fields.append(field)
-                continue
-            if field == "cwd":
-                observed = str(Path(observed).expanduser().resolve())
-            if observed != expected_value:
-                raise RuntimeError(
-                    f"workflow run registration {field} mismatch"
-                )
-        if skipped_fields:
-            self.state.write_event(
-                run_id=run_id,
-                source="supervisor",
-                kind="workflow_run_registration_validation_skipped",
-                payload={
-                    "schema_version": (
-                        "supervisor-registration-validation-skip/v1"
-                    ),
-                    "task_id": task_id,
-                    "skipped_fields": sorted(skipped_fields),
-                    "reason": "sparse_config_snapshot",
-                    "observational_only": True,
-                    "gate_authority": "unchanged",
-                },
-            )
+        validate_run_registration_authority(
+            state=self.state,
+            run_id=run_id,
+            expected_workflow_run_id=run_id,
+            expected_task_id=task_id,
+            expected_target_kind=self.cfg.target.kind,
+            expected_cwd=cwd,
+            expected_completion_policy=(
+                WORKFLOW_AGGREGATE_COMPLETION_POLICY
+            ),
+            require_workflow_registration=True,
+        )
+
     def _register_runtime_evidence_records(
         self,
         *,

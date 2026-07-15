@@ -22,6 +22,7 @@ from supervisor.run_registry import (
     resolve_target_session_id,
 )
 from supervisor.state import State
+from supervisor.target.types import ScopeContract
 
 
 def _register(tmp_path: Path, *, session_id: str):
@@ -229,6 +230,68 @@ def test_unknown_target_session_stays_pending_until_runtime_binding(tmp_path):
         tmp_path / "registry",
         "real-session",
     )["workflow_run_id"] == "workflow-run"
+
+
+def test_launch_receipt_rejects_sparse_state_registration(tmp_path):
+    registry = (tmp_path / "registry").resolve()
+    registry.mkdir()
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="sparse-workflow",
+        session_id="pending:sparse-workflow",
+        rollout_path="pending://codex/sparse-workflow",
+        task="Do the sparse work.",
+        scope=ScopeContract(),
+        target_kind="codex",
+        config_snapshot=None,
+    )
+    pending_path = run_registry._pending_registry_path(
+        registry,
+        "sparse-workflow",
+    )
+    pending_path.write_text(
+        json.dumps({
+            "schema_version": "supervisor-run-registration/v2",
+            "workflow_run_id": "sparse-workflow",
+            "run_id": "sparse-workflow",
+            "target_session_id": None,
+            "session_id": "pending:sparse-workflow",
+            "task_id": "task-sparse",
+            "task": "Do the sparse work.",
+            "target_kind": "codex",
+            "join_key": None,
+            "session_id_source": PENDING_SESSION_SOURCE,
+            "completion_policy": "workflow_aggregate",
+            "registry_path": str(pending_path),
+            "pending": True,
+            "scope_contract": ScopeContract().to_dict(),
+            "config_snapshot": {
+                "source": "workflow_submission",
+                "schema_version": "supervisor-run-registration/v2",
+                "workflow_run_id": "sparse-workflow",
+                "target_session_id": None,
+                "task_id": "task-sparse",
+                "target_kind": "codex",
+                "cwd": str(tmp_path.resolve()),
+                "session_id_source": PENDING_SESSION_SOURCE,
+                "completion_policy": "workflow_aggregate",
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        LaunchReceiptError,
+        match="workflow run registration config snapshot is missing",
+    ):
+        reserve_launch_receipt(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id="sparse-workflow",
+            task_id="task-sparse",
+            target_kind="codex",
+            cwd=tmp_path,
+        )
 
 
 def test_ambient_client_session_is_not_target_launch_identity():

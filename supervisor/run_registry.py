@@ -81,6 +81,169 @@ class WorkflowRunRegistration:
         return payload
 
 
+def validate_run_registration_authority(
+    *,
+    state: State,
+    run_id: str,
+    expected_workflow_run_id: str | None = None,
+    expected_task_id: str | None = None,
+    expected_target_kind: str | None = None,
+    expected_cwd: str | Path | None = None,
+    expected_completion_policy: str | None = None,
+    require_workflow_registration: bool = False,
+) -> dict[str, Any]:
+    """Validate that one persisted run is complete enough to grant authority.
+
+    Legacy rows remain readable, but mere row presence never authorizes target
+    execution or evidence publication. Workflow callers additionally bind the
+    immutable submission fields they are about to rely on.
+    """
+    normalized_run_id = str(run_id).strip()
+    if not normalized_run_id:
+        raise RuntimeError("run registration run_id is missing")
+    run = state.get_run(normalized_run_id)
+    snapshot = state.get_run_snapshot(normalized_run_id)
+    label = (
+        "workflow run registration"
+        if require_workflow_registration
+        else "run registration"
+    )
+    if run is None or snapshot is None:
+        raise RuntimeError(f"{label} is incomplete: {normalized_run_id}")
+    run_payload = dict(run)
+    snapshot_payload = dict(snapshot)
+    if str(run_payload.get("run_id") or "").strip() != normalized_run_id:
+        raise RuntimeError(f"{label} run_id mismatch")
+    if str(snapshot_payload.get("run_id") or "").strip() != normalized_run_id:
+        raise RuntimeError(f"{label} snapshot run_id mismatch")
+    for field in ("session_id", "rollout_path", "task"):
+        if not str(run_payload.get(field) or "").strip():
+            raise RuntimeError(f"{label} {field} is missing")
+    snapshot_target_kind = str(
+        snapshot_payload.get("target_kind") or ""
+    ).strip()
+    if not snapshot_target_kind:
+        raise RuntimeError(f"{label} target_kind is missing")
+    try:
+        config_snapshot = json.loads(
+            str(snapshot_payload.get("config_json") or "")
+        )
+        scope_snapshot = json.loads(
+            str(snapshot_payload.get("scope_contract_json") or "")
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{label} snapshot is not valid JSON") from exc
+    if not isinstance(config_snapshot, dict) or not config_snapshot:
+        raise RuntimeError(f"{label} config snapshot is missing")
+    if not isinstance(scope_snapshot, dict):
+        raise RuntimeError(f"{label} scope snapshot is not an object")
+    try:
+        ScopeContract.from_dict(scope_snapshot)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{label} scope snapshot is invalid") from exc
+
+    workflow_source = str(config_snapshot.get("source") or "").strip()
+    is_workflow_registration = workflow_source in {
+        "workflow_submission",
+        "workflow_runtime_session",
+    }
+    if (
+        require_workflow_registration
+        and workflow_source != "workflow_submission"
+    ):
+        raise RuntimeError(f"{label} source mismatch")
+    if is_workflow_registration:
+        if config_snapshot.get("schema_version") != RUN_REGISTRATION_SCHEMA:
+            raise RuntimeError(f"{label} schema_version mismatch")
+        required_config_fields = (
+            "workflow_run_id",
+            "task_id",
+            "target_kind",
+            "cwd",
+            "session_id_source",
+            "completion_policy",
+        )
+        for field in required_config_fields:
+            if not str(config_snapshot.get(field) or "").strip():
+                raise RuntimeError(f"{label} {field} is missing")
+        if (
+            str(config_snapshot["target_kind"]).strip()
+            != snapshot_target_kind
+        ):
+            raise RuntimeError(f"{label} target_kind mismatch")
+        completion_policy = str(
+            config_snapshot["completion_policy"]
+        ).strip()
+        if completion_policy not in _COMPLETION_POLICIES:
+            raise RuntimeError(f"{label} completion_policy is invalid")
+        _resolved_cwd(config_snapshot["cwd"])
+        if workflow_source == "workflow_submission":
+            registered_workflow_run_id = str(
+                config_snapshot["workflow_run_id"]
+            ).strip()
+            if registered_workflow_run_id != normalized_run_id:
+                raise RuntimeError(f"{label} workflow_run_id mismatch")
+            session_id_source = str(
+                config_snapshot["session_id_source"]
+            ).strip()
+            if session_id_source == PENDING_SESSION_SOURCE:
+                if (
+                    str(run_payload["session_id"]).strip()
+                    != _pending_session_id(normalized_run_id)
+                ):
+                    raise RuntimeError(f"{label} pending session_id mismatch")
+                expected_rollout = (
+                    f"pending://{snapshot_target_kind}/{normalized_run_id}"
+                )
+                if str(run_payload["rollout_path"]).strip() != expected_rollout:
+                    raise RuntimeError(f"{label} pending rollout_path mismatch")
+                if str(
+                    config_snapshot.get("target_session_id") or ""
+                ).strip():
+                    raise RuntimeError(
+                        f"{label} pending target_session_id mismatch"
+                    )
+
+    expected_values = (
+        (
+            "workflow_run_id",
+            expected_workflow_run_id,
+            str(config_snapshot.get("workflow_run_id") or "").strip(),
+        ),
+        (
+            "task_id",
+            expected_task_id,
+            str(config_snapshot.get("task_id") or "").strip(),
+        ),
+        (
+            "target_kind",
+            expected_target_kind,
+            str(config_snapshot.get("target_kind") or "").strip(),
+        ),
+        (
+            "completion_policy",
+            expected_completion_policy,
+            str(config_snapshot.get("completion_policy") or "").strip(),
+        ),
+    )
+    for field, expected, observed in expected_values:
+        if expected is not None and observed != str(expected).strip():
+            raise RuntimeError(f"{label} {field} mismatch")
+    if expected_cwd is not None:
+        observed_cwd = str(config_snapshot.get("cwd") or "").strip()
+        if (
+            not observed_cwd
+            or _resolved_cwd(observed_cwd) != _resolved_cwd(expected_cwd)
+        ):
+            raise RuntimeError(f"{label} cwd mismatch")
+    return {
+        "run": run_payload,
+        "snapshot": snapshot_payload,
+        "config_snapshot": config_snapshot,
+        "scope_contract": scope_snapshot,
+    }
+
+
 @dataclass(frozen=True)
 class LaunchReceipt:
     launch_id: str
@@ -1604,6 +1767,18 @@ def _validate_pending_launch_registration(
     ).strip()
     if not registered_cwd or _resolved_cwd(registered_cwd) != cwd:
         raise LaunchReceiptError("pending workflow registration cwd mismatch")
+    try:
+        validate_run_registration_authority(
+            state=state,
+            run_id=workflow_run_id,
+            expected_workflow_run_id=workflow_run_id,
+            expected_task_id=task_id,
+            expected_target_kind=target_kind,
+            expected_cwd=cwd,
+            require_workflow_registration=True,
+        )
+    except RuntimeError as exc:
+        raise LaunchReceiptError(str(exc)) from exc
     run = state.get_run(workflow_run_id)
     if run is None:
         raise LaunchReceiptError(f"run not found: {workflow_run_id}")
