@@ -3243,6 +3243,61 @@ def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_timeout(tm
         )
 
 
+def test_start_codex_session_rejects_sparse_session_namespace_before_runtime(
+    tmp_path,
+):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        LaunchReceiptError,
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    calls: list[AgentTask] = []
+
+    def should_not_run(task: AgentTask) -> RuntimeExecution:
+        calls.append(task)
+        raise AssertionError("runtime must not start with a sparse sidecar")
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        state,
+        codex_runtime_runner=should_not_run,
+    )
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-sparse-sidecar",
+        target_session_id="",
+        task_id="task-sparse-sidecar",
+        task="Implement the slice.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    registry = Path(api.cfg.orchestrator.run_registry_dir)
+    (registry / "untrusted-session.json").write_text(
+        '{"workflow_run_id":"workflow-sparse-sidecar"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        LaunchReceiptError,
+        match="session registry contains malformed authority sidecar",
+    ):
+        api.start_codex_session(
+            prompt="Implement the slice.",
+            cwd=str(tmp_path),
+            execute=True,
+            timeout_s=30,
+            workflow_run_id="workflow-sparse-sidecar",
+            task_id="task-sparse-sidecar",
+        )
+
+    assert calls == []
+
+
 def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_provenance_failure(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
     from supervisor.run_registry import (

@@ -937,6 +937,7 @@ def reserve_launch_receipt(
     if lifetime <= 0:
         raise LaunchReceiptError("launch receipt ttl_s must be positive")
 
+    _assert_session_registry_authority_clean(registry_root)
     _validate_pending_launch_registration(
         state=state,
         registry_root=registry_root,
@@ -1732,6 +1733,106 @@ def load_session_registration(
     payload["target_session_id"] = registered_session or str(session_id)
     payload["registry_path"] = str(path)
     return payload
+
+
+def _assert_session_registry_authority_clean(registry_root: Path) -> None:
+    """Fail before launch when an existing session join is not authoritative."""
+    try:
+        entries = sorted(
+            (
+                entry
+                for entry in os.scandir(registry_root)
+                if entry.name.endswith(".json")
+                and not entry.name.startswith(".")
+            ),
+            key=lambda entry: entry.name,
+        )
+    except OSError as exc:
+        raise LaunchReceiptError(
+            "session registry namespace is unreadable"
+        ) from exc
+    for entry in entries:
+        path = registry_root / entry.name
+        payload = _read_registration_file(registry_root, path)
+        try:
+            _validate_session_registration_authority(
+                payload=payload,
+                path=path,
+            )
+        except RuntimeError as exc:
+            raise LaunchReceiptError(
+                "session registry contains malformed authority sidecar: "
+                f"{entry.name}: {exc}"
+            ) from exc
+
+
+def _validate_session_registration_authority(
+    *,
+    payload: Mapping[str, Any] | None,
+    path: Path,
+) -> None:
+    if payload is None:
+        raise RuntimeError("sidecar is unreadable")
+    if payload.get("schema_version") != RUN_REGISTRATION_SCHEMA:
+        raise RuntimeError("schema_version mismatch")
+    if payload.get("pending") is not False:
+        raise RuntimeError("pending state mismatch")
+    target_session_id = str(
+        payload.get("target_session_id") or ""
+    ).strip()
+    if not target_session_id or path.name != f"{target_session_id}.json":
+        raise RuntimeError("target_session_id mismatch")
+    for field, expected in (
+        ("session_id", target_session_id),
+        ("join_key", target_session_id),
+        ("registry_path", str(path)),
+    ):
+        if str(payload.get(field) or "").strip() != expected:
+            raise RuntimeError(f"{field} mismatch")
+    for field in (
+        "workflow_run_id",
+        "run_id",
+        "task_id",
+        "task",
+        "target_kind",
+        "session_id_source",
+        "completion_policy",
+    ):
+        if not str(payload.get(field) or "").strip():
+            raise RuntimeError(f"{field} is missing")
+    if str(payload["completion_policy"]).strip() not in _COMPLETION_POLICIES:
+        raise RuntimeError("completion_policy is invalid")
+    scope_contract = payload.get("scope_contract")
+    config_snapshot = payload.get("config_snapshot")
+    if not isinstance(scope_contract, dict):
+        raise RuntimeError("scope_contract is missing")
+    if not isinstance(config_snapshot, dict) or not config_snapshot:
+        raise RuntimeError("config_snapshot is missing")
+    try:
+        ScopeContract.from_dict(scope_contract)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("scope_contract is invalid") from exc
+    if config_snapshot.get("schema_version") != RUN_REGISTRATION_SCHEMA:
+        raise RuntimeError("config_snapshot schema_version mismatch")
+    if str(config_snapshot.get("source") or "").strip() not in {
+        "workflow_submission",
+        "workflow_runtime_session",
+    }:
+        raise RuntimeError("config_snapshot source mismatch")
+    for field in (
+        "workflow_run_id",
+        "task_id",
+        "target_kind",
+        "cwd",
+        "session_id_source",
+        "completion_policy",
+    ):
+        if not str(config_snapshot.get(field) or "").strip():
+            raise RuntimeError(f"config_snapshot {field} is missing")
+    for field in ("workflow_run_id", "task_id", "target_kind"):
+        if str(config_snapshot[field]).strip() != str(payload[field]).strip():
+            raise RuntimeError(f"config_snapshot {field} mismatch")
+    _resolved_cwd(config_snapshot["cwd"])
 
 
 def _validate_pending_launch_registration(
