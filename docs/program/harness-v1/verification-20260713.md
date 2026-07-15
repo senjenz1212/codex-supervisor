@@ -88,6 +88,53 @@ make test-projection-registry
 
 The claim boundary below is unchanged by that re-run.
 
+The final adversarial review-hardening tree is pinned by:
+
+```text
+3db6a8ed965ea0c4df2d58d8029c2f2863a9a5f5
+```
+
+The following verification ran on July 15, 2026 against the identical tree
+immediately before that commit was created:
+
+```text
+uv run pytest -q
+2835 passed, 33 skipped in 2105.87s
+
+uv run pytest --collect-only -q
+2868 tests collected in 0.93s
+
+make test-projection-registry
+7 exact hermetic projection proofs passed
+48 PostgreSQL conformance tests passed
+6 registered PostgreSQL projection proofs were present in the exact manifest
+
+uv run python -m compileall -q supervisor mcp_tools scripts tests
+git diff --check
+both passed
+```
+
+This pass closes the review findings without raising the claim ceiling:
+
+- decision verdict publication and outbox acknowledgement are one transaction,
+  lease identity is fenced, and claim/settlement clocks are sampled only after
+  SQLite has acquired the database write lock;
+- legacy SQLite databases add `verdicts.decision_id` before creating its
+  unique index, and oversized quality-projection evidence backfills require
+  explicit offline maintenance;
+- runtime cancellation is bounded and unconfirmed cleanup quarantines the
+  workspace instead of racing teardown;
+- provider adapters keep sync compatibility without blocking the event loop,
+  historical redaction uses the exact pinned ruleset, evidence-committer
+  connections close deterministically, and rollout drain locks do not leak;
+  and
+- malformed Unity verifier results fail closed while valid independent
+  `passed` and normalized score fields remain intact.
+
+These are integrity, replay, and process-assurance improvements. They are not
+benchmark evidence that the harness improves coding outcomes. PILOT-001 and
+every higher claim remain blocked by the prerequisites below.
+
 Final full-suite command:
 
 ```text
