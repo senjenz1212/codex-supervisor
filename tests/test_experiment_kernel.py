@@ -2574,7 +2574,7 @@ async def test_restart_quarantines_orphan_and_failed_terminal_refs_it(
     repaired = next(
         outcome for outcome in result.outcomes if outcome.status == "failed"
     )
-    assert repaired.grade.evidence[
+    assert repaired.grade.to_dict()["evidence"][
         "reconciled_orphaned_passing_grades"
     ] == [
         {

@@ -1,0 +1,60 @@
+schema_version: harness-evidence-projection-registry/v1
+scope: evidence_authoritative_only
+claim: >-
+  Every projection listed in this registry has a deterministic ledger rebuild
+  and an executable proof. Unlisted materialized tables are not covered by the
+  LEDGER-001 rebuildability claim.
+verification_command: make test-projection-registry
+registry_proof:
+  - tests/test_projection_registry.py::test_projection_registry_limits_and_binds_the_rebuildability_claim
+projections:
+  - id: supervisor-quality-trends
+    schema_version: quality-trend-projection/v1
+    source_events:
+      - supervisor_quality_trend_projection
+    reducer: supervisor.quality_projection:rebuild_quality_trend_projection
+    sqlite_rebuilder: supervisor.state:State.rebuild_quality_trend_projection_from_ledger
+    postgres_rebuilder: supervisor.postgres_state:PostgresState.rebuild_quality_trend_projection_from_ledger
+    authority_inventory:
+      type: external_exact_stream_checkpoint_pins
+      parameter: expected_stream_checkpoint_pins
+      scope: projection_bearing_run_ids_only
+      empty_inventory_allowed: false
+    maintenance_concurrency:
+      sqlite: begin_immediate
+      postgres: writer_ordered_table_locks
+    proof:
+      - tests/test_evidence_ledger_hardening.py::test_actual_quality_projection_rebuilds_byte_identically_from_ledger
+      - tests/test_evidence_ledger_hardening.py::test_quality_projection_rebuild_rejects_empty_expected_inventory
+      - tests/test_evidence_ledger_hardening.py::test_quality_projection_rebuild_repairs_one_deleted_row_from_inventory
+      - tests/test_evidence_ledger_hardening.py::test_quality_projection_rebuild_rejects_deleted_expected_stream
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_matches_ledger
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_rejects_empty_expected_inventory
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_repairs_deleted_row
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_rejects_deleted_expected_stream
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_serializes_concurrent_new_stream
+      - tests/test_postgres_ledger_lane.py::test_postgres_quality_projection_rebuild_avoids_existing_stream_deadlock
+    status: verified
+  - id: harness-tracer
+    schema_version: harness-tracer-projection/v1
+    source_events:
+      - tracer.submitted
+      - tracer.matrix.frozen
+      - tracer.assignment.persisted
+      - tracer.execution.joined
+      - tracer.trace.closed
+      - tracer.claim.authorized
+      - tracer.completed
+    reducer: supervisor.evidence_committer:reduce_tracer_evidence_projection
+    initial: supervisor.evidence_committer:initial_tracer_evidence_projection
+    persistence_semantics: post_execution_stage_projection
+    pre_execution_attested: false
+    proof:
+      - tests/test_evidence_committer.py::test_evidence_commit_resumes_idempotently_and_fails_closed
+      - tests/test_tracer_001_e2e.py::test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above
+    status: verified
+excluded_scope:
+  - operational databases, caches, queues, and convenience materializations
+    that have not been registered above
+  - rollback-independent external anchoring, which remains a deployment
+    prerequisite

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import subprocess
 from pathlib import Path
@@ -439,7 +440,7 @@ def test_unity_verifier_declares_hidden_root_as_protected(
 
 
 @pytest.mark.asyncio
-async def test_legacy_swebench_verifier_delegates_without_status_rewrite(
+async def test_legacy_swebench_verifier_cannot_authorize_passing_grade(
     tmp_path: Path,
 ) -> None:
     observed: list[dict[str, object]] = []
@@ -467,25 +468,29 @@ async def test_legacy_swebench_verifier_delegates_without_status_rewrite(
         oracle_runner=official_oracle,
     ).verify(frozen)
 
-    assert grade.passed is True
-    assert grade.score == 1.0
+    assert grade.passed is False
+    assert grade.score == 0.0
+    assert grade.verifier_id == "legacy-unattested-swebench"
+    assert grade.failure_classification == "legacy_unattested_verifier"
     assert observed[0]["model_patch"] == frozen.patch
     assert grade.evidence["oracle_adapter_receipt"] == {"official": True}
+    assert grade.evidence["authority_eligible"] is False
+    assert grade.evidence["legacy_unattested"] is True
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("status", "expected_passed"),
+    ("status", "expected_failure_classification"),
     [
-        ("pass", True),
-        ("passed", True),
-        ("fail", False),
-        ("unavailable", False),
+        ("pass", "legacy_unattested_verifier"),
+        ("passed", "legacy_unattested_verifier"),
+        ("fail", "official_tests_failed"),
+        ("unavailable", "verifier_infrastructure_unavailable"),
     ],
 )
-async def test_legacy_swebench_verifier_preserves_official_status_semantics(
+async def test_legacy_swebench_verifier_is_always_authority_ineligible(
     status: str,
-    expected_passed: bool,
+    expected_failure_classification: str,
 ) -> None:
     frozen = FrozenTaskResult.create(
         task_id="swe-task",
@@ -506,8 +511,39 @@ async def test_legacy_swebench_verifier_preserves_official_status_semantics(
         },
     ).verify(frozen)
 
-    assert grade.passed is expected_passed
-    assert grade.score == (1.0 if expected_passed else 0.0)
+    assert grade.passed is False
+    assert grade.score == 0.0
+    assert grade.failure_classification == expected_failure_classification
+    assert grade.evidence["authority_eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_legacy_swebench_verifier_cannot_pass_when_oracle_unavailable():
+    frozen = FrozenTaskResult.create(
+        task_id="swe-task",
+        task_family="swebench",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="diff --git a/a b/a\n",
+        output="done",
+        metadata={"instance_id": "repo__issue-1"},
+    )
+
+    grade = await LegacyEnvironmentSelectedSweBenchVerifier(
+        verifier_version="swebench-4.1",
+        verifier_hash="official-harness-sha",
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_unavailable": True,
+        },
+    ).verify(frozen)
+
+    assert grade.passed is False
+    assert grade.score == 0.0
+    assert grade.failure_classification == (
+        "verifier_infrastructure_unavailable"
+    )
 
 
 @pytest.mark.asyncio
@@ -568,6 +604,104 @@ def test_grade_rejects_empty_verifier_version() -> None:
             score=0.0,
             evidence={},
         )
+
+
+def test_grade_evidence_is_detached_and_deeply_immutable() -> None:
+    source = {
+        "receipt": {
+            "outcomes": [{"status": "pass"}],
+        },
+    }
+    grade = Grade(
+        verifier_id="hidden",
+        verifier_version="1",
+        verifier_hash="a" * 64,
+        frozen_result_hash="b" * 64,
+        passed=True,
+        score=1.0,
+        evidence=source,
+    )
+
+    source["receipt"]["outcomes"][0]["status"] = "tampered"
+    source["receipt"]["outcomes"].append({"status": "forged"})
+
+    assert grade.evidence["receipt"]["outcomes"][0]["status"] == "pass"
+    assert len(grade.evidence["receipt"]["outcomes"]) == 1
+    with pytest.raises(TypeError):
+        grade.evidence["receipt"]["outcomes"][0]["status"] = "tampered"
+    with pytest.raises(TypeError):
+        grade.evidence["receipt"]["outcomes"][0] = {"status": "tampered"}
+
+
+def test_grade_to_dict_returns_a_deep_safe_copy_with_list_semantics() -> None:
+    evidence = {
+        "receipt": {
+            "outcomes": [{"status": "pass"}],
+        },
+    }
+    grade = Grade(
+        verifier_id="hidden",
+        verifier_version="1",
+        verifier_hash="a" * 64,
+        frozen_result_hash="b" * 64,
+        passed=True,
+        score=1.0,
+        evidence=evidence,
+    )
+
+    serialized = grade.to_dict()
+
+    assert serialized["evidence"] == evidence
+    assert isinstance(serialized["evidence"]["receipt"]["outcomes"], list)
+    serialized["evidence"]["receipt"]["outcomes"][0]["status"] = "tampered"
+    serialized["evidence"]["receipt"]["outcomes"].append(
+        {"status": "forged"}
+    )
+
+    assert grade.to_dict()["evidence"] == evidence
+
+
+@pytest.mark.parametrize(
+    "unsupported",
+    (
+        {"tag"},
+        bytearray(b"mutable"),
+        object(),
+    ),
+)
+def test_grade_rejects_non_json_evidence_leaves(
+    unsupported: object,
+) -> None:
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        Grade(
+            verifier_id="hidden",
+            verifier_version="1",
+            verifier_hash="a" * 64,
+            frozen_result_hash="b" * 64,
+            passed=True,
+            score=1.0,
+            evidence={"unsupported": unsupported},
+        )
+
+
+def test_grade_to_dict_is_json_serializable() -> None:
+    grade = Grade(
+        verifier_id="hidden",
+        verifier_version="1",
+        verifier_hash="a" * 64,
+        frozen_result_hash="b" * 64,
+        passed=True,
+        score=1.0,
+        evidence={
+            "receipt": {
+                "outcomes": [{"status": "pass"}],
+                "ratio": 0.5,
+                "optional": None,
+            },
+        },
+    )
+
+    assert json.loads(json.dumps(grade.to_dict())) == grade.to_dict()
 
 
 def test_canonical_task_identity_collapses_repo_and_task_aliases() -> None:

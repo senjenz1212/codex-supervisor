@@ -42,6 +42,8 @@ except ImportError:  # pragma: no cover - secure snapshots fail closed below
 from .evidence_ledger import (
     ArtifactIntegrityError,
     ContentAddressedArtifactStore,
+    EVIDENCE_COMMIT_EVENT_KIND,
+    EVIDENCE_COMMIT_EVENT_SOURCE,
     LedgerVerification,
     _absolute_no_follow_path,
     _append_only_file_at,
@@ -92,10 +94,12 @@ from .trace_graph import (
 )
 
 
-EVIDENCE_COMMIT_SCHEMA_VERSION = "harness-evidence-commit/v1"
-EVIDENCE_COMMIT_EVENT_KIND = "harness.evidence.committed"
+EVIDENCE_COMMIT_SCHEMA_VERSION = "harness-evidence-commit/v2"
 TRACER_PROJECTION_SCHEMA_VERSION = "harness-tracer-projection/v1"
 SQLITE_EXPORT_SCHEMA_VERSION = "harness-sqlite-export/v1"
+TRACE_LIFECYCLE_PERSISTENCE_SEMANTICS = (
+    "post_execution_stage_projection"
+)
 
 _PHASES = (
     "initialized",
@@ -360,6 +364,8 @@ def _trace_lifecycle_identity(
         )
     return {
         "schema_version": TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
+        "persistence_semantics": TRACE_LIFECYCLE_PERSISTENCE_SEMANTICS,
+        "pre_execution_attested": False,
         "stages": [revision.stage.value for revision in ordered],
         "revision_hashes": [
             revision.revision_hash for revision in ordered
@@ -668,6 +674,9 @@ class EvidenceCommitter:
         ):
             pass
         self.state = state
+        self._event_write_capability = (
+            self.state._bind_evidence_commit_writer(self)
+        )
         self.experiment_db_path = _absolute_no_follow_path(
             experiment_db_path
         )
@@ -709,7 +718,7 @@ class EvidenceCommitter:
                 row["precommit_heads_json"],
                 field="precommit_heads_json",
             )
-            self._persist_planning_skeleton(
+            self._persist_planning_projection(
                 request,
                 prior_phase=str(row["phase"]),
             )
@@ -780,6 +789,7 @@ class EvidenceCommitter:
                 trusted_checkpoint_pins=trusted_checkpoint_pins,
             )
             result_summary = {
+                "schema_version": EVIDENCE_COMMIT_SCHEMA_VERSION,
                 "request_hash": request_hash,
                 "artifact_manifest_hash": materialization[
                     "artifact_manifest"
@@ -832,23 +842,17 @@ class EvidenceCommitter:
         try:
             with TraceGraphStore(self.trace_store_path) as store:
                 lifecycle = store.list_lifecycle_revisions()
-                if lifecycle and tuple(
+                if tuple(
                     revision.stage for revision in lifecycle
                 ) != tuple(TraceLifecycleStage):
                     raise EvidenceCommitIntegrityError(
                         "completed evidence lacks the exact trace lifecycle"
                     )
-                trace_lifecycle_identity = (
-                    _trace_lifecycle_identity(lifecycle)
-                    if lifecycle
-                    else None
+                trace_lifecycle_identity = _trace_lifecycle_identity(
+                    lifecycle
                 )
-                committed_graph = (
-                    store.load_lifecycle_revision(
-                        TraceLifecycleStage.DECISION
-                    )
-                    if lifecycle
-                    else None
+                committed_graph = store.load_lifecycle_revision(
+                    TraceLifecycleStage.DECISION
                 )
                 live_graph = store.load()
         except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
@@ -899,7 +903,6 @@ class EvidenceCommitter:
             graph=graph,
             closure=closure,
             trace_lifecycle_identity=trace_lifecycle_identity,
-            allow_legacy_manifest_attestation=True,
         )
         materialized_attestation = materialization.get(
             "artifact_manifest_attestation_identity"
@@ -932,7 +935,9 @@ class EvidenceCommitter:
             )
         )
         if (
-            result_summary.get("request_hash") != request_hash
+            result_summary.get("schema_version")
+            != EVIDENCE_COMMIT_SCHEMA_VERSION
+            or result_summary.get("request_hash") != request_hash
             or result_summary.get("artifact_manifest_hash")
             != materialization["artifact_manifest"]["manifest_hash"]
             or attestation_mismatch
@@ -941,8 +946,8 @@ class EvidenceCommitter:
             != materialization["projection_sha256"]
         ):
             raise EvidenceCommitIntegrityError(
-                "completed evidence result does not match its pinned "
-                "materialization"
+                "completed evidence result schema version or authority does "
+                "not match its pinned materialization"
             )
         trusted_checkpoint_pins = self._checkpoint_pin_mapping(
             result_summary.get("trusted_checkpoint_pins"),
@@ -1749,19 +1754,24 @@ class EvidenceCommitter:
             source_terminal_commits.append(authority_commit)
         return tuple(source_terminal_commits)
 
-    def _persist_planning_skeleton(
+    def _persist_planning_projection(
         self,
         request: EvidenceCommitRequest,
         *,
         prior_phase: str,
     ) -> TraceLifecycleRevision:
-        """Pin the planning-only trace before consulting terminal grades."""
+        """Persist the planning projection first within the commit workflow.
+
+        The input graph and grades are already frozen. This ordering proves
+        structural stage partitioning, not pre-execution wall-clock chronology.
+        """
         planning = request.trace_graph.lifecycle_revision(
             TraceLifecycleStage.PLANNING
         )
         if not planning.nodes:
             raise EvidenceCommitIntegrityError(
-                "trace planning skeleton must contain immutable planning nodes"
+                "trace planning projection must contain immutable planning "
+                "nodes"
             )
         try:
             with TraceGraphStore(self.trace_store_path) as store:
@@ -1772,8 +1782,8 @@ class EvidenceCommitter:
                     >= _PHASE_INDEX["grades_verified"]
                 ):
                     raise TraceGraphError(
-                        "refusing to fabricate a historical planning "
-                        "precommit after terminal grades were verified"
+                        "refusing to reconstruct a missing planning "
+                        "projection after evidence-commit grade verification"
                     )
                 return store.append_lifecycle_revision(
                     TraceLifecycleStage.PLANNING,
@@ -1781,7 +1791,7 @@ class EvidenceCommitter:
                 )
         except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
             raise EvidenceCommitIntegrityError(
-                "trace planning precommit failed closed: "
+                "trace planning projection failed closed: "
                 f"{exc}"
             ) from exc
 
@@ -2454,8 +2464,14 @@ class EvidenceCommitter:
         graph: TraceGraph,
         closure: ClosureResult,
         trace_lifecycle_identity: Mapping[str, Any] | None,
-        allow_legacy_manifest_attestation: bool = False,
     ) -> None:
+        if (
+            materialization.get("schema_version")
+            != EVIDENCE_COMMIT_SCHEMA_VERSION
+        ):
+            raise EvidenceCommitIntegrityError(
+                "persisted materialization schema version is unsupported"
+            )
         manifest = materialization.get("artifact_manifest")
         if not isinstance(manifest, Mapping):
             raise EvidenceCommitIntegrityError(
@@ -2464,11 +2480,14 @@ class EvidenceCommitter:
         metadata = manifest.get("metadata")
         if (
             not isinstance(metadata, Mapping)
+            or metadata.get("schema_version")
+            != EVIDENCE_COMMIT_SCHEMA_VERSION
             or metadata.get("commit_id") != request.commit_id
             or metadata.get("request_hash") != request_hash
         ):
             raise EvidenceCommitIntegrityError(
-                "persisted artifact manifest identity mismatch"
+                "persisted artifact manifest schema version or identity "
+                "mismatch"
             )
         self.artifact_store.verify_manifest(manifest)
         manifest_has_trace_lifecycle = "trace_lifecycle" in metadata
@@ -2518,9 +2537,13 @@ class EvidenceCommitter:
                     "attestation evidence"
                 )
             try:
+                canonical_manifest_bytes = canonical_json_bytes(manifest)
                 verify_artifact_manifest_attestation(
                     attestation,
                     manifest=manifest,
+                    manifest_bytes=self.artifact_store.read_bytes(
+                        sha256_hex(canonical_manifest_bytes)
+                    ),
                     verifier=self.verifier,
                 )
             except (ArtifactIntegrityError, TypeError, ValueError) as exc:
@@ -2541,7 +2564,7 @@ class EvidenceCommitter:
                 raise EvidenceCommitIntegrityError(
                     "persisted artifact manifest attestation identity mismatch"
                 )
-        elif not allow_legacy_manifest_attestation:
+        else:
             raise EvidenceCommitIntegrityError(
                 "persisted materialization lacks a manifest attestation"
             )
@@ -2652,16 +2675,15 @@ class EvidenceCommitter:
                     "outbox"
                 ) from exc
 
-    def _append_or_verify_manifest_event(
+    def _manifest_event_payload(
         self,
         *,
         request: EvidenceCommitRequest,
         request_hash: str,
         materialization: Mapping[str, Any],
-        precommit_heads: Mapping[str, Any],
     ) -> dict[str, Any]:
         manifest = materialization["artifact_manifest"]
-        payload = {
+        return {
             "schema_version": EVIDENCE_COMMIT_SCHEMA_VERSION,
             "commit_id": request.commit_id,
             "request_hash": request_hash,
@@ -2681,6 +2703,21 @@ class EvidenceCommitter:
             },
             "state_snapshot_cut": "before_artifact_manifest_event",
         }
+
+    def _append_or_verify_manifest_event(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        request_hash: str,
+        materialization: Mapping[str, Any],
+        precommit_heads: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        manifest = materialization["artifact_manifest"]
+        payload = self._manifest_event_payload(
+            request=request,
+            request_hash=request_hash,
+            materialization=materialization,
+        )
         detail: dict[str, Any]
         existing: dict[str, Any]
         with self._lock, self._outbox_connection() as conn:
@@ -2696,11 +2733,10 @@ class EvidenceCommitter:
                     request=request,
                     precommit_heads=precommit_heads,
                 )
-                event_id = self.state.write_event(
+                event_id = self.state.write_evidence_commit_event(
                     run_id=request.aggregate_run_id,
-                    source="evidence_committer",
-                    kind=EVIDENCE_COMMIT_EVENT_KIND,
                     payload=payload,
+                    capability=self._event_write_capability,
                     ts=request.manifest_event_ts,
                 )
                 observed = next(
@@ -2760,47 +2796,29 @@ class EvidenceCommitter:
             raise EvidenceCommitIntegrityError(
                 "artifact-manifest event payload is invalid"
             )
+        try:
+            self.state.assert_evidence_commit_event_authority(
+                run_id=request.aggregate_run_id,
+                commit_id=request.commit_id,
+                event_id=int(event["event_id"]),
+            )
+        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "artifact-manifest event authority claim is invalid"
+            ) from exc
         expected_manifest = materialization["artifact_manifest"]
-        expected_attestation_identity = materialization.get(
-            "artifact_manifest_attestation_identity"
-        )
-        expected_trace_lifecycle = materialization.get("trace_lifecycle")
-        event_has_attestation = (
-            "artifact_manifest_attestation" in payload
-        )
-        attestation_mismatch = (
-            event_has_attestation
-            if expected_attestation_identity is None
-            else (
-                not event_has_attestation
-                or canonical_json_bytes(
-                    payload.get("artifact_manifest_attestation")
-                )
-                != canonical_json_bytes(expected_attestation_identity)
-            )
-        )
-        event_has_lifecycle = "trace_lifecycle" in payload
-        lifecycle_mismatch = (
-            event_has_lifecycle
-            if expected_trace_lifecycle is None
-            else (
-                not event_has_lifecycle
-                or canonical_json_bytes(payload.get("trace_lifecycle"))
-                != canonical_json_bytes(expected_trace_lifecycle)
-            )
+        expected_payload = self._manifest_event_payload(
+            request=request,
+            request_hash=request_hash,
+            materialization=materialization,
         )
         if (
             event.get("kind") != EVIDENCE_COMMIT_EVENT_KIND
-            or payload.get("commit_id") != request.commit_id
-            or payload.get("request_hash") != request_hash
-            or canonical_json_bytes(payload.get("artifact_manifest"))
-            != canonical_json_bytes(expected_manifest)
-            or payload.get("artifact_manifest_hash")
-            != expected_manifest["manifest_hash"]
+            or event.get("source") != EVIDENCE_COMMIT_EVENT_SOURCE
+            or canonical_json_bytes(payload)
+            != canonical_json_bytes(expected_payload)
             or event.get("artifact_manifest_hash")
             != expected_manifest["manifest_hash"]
-            or attestation_mismatch
-            or lifecycle_mismatch
         ):
             raise EvidenceCommitConflict(
                 "existing artifact-manifest event conflicts with commit input"

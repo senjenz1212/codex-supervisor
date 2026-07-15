@@ -233,8 +233,17 @@ async def test_captured_nested_claude_rollout_reaches_turn_terminal_only(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_kind", "fixture_name"),
+    (
+        ("codex", "codex_nested_terminal.jsonl"),
+        ("claude_code", "claude_nested_terminal.jsonl"),
+    ),
+)
 async def test_workflow_owned_single_turn_terminalizes_once_across_restart(
     tmp_path,
+    target_kind,
+    fixture_name,
 ):
     target_session_id = "019f52a1-aaaa-7bbb-8ccc-111111111111"
     workflow_run_id = "workflow-owned-single-turn"
@@ -257,7 +266,7 @@ async def test_workflow_owned_single_turn_terminalizes_once_across_restart(
         target_session_id=target_session_id,
         task_id="obs-workflow-owned-single-turn",
         task="Complete exactly one workflow-owned target turn.",
-        target_kind="codex",
+        target_kind=target_kind,
         cwd=tmp_path,
         gate="execution",
         runtime_run_id="runtime-owned-single-turn",
@@ -269,7 +278,7 @@ async def test_workflow_owned_single_turn_terminalizes_once_across_restart(
 
     sessions_root, registry_dir, rollout = _captured_rollout(
         tmp_path=tmp_path,
-        fixture_name="codex_nested_terminal.jsonl",
+        fixture_name=fixture_name,
         session_id=target_session_id,
         captured_cwd=tmp_path,
     )

@@ -1606,12 +1606,19 @@ import time
 from pathlib import Path
 
 def on_term(_signum, _frame):
-    subprocess.Popen(
+    child = subprocess.Popen(
         [sys.executable, "-c", sys.argv[1], sys.argv[3]],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         close_fds=True,
     )
+    deadline = time.monotonic() + 2
+    while (
+        time.monotonic() < deadline
+        and not Path(sys.argv[3]).exists()
+        and child.poll() is None
+    ):
+        time.sleep(0.005)
     raise SystemExit(0)
 
 signal.signal(signal.SIGTERM, on_term)

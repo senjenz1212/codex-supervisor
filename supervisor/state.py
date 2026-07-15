@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from .evidence_ledger import (
+    EVIDENCE_COMMIT_EVENT_KIND,
+    EVIDENCE_COMMIT_EVENT_SOURCE,
     NATIVE_GENESIS,
     LedgerVerification,
     build_ledger_fields,
@@ -113,9 +115,23 @@ def assert_historical_operation_event_source(
 
 def assert_public_event_kind_allowed(kind: str) -> None:
     """Keep capability-owned historical events off the generic write surface."""
+    if str(kind) == EVIDENCE_COMMIT_EVENT_KIND:
+        raise ValueError(
+            "reserved evidence-commit event requires the dedicated writer"
+        )
     if str(kind).startswith(HISTORICAL_OPERATION_EVENT_PREFIX):
         raise ValueError(
             "historical operation events require the dedicated writer"
+        )
+
+
+def _assert_evidence_committer_owner(owner: Any) -> None:
+    """Limit capability binding to the exact trusted committer implementation."""
+    from .evidence_committer import EvidenceCommitter
+
+    if type(owner) is not EvidenceCommitter:
+        raise PermissionError(
+            "evidence-commit write capability requires EvidenceCommitter"
         )
 
 
@@ -895,6 +911,7 @@ class State:
         self._conn.commit()
         self._lock = asyncio.Lock()
         self._write_lock = threading.RLock()
+        self.__evidence_commit_write_capability = object()
         self._decision_wakeup = asyncio.Event()
         self._decision_worker_id = (
             f"state-{os.getpid()}-{uuid.uuid4().hex}"
@@ -1305,6 +1322,87 @@ class State:
             ts=ts,
         )
 
+    def write_evidence_commit_event(
+        self,
+        *,
+        run_id: str,
+        payload: dict[str, Any],
+        capability: object,
+        ts: int | None = None,
+    ) -> int:
+        """Append the capability-owned evidence-commit authority event."""
+        if capability is not self.__evidence_commit_write_capability:
+            raise PermissionError("invalid evidence-commit write capability")
+        commit_id = str(payload.get("commit_id") or "").strip()
+        if not commit_id:
+            raise ValueError("evidence-commit payload requires commit_id")
+        return self.write_event_once(
+            run_id=run_id,
+            source=EVIDENCE_COMMIT_EVENT_SOURCE,
+            kind=EVIDENCE_COMMIT_EVENT_KIND,
+            payload=payload,
+            idempotency_key=(
+                "evidence-commit:"
+                + canonical_payload_hash({"commit_id": commit_id})
+            ),
+            ts=ts,
+            _reserved_capability=capability,
+        )
+
+    def _bind_evidence_commit_writer(self, owner: Any) -> object:
+        """Return this state instance's unforgeable writer capability."""
+        _assert_evidence_committer_owner(owner)
+        return self.__evidence_commit_write_capability
+
+    def assert_evidence_commit_event_authority(
+        self,
+        *,
+        run_id: str,
+        commit_id: str,
+        event_id: int,
+    ) -> None:
+        """Require a manifest event to have the committer-owned exact claim."""
+        normalized_commit_id = str(commit_id).strip()
+        if not normalized_commit_id:
+            raise ValueError("evidence-commit authority requires commit_id")
+        idempotency_key = (
+            "evidence-commit:"
+            + canonical_payload_hash({"commit_id": normalized_commit_id})
+        )
+        with self._write_lock:
+            row = self._conn.execute(
+                """SELECT c.event_id AS claim_event_id,
+                          c.source AS claim_source,
+                          c.payload_sha256 AS claim_payload_sha256,
+                          e.source AS event_source,
+                          e.kind AS event_kind,
+                          e.canonical_payload_hash AS event_payload_sha256
+                     FROM event_idempotency_claims AS c
+                     JOIN events AS e
+                       ON e.run_id=c.run_id
+                      AND e.event_id=c.event_id
+                    WHERE c.run_id=?
+                      AND c.kind=?
+                      AND c.idempotency_key=?""",
+                (
+                    str(run_id),
+                    EVIDENCE_COMMIT_EVENT_KIND,
+                    idempotency_key,
+                ),
+            ).fetchone()
+        if (
+            row is None
+            or int(row["claim_event_id"]) != int(event_id)
+            or str(row["claim_source"]) != EVIDENCE_COMMIT_EVENT_SOURCE
+            or str(row["event_source"]) != EVIDENCE_COMMIT_EVENT_SOURCE
+            or str(row["event_kind"]) != EVIDENCE_COMMIT_EVENT_KIND
+            or str(row["claim_payload_sha256"])
+            != str(row["event_payload_sha256"])
+        ):
+            raise RuntimeError(
+                "evidence-commit event lacks its exact authority claim"
+            )
+
     def write_event_once(
         self,
         *,
@@ -1314,6 +1412,7 @@ class State:
         payload: dict[str, Any],
         idempotency_key: str,
         ts: int | None = None,
+        _reserved_capability: object | None = None,
     ) -> int:
         """Append one exact event or return its existing durable identity.
 
@@ -1322,7 +1421,20 @@ class State:
         source or payload is an authority discrepancy, not an idempotent retry.
         """
         assert_generic_event_kind_allowed(kind)
-        assert_public_event_kind_allowed(kind)
+        if str(kind) == EVIDENCE_COMMIT_EVENT_KIND:
+            if (
+                _reserved_capability
+                is not self.__evidence_commit_write_capability
+            ):
+                raise PermissionError(
+                    "invalid evidence-commit write capability"
+                )
+            if str(source) != EVIDENCE_COMMIT_EVENT_SOURCE:
+                raise ValueError(
+                    "evidence-commit event requires its dedicated source"
+                )
+        else:
+            assert_public_event_kind_allowed(kind)
         normalized_key = str(idempotency_key).strip()
         if not normalized_key:
             raise ValueError("event idempotency_key must be non-empty")
@@ -2356,20 +2468,50 @@ class State:
         replace: bool = False,
         checkpoint_store: Any | None = None,
         verifier: Any | None = None,
-        trusted_checkpoint_pins: (
+        expected_stream_checkpoint_pins: (
             Mapping[str, Mapping[str, Any]] | None
         ) = None,
     ) -> list[dict[str, Any]]:
         if (
             checkpoint_store is None
             or verifier is None
-            or trusted_checkpoint_pins is None
+            or expected_stream_checkpoint_pins is None
         ):
             raise RuntimeError(
                 "quality trend projection rebuild requires authoritative "
-                "checkpoint pins"
+                "checkpoint pins for expected streams"
             )
-        from .ledger_checkpoints import verify_authoritative_event_chain
+        from .ledger_checkpoints import (
+            normalize_checkpoint_identity,
+            verify_authoritative_event_chain,
+        )
+
+        expected_pins: dict[str, dict[str, Any]] = {}
+        for raw_run_id, raw_identity in (
+            expected_stream_checkpoint_pins.items()
+        ):
+            run_id = str(raw_run_id).strip()
+            if not run_id or run_id in expected_pins:
+                raise RuntimeError(
+                    "quality trend expected stream inventory is invalid"
+                )
+            try:
+                identity = normalize_checkpoint_identity(raw_identity)
+            except Exception as exc:
+                raise RuntimeError(
+                    "quality trend expected checkpoint identity is invalid "
+                    f"for {run_id}"
+                ) from exc
+            if str(identity["run_id"]) != run_id:
+                raise RuntimeError(
+                    "quality trend expected checkpoint run_id mismatch for "
+                    f"{run_id}"
+                )
+            expected_pins[run_id] = identity
+        if not expected_pins:
+            raise RuntimeError(
+                "quality trend expected stream inventory must be non-empty"
+            )
 
         with self._write_lock:
             self._conn.execute("BEGIN IMMEDIATE")
@@ -2381,9 +2523,21 @@ class State:
                         ORDER BY run_id ASC""",
                     (QUALITY_TREND_PROJECTION_EVENT,),
                 ).fetchall()
+                observed_run_ids = {
+                    str(run_row["run_id"])
+                    for run_row in run_rows
+                }
+                unexpected = sorted(
+                    observed_run_ids - set(expected_pins)
+                )
+                if unexpected:
+                    raise RuntimeError(
+                        "quality trend ledger contains streams absent from "
+                        "the expected inventory: "
+                        + ", ".join(unexpected)
+                    )
                 events: list[dict[str, Any]] = []
-                for run_row in run_rows:
-                    run_id = str(run_row["run_id"])
+                for run_id in sorted(expected_pins):
                     rows = self._conn.execute(
                         """SELECT event_id, run_id, event_sequence, ts,
                                   source, kind, payload_json,
@@ -2396,18 +2550,26 @@ class State:
                             ORDER BY event_sequence ASC""",
                         (run_id,),
                     ).fetchall()
-                    trusted = trusted_checkpoint_pins.get(run_id)
                     verification = verify_authoritative_event_chain(
                         rows,
                         expected_run_id=run_id,
                         checkpoint_store=checkpoint_store,
                         verifier=verifier,
-                        trusted_latest_checkpoint=trusted,
+                        trusted_latest_checkpoint=expected_pins[run_id],
                     )
                     if not verification.valid:
                         raise RuntimeError(
                             "quality trend ledger verification failed for "
                             f"{run_id}: {verification.failure_code}"
+                        )
+                    if not any(
+                        str(row["kind"])
+                        == QUALITY_TREND_PROJECTION_EVENT
+                        for row in rows
+                    ):
+                        raise RuntimeError(
+                            "quality trend expected stream contains no "
+                            f"projection event: {run_id}"
                         )
                     events.extend(
                         {
@@ -2421,20 +2583,6 @@ class State:
                         for row in rows
                     )
                 rebuilt = rebuild_quality_trend_projection(events)
-                current = self.quality_trend_projection_snapshot()
-                rebuilt_keys = {
-                    (str(row["run_id"]), str(row["gate"]))
-                    for row in rebuilt
-                }
-                current_keys = {
-                    (str(row["run_id"]), str(row["gate"]))
-                    for row in current
-                }
-                if current_keys and rebuilt_keys != current_keys:
-                    raise RuntimeError(
-                        "quality trend ledger coverage is incomplete; "
-                        "refusing projection rebuild"
-                    )
                 if replace:
                     self._conn.execute(
                         "DELETE FROM supervisor_quality_trends"
@@ -2476,11 +2624,7 @@ class State:
             except Exception:
                 self._conn.rollback()
                 raise
-        return (
-            self.quality_trend_projection_snapshot()
-            if replace
-            else rebuilt
-        )
+        return rebuilt
 
     def list_p11_audit_candidate_run_ids(self, *, limit: int = 50) -> list[str]:
         rows = self._conn.execute(

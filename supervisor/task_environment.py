@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -19,13 +20,16 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, runtime_checkable
+from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 from urllib.parse import unquote, urlsplit
 
 from .swe_bench_official_oracle import (
+    SWE_BENCH_BOUND_ORACLE_RECEIPT_SCHEMA_VERSION,
     SweBenchVerifierExecutionSpec,
+    new_swe_bench_verification_nonce,
     run_legacy_environment_selected_official_harness_oracle,
     run_task_spec_bound_official_harness_oracle,
+    validate_swe_bench_execution_authority,
 )
 
 
@@ -418,7 +422,7 @@ class Grade:
         object.__setattr__(
             self,
             "evidence",
-            MappingProxyType(dict(self.evidence)),
+            _freeze_grade_evidence(dict(self.evidence)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -430,10 +434,64 @@ class Grade:
             "frozen_result_hash": self.frozen_result_hash,
             "passed": self.passed,
             "score": self.score,
-            "evidence": dict(self.evidence),
+            "evidence": _thaw_grade_evidence(self.evidence),
             "failure_classification": self.failure_classification,
             "flake_classification": self.flake_classification,
         }
+
+
+def _freeze_grade_evidence(
+    value: Any,
+    *,
+    path: str = "evidence",
+) -> Any:
+    if isinstance(value, Mapping):
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(
+                    "grade evidence must use string keys for "
+                    "JSON-compatible serialization"
+                )
+            frozen[str(key)] = _freeze_grade_evidence(
+                item,
+                path=f"{path}.{key}",
+            )
+        return MappingProxyType(frozen)
+    if isinstance(value, (list, tuple)):
+        return tuple(
+            _freeze_grade_evidence(
+                item,
+                path=f"{path}[{index}]",
+            )
+            for index, item in enumerate(value)
+        )
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        return str(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        normalized = float(value)
+        if math.isfinite(normalized):
+            return normalized
+    raise ValueError(
+        f"grade evidence at {path} must contain only JSON-compatible values"
+    )
+
+
+def _thaw_grade_evidence(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _thaw_grade_evidence(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return [_thaw_grade_evidence(item) for item in value]
+    return value
 
 
 @runtime_checkable
@@ -465,6 +523,21 @@ class VerifierAdapter(Protocol):
     protected_paths: tuple[str, ...]
 
     async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+        ...
+
+
+@runtime_checkable
+class BackendRunReplayGuard(Protocol):
+    """Atomically consume one trusted backend execution identity."""
+
+    def consume(
+        self,
+        *,
+        backend_id: str,
+        backend_run_id: str,
+        authority_hash: str,
+    ) -> bool:
+        """Return True exactly once for a backend execution identity."""
         ...
 
 
@@ -633,6 +706,9 @@ class SweBenchVerifier:
         oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] = (
             run_task_spec_bound_official_harness_oracle
         ),
+        authority_verifier: Any | None = None,
+        trusted_backend_manifest_hashes: Sequence[str] = (),
+        backend_run_replay_guard: BackendRunReplayGuard | None = None,
     ) -> None:
         if not str(verifier_version).strip():
             raise ValueError("verifier_version must be non-empty")
@@ -659,6 +735,26 @@ class SweBenchVerifier:
             )
         self.verifier_hash = normalized_verifier_hash
         self._oracle_runner = oracle_runner
+        trusted_hashes = tuple(
+            str(value).strip().casefold()
+            for value in trusted_backend_manifest_hashes
+        )
+        if any(not _is_sha256(value) for value in trusted_hashes):
+            raise ValueError(
+                "trusted backend manifest hashes must be sha256 digests"
+            )
+        self._authority_verifier = authority_verifier
+        self._trusted_backend_manifest_hashes = trusted_hashes
+        if (
+            backend_run_replay_guard is not None
+            and not callable(
+                getattr(backend_run_replay_guard, "consume", None)
+            )
+        ):
+            raise ValueError(
+                "backend run replay guard must provide consume()"
+            )
+        self._backend_run_replay_guard = backend_run_replay_guard
 
     @property
     def execution_spec(self) -> SweBenchVerifierExecutionSpec:
@@ -666,28 +762,43 @@ class SweBenchVerifier:
 
     async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
         self._validate_frozen_result_binding(frozen_result)
+        request_nonce = new_swe_bench_verification_nonce()
         context = {
             **self._execution_spec.context_binding(),
             "candidate_id": frozen_result.result_hash,
             "model_patch": frozen_result.patch,
             "model_patch_sha256": frozen_result.patch_hash,
             "frozen_result_hash": frozen_result.result_hash,
+            "producer_run_result_hash": frozen_result.run_result_hash,
+            "request_nonce": request_nonce,
         }
         oracle_result = await asyncio.to_thread(self._oracle_runner, context)
         if not isinstance(oracle_result, Mapping):
             raise ValueError("official SWE-bench oracle must return a mapping")
-        self._validate_oracle_receipt_binding(oracle_result)
         fail_to_pass = str(
             oracle_result.get("fail_to_pass_status") or ""
         )
         pass_to_pass = str(
             oracle_result.get("pass_to_pass_status") or ""
         )
+        unavailable = (
+            bool(oracle_result.get("oracle_unavailable"))
+            or fail_to_pass == "unavailable"
+            or pass_to_pass == "unavailable"
+        )
+        self._validate_oracle_receipt_binding(
+            oracle_result,
+            candidate_id=frozen_result.result_hash,
+            model_patch_sha256=frozen_result.patch_hash,
+            producer_run_result_hash=frozen_result.run_result_hash,
+            request_nonce=request_nonce,
+            require_execution_authority=not unavailable,
+        )
         passed = (
-            _official_oracle_status_passed(fail_to_pass)
+            not unavailable
+            and _official_oracle_status_passed(fail_to_pass)
             and _official_oracle_status_passed(pass_to_pass)
         )
-        unavailable = bool(oracle_result.get("oracle_unavailable"))
         return Grade(
             verifier_id=self.verifier_id,
             verifier_version=self.verifier_version,
@@ -770,6 +881,12 @@ class SweBenchVerifier:
     def _validate_oracle_receipt_binding(
         self,
         oracle_result: Mapping[str, Any],
+        *,
+        candidate_id: str,
+        model_patch_sha256: str,
+        producer_run_result_hash: str,
+        request_nonce: str,
+        require_execution_authority: bool,
     ) -> None:
         observed_result_hash = str(
             oracle_result.get("verifier_execution_spec_hash") or ""
@@ -783,6 +900,42 @@ class SweBenchVerifier:
         if not isinstance(adapter_receipt, Mapping):
             raise ValueError(
                 "official SWE-bench oracle result missing adapter receipt"
+            )
+        if adapter_receipt.get("schema_version") != (
+            SWE_BENCH_BOUND_ORACLE_RECEIPT_SCHEMA_VERSION
+        ):
+            raise ValueError(
+                "official SWE-bench oracle receipt schema version is invalid"
+            )
+        expected_receipt_bindings = {
+            "candidate_id": candidate_id,
+            "model_patch_sha256": model_patch_sha256,
+            "producer_run_result_hash": producer_run_result_hash,
+            "request_nonce": request_nonce,
+        }
+        for key, expected in expected_receipt_bindings.items():
+            observed = str(adapter_receipt.get(key) or "").strip().casefold()
+            if observed != str(expected).strip().casefold():
+                raise ValueError(
+                    "official SWE-bench oracle receipt "
+                    f"{key} binding mismatch"
+                )
+        result_fail_to_pass = str(
+            oracle_result.get("fail_to_pass_status") or ""
+        )
+        result_pass_to_pass = str(
+            oracle_result.get("pass_to_pass_status") or ""
+        )
+        if (
+            str(adapter_receipt.get("fail_to_pass_status") or "")
+            != result_fail_to_pass
+            or str(adapter_receipt.get("pass_to_pass_status") or "")
+            != result_pass_to_pass
+            or bool(adapter_receipt.get("oracle_unavailable"))
+            is not bool(oracle_result.get("oracle_unavailable"))
+        ):
+            raise ValueError(
+                "official SWE-bench oracle receipt outcome binding mismatch"
             )
         receipt_spec = adapter_receipt.get("verifier_execution_spec")
         if not isinstance(receipt_spec, Mapping):
@@ -805,12 +958,114 @@ class SweBenchVerifier:
             raise ValueError(
                 "official SWE-bench oracle receipt spec hash mismatch"
             )
+        result_authority = oracle_result.get("execution_authority")
+        receipt_authority = adapter_receipt.get("execution_authority")
+        if result_authority is None and receipt_authority is None:
+            if require_execution_authority:
+                raise ValueError(
+                    "official SWE-bench oracle result missing execution "
+                    "authority"
+                )
+            return
+        if not isinstance(result_authority, Mapping) or not isinstance(
+            receipt_authority,
+            Mapping,
+        ):
+            raise ValueError(
+                "official SWE-bench execution authority must appear in both "
+                "the result and adapter receipt"
+            )
+        validated_result_authority = (
+            validate_swe_bench_execution_authority(
+                result_authority,
+                execution_spec=self._execution_spec,
+                candidate_id=candidate_id,
+                model_patch_sha256=model_patch_sha256,
+                producer_run_result_hash=producer_run_result_hash,
+                request_nonce=request_nonce,
+                oracle_result=oracle_result,
+                oracle_receipt=adapter_receipt,
+                require_enforced=require_execution_authority,
+                authority_verifier=self._authority_verifier,
+                trusted_backend_manifest_hashes=(
+                    self._trusted_backend_manifest_hashes
+                ),
+            )
+        )
+        validated_receipt_authority = (
+            validate_swe_bench_execution_authority(
+                receipt_authority,
+                execution_spec=self._execution_spec,
+                candidate_id=candidate_id,
+                model_patch_sha256=model_patch_sha256,
+                producer_run_result_hash=producer_run_result_hash,
+                request_nonce=request_nonce,
+                oracle_result=oracle_result,
+                oracle_receipt=adapter_receipt,
+                require_enforced=require_execution_authority,
+                authority_verifier=self._authority_verifier,
+                trusted_backend_manifest_hashes=(
+                    self._trusted_backend_manifest_hashes
+                ),
+            )
+        )
+        if validated_result_authority != validated_receipt_authority:
+            raise ValueError(
+                "official SWE-bench result and receipt execution authorities "
+                "differ"
+            )
+        authority_hash = validated_result_authority["authority_hash"]
+        result_authority_hash = str(
+            oracle_result.get("execution_authority_hash") or ""
+        ).strip().casefold()
+        receipt_authority_hash = str(
+            adapter_receipt.get("execution_authority_hash") or ""
+        ).strip().casefold()
+        if (
+            result_authority_hash != authority_hash
+            or receipt_authority_hash != authority_hash
+        ):
+            raise ValueError(
+                "official SWE-bench execution authority hash mismatch"
+            )
+        if validated_result_authority["mode"] == "operational":
+            replay_guard = self._backend_run_replay_guard
+            if replay_guard is None:
+                raise ValueError(
+                    "operational execution authority has no backend run "
+                    "replay guard"
+                )
+            backend_id = str(validated_result_authority["backend_id"])
+            backend_run_id = str(
+                validated_result_authority["backend_run_id"]
+            )
+            try:
+                consumed = replay_guard.consume(
+                    backend_id=backend_id,
+                    backend_run_id=backend_run_id,
+                    authority_hash=authority_hash,
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"backend run replay guard failed: {exc}"
+                ) from exc
+            if inspect.isawaitable(consumed):
+                close = getattr(consumed, "close", None)
+                if callable(close):
+                    close()
+                raise ValueError(
+                    "backend run replay guard must be synchronous"
+                )
+            if consumed is not True:
+                raise ValueError(
+                    "official SWE-bench backend_run_id was already consumed"
+                )
 
 
 class LegacyEnvironmentSelectedSweBenchVerifier:
-    """Legacy verifier whose dataset and harness choices may come from env."""
+    """Diagnostic-only legacy verifier that cannot authorize a passing grade."""
 
-    verifier_id = "official-swebench"
+    verifier_id = "legacy-unattested-swebench"
     protected_paths: tuple[str, ...] = ()
 
     def __init__(
@@ -836,25 +1091,44 @@ class LegacyEnvironmentSelectedSweBenchVerifier:
             "frozen_result_hash": frozen_result.result_hash,
         }
         receipt = await asyncio.to_thread(self._oracle_runner, context)
+        if not isinstance(receipt, Mapping):
+            raise ValueError(
+                "legacy SWE-bench oracle must return a mapping"
+            )
         fail_to_pass = str(receipt.get("fail_to_pass_status") or "")
         pass_to_pass = str(receipt.get("pass_to_pass_status") or "")
-        passed = (
-            _official_oracle_status_passed(fail_to_pass)
+        unavailable = (
+            bool(receipt.get("oracle_unavailable"))
+            or fail_to_pass == "unavailable"
+            or pass_to_pass == "unavailable"
+        )
+        observed_passed = (
+            not unavailable
+            and _official_oracle_status_passed(fail_to_pass)
             and _official_oracle_status_passed(pass_to_pass)
         )
-        unavailable = bool(receipt.get("oracle_unavailable"))
+        evidence = {
+            **dict(receipt),
+            "legacy_unattested": True,
+            "authority_eligible": False,
+            "observed_official_status_passed": observed_passed,
+        }
         return Grade(
             verifier_id=self.verifier_id,
             verifier_version=self.verifier_version,
             verifier_hash=self.verifier_hash,
             frozen_result_hash=frozen_result.result_hash,
-            passed=passed,
-            score=1.0 if passed else 0.0,
-            evidence=dict(receipt),
+            passed=False,
+            score=0.0,
+            evidence=evidence,
             failure_classification=(
                 "verifier_infrastructure_unavailable"
                 if unavailable
-                else ("" if passed else "official_tests_failed")
+                else (
+                    "legacy_unattested_verifier"
+                    if observed_passed
+                    else "official_tests_failed"
+                )
             ),
         )
 

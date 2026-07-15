@@ -18,6 +18,7 @@ import pytest
 from supervisor.claim_gate import ClaimGate
 from supervisor.evidence_committer import (
     EVIDENCE_COMMIT_EVENT_KIND,
+    EVIDENCE_COMMIT_SCHEMA_VERSION,
     EvidenceArtifact,
     EvidenceCommitConflict,
     EvidenceCommitIntegrityError,
@@ -571,18 +572,22 @@ def test_evidence_commit_rejects_recommitted_source_terminal_authority(
         )
 
 
-def test_evidence_commit_persists_planning_before_terminal_trace(
+def test_evidence_commit_persists_planning_projection_before_remaining_stages(
     tmp_path: Path,
 ) -> None:
     fixture = _build_fixture(tmp_path)
+    assert all(
+        history.terminal_commits
+        for history in fixture.request.grade_histories
+    )
     trace_path = fixture.committer_arguments["trace_store_path"]
     assert isinstance(trace_path, Path)
-    preterminal_stages: list[TraceLifecycleStage] = []
+    pre_remaining_projection_stages: list[TraceLifecycleStage] = []
 
     def observe_phase(phase: str) -> None:
         if phase == "grades_verified":
             with TraceGraphStore(trace_path) as store:
-                preterminal_stages.extend(
+                pre_remaining_projection_stages.extend(
                     revision.stage
                     for revision in store.list_lifecycle_revisions()
                 )
@@ -604,7 +609,9 @@ def test_evidence_commit_persists_planning_before_terminal_trace(
     assert [revision.stage for revision in lifecycle] == list(
         TraceLifecycleStage
     )
-    assert preterminal_stages == [TraceLifecycleStage.PLANNING]
+    assert pre_remaining_projection_stages == [
+        TraceLifecycleStage.PLANNING
+    ]
     assert {
         node.identity.node_type for node in planning.nodes
     }.isdisjoint(
@@ -622,6 +629,10 @@ def test_evidence_commit_persists_planning_before_terminal_trace(
     lifecycle_identity = result.artifact_manifest["metadata"][
         "trace_lifecycle"
     ]
+    assert lifecycle_identity["persistence_semantics"] == (
+        "post_execution_stage_projection"
+    )
+    assert lifecycle_identity["pre_execution_attested"] is False
     assert lifecycle_identity["stages"] == [
         stage.value for stage in TraceLifecycleStage
     ]
@@ -641,7 +652,7 @@ def test_evidence_commit_persists_planning_before_terminal_trace(
     )
 
 
-def test_evidence_commit_refuses_terminal_trace_without_planning_precommit(
+def test_evidence_commit_rejects_unversioned_graph_before_projection_chain(
     tmp_path: Path,
 ) -> None:
     fixture = _build_fixture(tmp_path)
@@ -652,7 +663,7 @@ def test_evidence_commit_refuses_terminal_trace_without_planning_precommit(
 
     with pytest.raises(
         EvidenceCommitIntegrityError,
-        match="refusing to invent a planning precommit",
+        match="refusing to derive a planning stage projection",
     ):
         EvidenceCommitter(**fixture.committer_arguments).commit(
             fixture.request
@@ -662,7 +673,7 @@ def test_evidence_commit_refuses_terminal_trace_without_planning_precommit(
         assert store.list_lifecycle_revisions() == ()
 
 
-def test_evidence_commit_refuses_to_backfill_prepatch_verified_grades(
+def test_evidence_commit_rejects_missing_planning_projection_after_grades(
     tmp_path: Path,
 ) -> None:
     fixture = _build_fixture(tmp_path)
@@ -692,7 +703,7 @@ def test_evidence_commit_refuses_to_backfill_prepatch_verified_grades(
 
     with pytest.raises(
         EvidenceCommitIntegrityError,
-        match="refusing to fabricate a historical planning precommit",
+        match="missing planning projection after evidence-commit grade",
     ):
         committer.commit(fixture.request)
 
@@ -716,7 +727,7 @@ def test_completed_commit_rejects_removed_lifecycle_receipts(
 
     with pytest.raises(
         EvidenceCommitIntegrityError,
-        match="trace lifecycle receipts are missing",
+        match="trace lifecycle",
     ):
         committer.commit(fixture.request)
 
@@ -747,9 +758,15 @@ def test_evidence_commit_exposes_detached_manifest_attestation(
         "signer_key_id"
     ]
     assert identity["created_at"] == fixture.request.checkpoint_created_at
+    manifest_path = (
+        result.evidence_root
+        / "artifacts"
+        / "artifact-manifest.json"
+    )
     assert verify_artifact_manifest_attestation(
         attestation,
         manifest=result.artifact_manifest,
+        manifest_bytes=manifest_path.read_bytes(),
         verifier=fixture.committer_arguments["verifier"],
     )
 
@@ -937,6 +954,237 @@ def test_evidence_commit_resumes_idempotently_and_fails_closed(
         resumed.commit(fixture.request)
 
 
+def test_evidence_commit_event_kind_is_reserved_from_generic_writers(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+
+    with pytest.raises(ValueError, match="reserved evidence-commit event"):
+        fixture.state.write_event(
+            run_id=fixture.request.aggregate_run_id,
+            source="evidence_committer",
+            kind=EVIDENCE_COMMIT_EVENT_KIND,
+            payload={"commit_id": fixture.request.commit_id},
+        )
+
+    with pytest.raises(
+        PermissionError,
+        match="evidence-commit write capability",
+    ):
+        fixture.state._bind_evidence_commit_writer(object())
+
+    with pytest.raises(
+        PermissionError,
+        match="evidence-commit write capability",
+    ):
+        fixture.state.write_evidence_commit_event(
+            run_id=fixture.request.aggregate_run_id,
+            payload={"commit_id": fixture.request.commit_id},
+            capability=object(),
+        )
+
+
+def test_evidence_commit_writer_is_state_idempotent_across_committers(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    first_owner = EvidenceCommitter.__new__(EvidenceCommitter)
+    second_owner = EvidenceCommitter.__new__(EvidenceCommitter)
+    first_capability = fixture.state._bind_evidence_commit_writer(
+        first_owner
+    )
+    second_capability = fixture.state._bind_evidence_commit_writer(
+        second_owner
+    )
+    payload = {
+        "schema_version": EVIDENCE_COMMIT_SCHEMA_VERSION,
+        "commit_id": fixture.request.commit_id,
+        "request_hash": "a" * 64,
+    }
+
+    first = fixture.state.write_evidence_commit_event(
+        run_id=fixture.request.aggregate_run_id,
+        payload=payload,
+        capability=first_capability,
+    )
+    second = fixture.state.write_evidence_commit_event(
+        run_id=fixture.request.aggregate_run_id,
+        payload=payload,
+        capability=second_capability,
+    )
+
+    assert second == first
+    matching_events = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+        and event["payload"].get("commit_id") == fixture.request.commit_id
+    ]
+    assert len(matching_events) == 1
+    with pytest.raises(
+        RuntimeError,
+        match="changed source or payload",
+    ):
+        fixture.state.write_evidence_commit_event(
+            run_id=fixture.request.aggregate_run_id,
+            payload={**payload, "request_hash": "b" * 64},
+            capability=second_capability,
+        )
+
+
+def test_evidence_commit_rejects_preinjected_manifest_event(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    first = EvidenceCommitter(
+        **fixture.committer_arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        first.commit(fixture.request)
+
+    with sqlite3.connect(first.outbox_path) as connection:
+        request_hash, materialization_json = connection.execute(
+            """
+            SELECT request_hash, materialization_json
+              FROM evidence_commits
+             WHERE commit_id=?
+            """,
+            (fixture.request.commit_id,),
+        ).fetchone()
+    materialization = json.loads(materialization_json)
+    forged_payload = first._manifest_event_payload(
+        request=fixture.request,
+        request_hash=request_hash,
+        materialization=materialization,
+    )
+    forged_payload["mode"] = "operational"
+    owner = EvidenceCommitter.__new__(EvidenceCommitter)
+    capability = fixture.state._bind_evidence_commit_writer(owner)
+    fixture.state.write_evidence_commit_event(
+        run_id=fixture.request.aggregate_run_id,
+        payload=forged_payload,
+        capability=capability,
+        ts=fixture.request.manifest_event_ts,
+    )
+
+    with pytest.raises(
+        EvidenceCommitConflict,
+        match="existing artifact-manifest event conflicts",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_evidence_commit_rejects_exact_preinjected_event_without_claim(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    first = EvidenceCommitter(
+        **fixture.committer_arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        first.commit(fixture.request)
+
+    with sqlite3.connect(first.outbox_path) as connection:
+        request_hash, materialization_json = connection.execute(
+            """
+            SELECT request_hash, materialization_json
+              FROM evidence_commits
+             WHERE commit_id=?
+            """,
+            (fixture.request.commit_id,),
+        ).fetchone()
+    materialization = json.loads(materialization_json)
+    exact_payload = first._manifest_event_payload(
+        request=fixture.request,
+        request_hash=request_hash,
+        materialization=materialization,
+    )
+    fixture.state._write_event_internal(
+        run_id=fixture.request.aggregate_run_id,
+        source="evidence_committer",
+        kind=EVIDENCE_COMMIT_EVENT_KIND,
+        payload=exact_payload,
+        ts=fixture.request.manifest_event_ts,
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="authority claim",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+@pytest.mark.parametrize(
+    "tampered_surface",
+    ("materialization", "manifest_metadata", "result"),
+)
+def test_completed_commit_replay_requires_v2_on_every_persisted_surface(
+    tmp_path: Path,
+    tampered_surface: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    committer = EvidenceCommitter(**fixture.committer_arguments)
+    committer.commit(fixture.request)
+
+    with sqlite3.connect(committer.outbox_path) as connection:
+        materialization_json, result_json = connection.execute(
+            """
+            SELECT materialization_json, result_json
+              FROM evidence_commits
+             WHERE commit_id=?
+            """,
+            (fixture.request.commit_id,),
+        ).fetchone()
+        materialization = json.loads(materialization_json)
+        result = json.loads(result_json)
+        legacy_schema = EVIDENCE_COMMIT_SCHEMA_VERSION.replace("/v2", "/v1")
+        if tampered_surface == "materialization":
+            materialization["schema_version"] = legacy_schema
+        elif tampered_surface == "manifest_metadata":
+            materialization["artifact_manifest"]["metadata"][
+                "schema_version"
+            ] = legacy_schema
+        else:
+            result["schema_version"] = legacy_schema
+        connection.execute(
+            """
+            UPDATE evidence_commits
+               SET materialization_json=?, result_json=?
+             WHERE commit_id=?
+            """,
+            (
+                canonical_json_bytes(materialization).decode("utf-8"),
+                canonical_json_bytes(result).decode("utf-8"),
+                fixture.request.commit_id,
+            ),
+        )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="schema version",
+    ):
+        committer.commit(fixture.request)
+
+
 def test_concurrent_resumptions_publish_one_manifest_event_and_replay(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -953,20 +1201,19 @@ def test_concurrent_resumptions_publish_one_manifest_event_and_replay(
             phase_observer=crash_after_staging,
         ).commit(fixture.request)
 
-    original_write_event = fixture.state.write_event
+    original_write_event = fixture.state.write_evidence_commit_event
     simultaneous_publish = threading.Barrier(2)
 
     def synchronized_write_event(**kwargs: Any) -> int:
-        if kwargs.get("kind") == EVIDENCE_COMMIT_EVENT_KIND:
-            try:
-                simultaneous_publish.wait(timeout=1.0)
-            except threading.BrokenBarrierError:
-                pass
+        try:
+            simultaneous_publish.wait(timeout=1.0)
+        except threading.BrokenBarrierError:
+            pass
         return original_write_event(**kwargs)
 
     monkeypatch.setattr(
         fixture.state,
-        "write_event",
+        "write_evidence_commit_event",
         synchronized_write_event,
     )
 
@@ -1025,28 +1272,98 @@ def test_concurrent_resumptions_publish_one_manifest_event_and_replay(
     )
 
 
+def test_separate_evidence_roots_share_one_manifest_event_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    original_write_event = fixture.state.write_evidence_commit_event
+    simultaneous_publish = threading.Barrier(2)
+
+    def synchronized_write_event(**kwargs: Any) -> int:
+        try:
+            simultaneous_publish.wait(timeout=2.0)
+        except threading.BrokenBarrierError:
+            pass
+        return original_write_event(**kwargs)
+
+    monkeypatch.setattr(
+        fixture.state,
+        "write_evidence_commit_event",
+        synchronized_write_event,
+    )
+    roots = (tmp_path / "evidence-a", tmp_path / "evidence-b")
+
+    def commit(root: Path) -> tuple[Path, Any | None, Exception | None]:
+        try:
+            result = EvidenceCommitter(
+                **{
+                    **fixture.committer_arguments,
+                    "root": root,
+                }
+            ).commit(fixture.request)
+        except Exception as exc:
+            return root, None, exc
+        return root, result, None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(commit, root) for root in roots]
+        outcomes = [future.result(timeout=20) for future in futures]
+
+    manifest_events = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+        and event["payload"].get("commit_id") == fixture.request.commit_id
+    ]
+    assert len(manifest_events) == 1
+    results = [
+        result
+        for _root, result, error in outcomes
+        if result is not None and error is None
+    ]
+    assert results
+    assert {
+        (result.manifest_event_id, result.manifest_event_hash)
+        for result in results
+    } == {
+        (
+            manifest_events[0]["event_id"],
+            manifest_events[0]["event_hash"],
+        )
+    }
+    assert all(
+        error is None
+        or (
+            isinstance(error, EvidenceCommitIntegrityError)
+            and "trusted checkpoint pin" in str(error)
+        )
+        for _root, _result, error in outcomes
+    )
+
+
 def test_crash_after_manifest_append_is_reconciled_without_orphan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = _build_fixture(tmp_path)
-    original_write_event = fixture.state.write_event
+    original_write_event = fixture.state.write_evidence_commit_event
     crashed = False
 
     def append_then_crash(**kwargs: Any) -> int:
         nonlocal crashed
         event_id = original_write_event(**kwargs)
-        if (
-            kwargs.get("kind") == EVIDENCE_COMMIT_EVENT_KIND
-            and not crashed
-        ):
+        if not crashed:
             crashed = True
             raise SimulatedCrash("power loss after manifest append")
         return event_id
 
     monkeypatch.setattr(
         fixture.state,
-        "write_event",
+        "write_evidence_commit_event",
         append_then_crash,
     )
 

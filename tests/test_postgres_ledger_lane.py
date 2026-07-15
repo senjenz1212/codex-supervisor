@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,7 +23,11 @@ from supervisor.postgres_state import (
     PostgresState,
 )
 from supervisor.dual_agent_workflow import workflow_resume_prompt
-from supervisor.evidence_committer import HmacCheckpointAuthority
+from supervisor.evidence_committer import (
+    EVIDENCE_COMMIT_EVENT_KIND,
+    EvidenceCommitter,
+    HmacCheckpointAuthority,
+)
 from supervisor.ledger_checkpoints import (
     CheckpointPersistenceError,
     FilesystemTrustedCheckpointPinStore,
@@ -529,6 +534,31 @@ def test_alembic_migration_and_make_target_exist():
     assert "PgBouncer" in config_example
     assert "state_db: ~/.codex-supervisor/state.db" in config_example
     assert "max_runnable_experiments_per_week: 2" in config_example
+
+
+def test_postgres_conformance_gate_rejects_selection_arguments():
+    script = Path("scripts/run_postgres_conformance.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "env -u PYTEST_PLUGINS -u PYTHONPATH" in script
+    assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1" in script
+    assert "PYTHONNOUSERSITE=1" in script
+    assert "-p pytest_asyncio.plugin" in script
+
+    completed = subprocess.run(
+        [
+            "./scripts/run_postgres_conformance.sh",
+            "-k",
+            "test_state_uses_sqlite_for_filesystem_paths",
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "does not accept pytest selection arguments" in completed.stderr
 
 
 def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivalent():
@@ -1068,6 +1098,60 @@ def test_postgres_write_event_once_is_exact(postgres_state):
             }
         )
 
+    with pytest.raises(ValueError, match="reserved evidence-commit event"):
+        postgres_state.write_event(
+            run_id="postgres-evidence-commit",
+            source="evidence_committer",
+            kind=EVIDENCE_COMMIT_EVENT_KIND,
+            payload={"commit_id": "forged"},
+        )
+    with pytest.raises(
+        PermissionError,
+        match="evidence-commit write capability",
+    ):
+        postgres_state.write_evidence_commit_event(
+            run_id="postgres-evidence-commit",
+            payload={"commit_id": "forged-dedicated"},
+            capability=object(),
+        )
+    owner = EvidenceCommitter.__new__(EvidenceCommitter)
+    capability = postgres_state._bind_evidence_commit_writer(owner)
+    event_id = postgres_state.write_evidence_commit_event(
+        run_id="postgres-evidence-commit",
+        payload={"commit_id": "dedicated"},
+        capability=capability,
+    )
+    assert (
+        postgres_state.write_evidence_commit_event(
+            run_id="postgres-evidence-commit",
+            payload={"commit_id": "dedicated"},
+            capability=capability,
+        )
+        == event_id
+    )
+    postgres_state.assert_evidence_commit_event_authority(
+        run_id="postgres-evidence-commit",
+        commit_id="dedicated",
+        event_id=event_id,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="changed source or payload",
+    ):
+        postgres_state.write_evidence_commit_event(
+            run_id="postgres-evidence-commit",
+            payload={"commit_id": "dedicated", "changed": True},
+            capability=capability,
+        )
+    [event] = postgres_state.read_events_since(
+        "postgres-evidence-commit",
+        after_event_id=0,
+        limit=10,
+    )
+    assert event["event_id"] == event_id
+    assert event["source"] == "evidence_committer"
+    assert event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+
 
 def test_postgres_event_idempotency_claims_are_immutable(postgres_state):
     postgres_state.write_event_once(
@@ -1283,6 +1367,62 @@ def test_postgres_event_stream_rejects_truncate(postgres_state):
             postgres_state._conn.execute("TRUNCATE events")
 
     assert len(postgres_state.read_events_since("truncate-guard")) == 1
+
+
+@pytest.mark.parametrize(
+    "statement",
+    (
+        "UPDATE events SET source='attacker' WHERE run_id='mutation-guard'",
+        "DELETE FROM events WHERE run_id='mutation-guard'",
+    ),
+)
+def test_postgres_event_stream_rejects_row_mutation(postgres_state, statement):
+    postgres_state.write_event(
+        run_id="mutation-guard",
+        source="test",
+        kind="event_msg",
+        payload={"value": 1},
+    )
+
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="events are append-only",
+    ):
+        with postgres_state._conn.transaction():
+            postgres_state._conn.execute(statement)
+
+    [event] = postgres_state.read_events_since("mutation-guard")
+    assert event["source"] == "test"
+
+
+def test_postgres_event_stream_rejects_conflicting_sequence(postgres_state):
+    postgres_state.write_event(
+        run_id="sequence-guard",
+        source="test",
+        kind="event_msg",
+        payload={"value": 1},
+    )
+
+    with pytest.raises(
+        postgres_state._errors.UniqueViolation,
+        match="events_run_sequence_unique|idx_events_run_sequence",
+    ):
+        with postgres_state._conn.transaction():
+            postgres_state._conn.execute(
+                """INSERT INTO events(
+                     run_id, event_id, event_sequence, previous_event_id, ts,
+                     source, kind, payload_json, previous_event_hash,
+                     event_hash, canonical_payload_hash,
+                     artifact_manifest_hash, ledger_genesis_kind)
+                   SELECT run_id, event_id + 1, event_sequence, event_id, ts + 1,
+                          source, kind, payload_json, event_hash,
+                          %s, %s, artifact_manifest_hash, NULL
+                     FROM events
+                    WHERE run_id=%s""",
+                ("f" * 64, "e" * 64, "sequence-guard"),
+            )
+
+    assert len(postgres_state.read_events_since("sequence-guard")) == 1
 
 
 def test_postgres_immutable_audits_and_workflow_jobs_reject_truncate(
@@ -1551,9 +1691,13 @@ def test_postgres_supervisor_lesson_record_query_and_list(postgres_state):
     assert created is True
     assert duplicate_created is False
     assert duplicate["lesson_id"] == lesson["lesson_id"]
-    assert postgres_state.query_supervisor_lessons(task_class="large", gate="execution") == [lesson]
+    assert duplicate["observed_count"] == 2
+    assert postgres_state.query_supervisor_lessons(
+        task_class="large",
+        gate="execution",
+    ) == [duplicate]
     assert postgres_state.query_supervisor_lessons(task_class="small", gate="execution") == []
-    assert postgres_state.list_supervisor_lessons() == [lesson]
+    assert postgres_state.list_supervisor_lessons() == [duplicate]
 
 
 def test_postgres_trends_details_and_incident_aggregation_match_sqlite(postgres_state):
@@ -1590,7 +1734,8 @@ def test_postgres_trends_details_and_incident_aggregation_match_sqlite(postgres_
     assert row["details"]["transport_incidents"]["by_era"] == {"mcp": 1, "axi": 1}
     assert stored["details"]["format_ab"]["json"]["bytes"] == 200
     assert summary["transport_incident_by_era"] == {"axi": 1, "mcp": 1}
-    assert summary["transport_incident_axi_rate"] == 0.5
+    assert summary["transport_incident_axi_rate"] == 1.0
+    assert summary["transport_incident_axi_share"] == 0.5
     assert summary["format_toon_turns"] == 1
 
     postgres_state.write_event(
@@ -1631,6 +1776,419 @@ def test_postgres_trends_details_and_incident_aggregation_match_sqlite(postgres_
     assert aggregated["details"]["transport_incidents"]["total_count"] == 1
     assert aggregated["details"]["transport_incidents"]["by_type"]["poll_failure"] == 1
     assert aggregated["details"]["transport_incidents"]["by_era"]["axi"] == 1
+
+
+def test_postgres_quality_projection_rebuild_matches_ledger(
+    postgres_state,
+    tmp_path,
+):
+    run_id = "postgres-quality-projection-rebuild"
+    postgres_state.upsert_quality_trend_row(
+        run_id=run_id,
+        task_id="projection-task",
+        task_class="generic",
+        gate="outcome_review",
+        accepted=True,
+        first_pass_accepted=False,
+        revision_rounds=2,
+        time_to_accepted_outcome_s=12.5,
+        policy_overlay_hash="a" * 64,
+        policy_proposal_id="proposal-1",
+        details={"source": "runtime"},
+        computed_at=100,
+    )
+    postgres_state.update_quality_trend_audit(
+        run_id=run_id,
+        gate="outcome_review",
+        sample_size=3,
+        false_accept_count=1,
+        false_accept_denominator=3,
+        audit_details={"auditor": "hidden"},
+    )
+    expected = postgres_state.quality_trend_projection_snapshot()
+    authority = HmacCheckpointAuthority(
+        key_id="projection-key",
+        key=b"postgres-projection-checkpoint-key",
+    )
+    checkpoints = LedgerCheckpointStore(tmp_path / "projection-checkpoints")
+    pins = FilesystemTrustedCheckpointPinStore(
+        tmp_path / "projection-trusted-pins"
+    )
+    persisted = postgres_state.checkpoint_event_ledger(
+        run_id,
+        checkpoint_store=checkpoints,
+        signer=authority,
+        verifier=authority,
+        created_at=1234,
+    )
+    pins.pin(checkpoint_identity(persisted.checkpoint))
+    trusted = {run_id: pins.latest(run_id)}
+
+    rebuilt = postgres_state.rebuild_quality_trend_projection_from_ledger(
+        checkpoint_store=checkpoints,
+        verifier=authority,
+        expected_stream_checkpoint_pins=trusted,
+    )
+    assert rebuilt == expected
+
+    with postgres_state._conn.transaction():
+        postgres_state._conn.execute(
+            """UPDATE supervisor_quality_trends
+                  SET accepted=FALSE,
+                      false_accept_count=0,
+                      details_json='{}'::jsonb
+                WHERE run_id=%s""",
+            (run_id,),
+        )
+    assert postgres_state.quality_trend_projection_snapshot() != expected
+
+    restored = postgres_state.rebuild_quality_trend_projection_from_ledger(
+        replace=True,
+        checkpoint_store=checkpoints,
+        verifier=authority,
+        expected_stream_checkpoint_pins=trusted,
+    )
+    assert restored == expected
+
+
+def _postgres_projection_authority(
+    postgres_state,
+    tmp_path,
+    *run_ids: str,
+):
+    authority = HmacCheckpointAuthority(
+        key_id="projection-inventory-key",
+        key=b"postgres-projection-inventory-key",
+    )
+    checkpoints = LedgerCheckpointStore(
+        tmp_path / "projection-inventory-checkpoints"
+    )
+    pins = FilesystemTrustedCheckpointPinStore(
+        tmp_path / "projection-inventory-pins"
+    )
+    expected: dict[str, dict[str, object]] = {}
+    for run_id in run_ids:
+        persisted = postgres_state.checkpoint_event_ledger(
+            run_id,
+            checkpoint_store=checkpoints,
+            signer=authority,
+            verifier=authority,
+            created_at=1234,
+        )
+        identity = checkpoint_identity(persisted.checkpoint)
+        pins.pin(identity)
+        expected[run_id] = pins.latest(run_id)
+    return {
+        "checkpoint_store": checkpoints,
+        "verifier": authority,
+        "expected_stream_checkpoint_pins": expected,
+    }
+
+
+def test_postgres_quality_projection_rebuild_rejects_empty_expected_inventory(
+    postgres_state,
+    tmp_path,
+):
+    with pytest.raises(
+        RuntimeError,
+        match="expected stream inventory must be non-empty",
+    ):
+        postgres_state.rebuild_quality_trend_projection_from_ledger(
+            checkpoint_store=LedgerCheckpointStore(
+                tmp_path / "projection-inventory-checkpoints"
+            ),
+            verifier=HmacCheckpointAuthority(
+                key_id="projection-inventory-key",
+                key=b"postgres-projection-inventory-key",
+            ),
+            expected_stream_checkpoint_pins={},
+        )
+
+
+def test_postgres_quality_projection_rebuild_repairs_deleted_row(
+    postgres_state,
+    tmp_path,
+):
+    run_id = "postgres-quality-projection-row-repair"
+    for gate in ("execution", "outcome_review"):
+        postgres_state.upsert_quality_trend_row(
+            run_id=run_id,
+            task_id="projection-task",
+            task_class="generic",
+            gate=gate,
+            accepted=True,
+            first_pass_accepted=gate == "execution",
+            revision_rounds=0 if gate == "execution" else 1,
+            time_to_accepted_outcome_s=1.0,
+        )
+    expected = postgres_state.quality_trend_projection_snapshot()
+    authoritative = _postgres_projection_authority(
+        postgres_state,
+        tmp_path,
+        run_id,
+    )
+    with postgres_state._conn.transaction():
+        postgres_state._conn.execute(
+            """
+            DELETE FROM supervisor_quality_trends
+             WHERE run_id=%s AND gate=%s
+            """,
+            (run_id, "outcome_review"),
+        )
+
+    restored = postgres_state.rebuild_quality_trend_projection_from_ledger(
+        replace=True,
+        **authoritative,
+    )
+
+    assert restored == expected
+
+
+def test_postgres_quality_projection_rebuild_rejects_deleted_expected_stream(
+    postgres_state,
+    tmp_path,
+):
+    run_ids = (
+        "postgres-quality-projection-surviving",
+        "postgres-quality-projection-deleted",
+    )
+    for run_id in run_ids:
+        postgres_state.upsert_quality_trend_row(
+            run_id=run_id,
+            task_id=f"{run_id}-task",
+            task_class="generic",
+            gate="execution",
+            accepted=True,
+            first_pass_accepted=True,
+            revision_rounds=0,
+            time_to_accepted_outcome_s=1.0,
+        )
+    authoritative = _postgres_projection_authority(
+        postgres_state,
+        tmp_path,
+        *run_ids,
+    )
+    deleted_run = run_ids[1]
+    with postgres_state._conn.transaction():
+        postgres_state._conn.execute(
+            "ALTER TABLE events DISABLE TRIGGER events_no_delete"
+        )
+        postgres_state._conn.execute(
+            "DELETE FROM events WHERE run_id=%s",
+            (deleted_run,),
+        )
+        postgres_state._conn.execute(
+            "ALTER TABLE events ENABLE TRIGGER events_no_delete"
+        )
+        postgres_state._conn.execute(
+            "DELETE FROM supervisor_quality_trends WHERE run_id=%s",
+            (deleted_run,),
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "postgres-quality-projection-deleted: "
+            "checkpoint_event_count_mismatch"
+        ),
+    ):
+        postgres_state.rebuild_quality_trend_projection_from_ledger(
+            replace=True,
+            **authoritative,
+        )
+
+
+def test_postgres_quality_projection_rebuild_serializes_concurrent_new_stream(
+    postgres_state,
+    tmp_path,
+    monkeypatch,
+):
+    initial_run_id = "postgres-quality-projection-before-rebuild"
+    concurrent_run_id = "postgres-quality-projection-during-rebuild"
+    postgres_state.upsert_quality_trend_row(
+        run_id=initial_run_id,
+        task_id="initial-task",
+        task_class="generic",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+    )
+    authoritative = _postgres_projection_authority(
+        postgres_state,
+        tmp_path,
+        initial_run_id,
+    )
+
+    import supervisor.ledger_checkpoints as ledger_checkpoints
+
+    original_verify = (
+        ledger_checkpoints.verify_authoritative_event_chain
+    )
+    verification_started = threading.Event()
+    allow_verification = threading.Event()
+
+    def paused_verify(*args, **kwargs):
+        verification_started.set()
+        if not allow_verification.wait(timeout=10):
+            raise TimeoutError("test did not release projection verification")
+        return original_verify(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ledger_checkpoints,
+        "verify_authoritative_event_chain",
+        paused_verify,
+    )
+
+    concurrent_state = PostgresState(
+        postgres_state.dsn,
+        schema=postgres_state.schema,
+        apply_schema=False,
+    )
+    writer_started = threading.Event()
+    writer_finished = threading.Event()
+
+    def write_concurrent_projection() -> None:
+        writer_started.set()
+        try:
+            concurrent_state.upsert_quality_trend_row(
+                run_id=concurrent_run_id,
+                task_id="concurrent-task",
+                task_class="generic",
+                gate="execution",
+                accepted=True,
+                first_pass_accepted=True,
+                revision_rounds=0,
+                time_to_accepted_outcome_s=1.0,
+            )
+        finally:
+            writer_finished.set()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            rebuild_future = pool.submit(
+                postgres_state.rebuild_quality_trend_projection_from_ledger,
+                replace=True,
+                **authoritative,
+            )
+            assert verification_started.wait(timeout=10)
+            writer_future = pool.submit(write_concurrent_projection)
+            assert writer_started.wait(timeout=10)
+            assert not writer_finished.wait(timeout=0.25)
+
+            allow_verification.set()
+            rebuilt = rebuild_future.result(timeout=10)
+            writer_future.result(timeout=10)
+    finally:
+        allow_verification.set()
+        concurrent_state.close()
+
+    assert {
+        row["run_id"] for row in rebuilt
+    } == {initial_run_id}
+    assert {
+        row["run_id"]
+        for row in postgres_state.quality_trend_projection_snapshot()
+    } == {initial_run_id, concurrent_run_id}
+
+
+def test_postgres_quality_projection_rebuild_avoids_existing_stream_deadlock(
+    postgres_state,
+    tmp_path,
+    monkeypatch,
+):
+    run_id = "postgres-quality-projection-existing-stream-race"
+    postgres_state.upsert_quality_trend_row(
+        run_id=run_id,
+        task_id="initial-task",
+        task_class="generic",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+        computed_at=100,
+    )
+    authoritative = _postgres_projection_authority(
+        postgres_state,
+        tmp_path,
+        run_id,
+    )
+
+    import supervisor.ledger_checkpoints as ledger_checkpoints
+
+    original_verify = (
+        ledger_checkpoints.verify_authoritative_event_chain
+    )
+    verification_started = threading.Event()
+    allow_verification = threading.Event()
+
+    def paused_verify(*args, **kwargs):
+        verification_started.set()
+        if not allow_verification.wait(timeout=10):
+            raise TimeoutError("test did not release projection verification")
+        return original_verify(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ledger_checkpoints,
+        "verify_authoritative_event_chain",
+        paused_verify,
+    )
+
+    concurrent_state = PostgresState(
+        postgres_state.dsn,
+        schema=postgres_state.schema,
+        apply_schema=False,
+    )
+    writer_started = threading.Event()
+    writer_finished = threading.Event()
+
+    def update_existing_projection() -> None:
+        writer_started.set()
+        try:
+            concurrent_state.upsert_quality_trend_row(
+                run_id=run_id,
+                task_id="updated-task",
+                task_class="generic",
+                gate="execution",
+                accepted=False,
+                first_pass_accepted=False,
+                revision_rounds=1,
+                time_to_accepted_outcome_s=2.0,
+                computed_at=200,
+            )
+        finally:
+            writer_finished.set()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            rebuild_future = pool.submit(
+                postgres_state.rebuild_quality_trend_projection_from_ledger,
+                replace=True,
+                **authoritative,
+            )
+            assert verification_started.wait(timeout=10)
+            writer_future = pool.submit(update_existing_projection)
+            assert writer_started.wait(timeout=10)
+            assert not writer_finished.wait(timeout=0.25)
+
+            allow_verification.set()
+            rebuilt = rebuild_future.result(timeout=10)
+            writer_future.result(timeout=10)
+    finally:
+        allow_verification.set()
+        concurrent_state.close()
+
+    [rebuilt_row] = rebuilt
+    assert rebuilt_row["accepted"] is True
+    assert rebuilt_row["computed_at"] == 100
+
+    [row] = postgres_state.quality_trend_projection_snapshot()
+    assert row["run_id"] == run_id
+    assert row["task_id"] == "updated-task"
+    assert row["accepted"] is False
+    assert row["computed_at"] == 200
 
 
 def test_postgres_quality_audit_revisions_serialize_and_reject_impossible_counts(

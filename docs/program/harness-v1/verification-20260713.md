@@ -2,9 +2,19 @@
 
 ## Verdict
 
-The evidence kernel and its local integration surfaces are implementation
-complete for PROGRAM-001 through TRACER-001. The repository is green under the
-full local test suite.
+The branch contains a strong **hermetic L1 evidence kernel**. PROGRAM-001
+through `TRACER-001-HERMETIC` are locally implemented and testable, but the
+authoritative operational tracer is not complete. `TRACER-001-OPERATIONAL`,
+PILOT-001, CONFIRM-001, OPT-001, DEPLOY-001, and SCALE-001 remain blocked.
+
+“Ready to merge” for this branch therefore means the reachable hermetic kernel
+and its fail-closed operational gates are reviewed and green. It does not mean
+the Harness v1 program has demonstrated benchmark improvement or production
+readiness.
+
+The TRACE lifecycle receipt is explicitly labeled
+`post_execution_stage_projection` with `pre_execution_attested=false`. It
+proves immutable structural stage order, not wall-clock execution chronology.
 
 This is **not** evidence that the harness improves coding outcomes. PILOT-001
 has not run, so CONFIRM-001, OPT-001, DEPLOY-001, and SCALE-001 remain
@@ -21,12 +31,69 @@ uv run pytest -q
 Observed result:
 
 ```text
-2443 passed, 24 skipped in 1572.17s
+2641 passed, 33 skipped in 1856.12s
 ```
 
-The final post-audit focused command covered production-trace authority,
-public export reconstruction, event-ledger migrations, replay, historical
-evaluation, run registration, and launch-receipt durability:
+Collection was checked separately:
+
+```text
+uv run pytest --collect-only -q
+2674 tests collected in 0.74s
+```
+
+The 33 skips include the live PostgreSQL cases gated by
+`CODEX_SUPERVISOR_POSTGRES_TEST_DSN`. Because Docker was available, the audit
+did not accept those skips as release evidence. The release proof command:
+
+```text
+make test-projection-registry
+```
+
+starts an isolated `postgres:16-alpine` container on an ephemeral localhost
+port when no DSN is supplied, applies the real migrations, executes the exact
+PostgreSQL conformance manifest, and removes the container afterward. It also
+runs every exact hermetic projection proof under sanitized pytest loading and
+records per-test calls to the registered reducers and rebuilders. Observed
+result:
+
+```text
+7 exact hermetic projection proofs passed in 3.87s
+48 PostgreSQL conformance tests passed in 5.86s
+6 registered PostgreSQL projection proofs were present in the exact manifest
+7 existing Alembic deprecation warnings
+```
+
+The final changed-surface command covered every modified or newly added test
+module for runtime, evidence commit, ledger, observability, PostgreSQL,
+official SWE-bench authority, mergeability, task environment, trace graph, and
+projection registry:
+
+```text
+uv run pytest -q tests/test_agent_runtime.py \
+  tests/test_evidence_committer.py \
+  tests/test_evidence_ledger_hardening.py \
+  tests/test_experiment_kernel.py \
+  tests/test_obs_001_observability.py \
+  tests/test_postgres_ledger_lane.py \
+  tests/test_swe_bench_official_oracle_authority.py \
+  tests/test_swe_bench_pro_mergeability_bridge.py \
+  tests/test_task_environment.py tests/test_trace_graph.py \
+  tests/test_projection_registry.py
+```
+
+Observed result:
+
+```text
+618 passed, 32 skipped in 56.46s
+```
+
+The skipped PostgreSQL cases in that ordinary pytest command are covered by
+the live 48-test conformance run above.
+
+An earlier post-audit checkpoint used the following focused command for
+production-trace authority, public export reconstruction, event-ledger
+migrations, replay, historical evaluation, run registration, and
+launch-receipt durability:
 
 ```text
 uv run pytest -q tests/test_production_trace.py \
@@ -39,17 +106,17 @@ uv run pytest -q tests/test_production_trace.py \
   tests/test_obs_001_observability.py
 ```
 
-Observed result (the 23 skips are the Postgres-lane tests, which skip
-without a reachable Postgres server):
+Observed historical checkpoint result (the 23 skips were the Postgres-lane
+tests without a reachable PostgreSQL server):
 
 ```text
 295 passed, 23 skipped in 12.19s
 ```
 
-The final authority-regression commands covered immutable experiment-to-grade
-joins, completed evidence replay, the hermetic tracer, canonical public
-exports, clean-room verification, production-trace recording, and terminal
-experiment recovery:
+Earlier authority-regression checkpoints covered immutable
+experiment-to-grade joins, completed evidence replay, the hermetic tracer,
+canonical public exports, clean-room verification, production-trace
+recording, and terminal experiment recovery:
 
 ```text
 uv run pytest -q tests/test_evidence_committer.py tests/test_tracer_001_e2e.py
@@ -58,7 +125,7 @@ uv run pytest -q tests/test_codex_supervisor_mcp_stdio.py -k production_trace
 uv run pytest -q tests/test_experiment_kernel.py -k 'terminal or grade or replay'
 ```
 
-Observed results:
+Observed historical checkpoint results:
 
 ```text
 35 passed in 12.36s
@@ -145,6 +212,30 @@ representative coding benchmarks.
 - A completed evidence-commit replay reloads the persisted `TraceGraphStore`
   and rejects any difference from the immutable request instead of validating
   the caller graph alone.
+- Evidence-commit schema v2 requires the complete lifecycle projection and a
+  directly signed artifact-manifest attestation on completed replay. Legacy
+  v1 materializations cannot silently inherit those guarantees.
+- Manifest publication requires an instance-scoped committer capability plus
+  one immutable state-level idempotency claim per `(run, commit_id)`. Exact
+  replay returns the original event; missing, forged, or conflicting authority
+  claims fail closed, including across distinct evidence roots.
+- TRACE lifecycle v2 binds exact ordered parent projections. Existing v1
+  lifecycle stores remain readable under their older record-set semantics;
+  new writes use v2 rather than silently strengthening v1.
+- Signature trust boundaries require the verifier to return the literal
+  boolean `True`; truthy strings and async verifier coroutines fail closed.
+- Quality-trend projection rebuild requires a non-empty external exact-stream
+  checkpoint inventory. PostgreSQL rebuild locks the projection, stream
+  sequence, and event tables in writer order so a concurrent new stream cannot
+  be erased and an existing-stream update cannot deadlock the rebuild.
+- Projection proof receipts attribute registered implementation calls to exact
+  pytest node IDs and projection IDs. An unrelated passing test cannot satisfy
+  another projection's proof, and a PostgreSQL rebuilder requires an exact
+  registered PostgreSQL proof.
+- The SQLite backend-run replay guard validates its canonical table and trigger
+  definitions on every open; a pre-seeded or substituted same-name schema
+  fails closed. Grade evidence is recursively immutable, while `Grade.to_dict`
+  returns detached serialization-safe containers.
 - Every grade revision in one supersession lineage must bind the same terminal
   experiment/task/arm/state/hash identity, regardless of commit order.
 - Every published grade history request pins exactly one immutable terminal
@@ -182,6 +273,12 @@ representative coding benchmarks.
   root detects later substitution only when obtained from an independent
   channel; it is not a signed external ledger anchor and does not raise the
   L1/L2 claim ceiling.
+- The durable SWE-bench backend-run guard prevents replay, but it is not yet a
+  crash-recoverable grade journal. A crash after durable consumption can be
+  retried only as a fresh nonce-bound backend execution; a stable reused
+  backend run fails closed. Operational grading remains blocked until a
+  durable verification-attempt key, nonce, canonical grade, and completion
+  state can be recovered atomically.
 
 Focused public-export verification:
 
@@ -229,7 +326,9 @@ PILOT-001 remains blocked until the program has:
 4. an independently controlled verifier identity;
 5. production signing keys and an external ledger anchor;
 6. named runtime, credential, and budget authorization; and
-7. a commit-pinned execution tree.
+7. a commit-pinned execution tree; and
+8. a crash-recoverable verification-attempt journal integrated with
+   experiment resume.
 
 The pilot must estimate discordance, verifier flake, infrastructure failure,
 latency, and cost. Confirmation sample size and ROI remain undefined until

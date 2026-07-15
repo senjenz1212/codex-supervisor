@@ -4003,7 +4003,10 @@ def test_official_harness_oracle_bounds_long_run_id(tmp_path, monkeypatch):
     assert len(observed["run_id"].encode("utf-8")) <= 180
 
 
-def test_official_oracle_empty_present_buckets_can_pass(tmp_path, monkeypatch):
+def test_official_oracle_empty_present_buckets_are_unavailable(
+    tmp_path,
+    monkeypatch,
+):
     monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
     monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
 
@@ -4047,9 +4050,13 @@ def test_official_oracle_empty_present_buckets_can_pass(tmp_path, monkeypatch):
         "frozen_decisions_sha256": "abc123",
     })
 
-    assert result["fail_to_pass_status"] == "pass"
-    assert result["pass_to_pass_status"] == "pass"
-    assert "oracle_unavailable" not in result
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "official_report_status_bucket_unavailable:"
+        "FAIL_TO_PASS_success_missing,PASS_TO_PASS_bucket_empty"
+    )
 
 
 def test_official_oracle_missing_or_malformed_status_bucket_is_unavailable(
@@ -4075,7 +4082,10 @@ def test_official_oracle_missing_or_malformed_status_bucket_is_unavailable(
                 instance_id: {
                     "resolved": True,
                     "tests_status": {
-                        "FAIL_TO_PASS": {"success": [], "failure": []},
+                        "FAIL_TO_PASS": {
+                            "success": ["test_fixed"],
+                            "failure": [],
+                        },
                         "PASS_TO_PASS": ["malformed"],
                     },
                 }
@@ -4108,6 +4118,199 @@ def test_official_oracle_missing_or_malformed_status_bucket_is_unavailable(
     assert receipt["fail_to_pass_status"] == "unavailable"
     assert receipt["pass_to_pass_status"] == "unavailable"
     assert receipt["unavailable_reason"] == result["oracle_unavailable_reason"]
+
+
+def _run_official_oracle_with_report_text(
+    *,
+    tmp_path,
+    monkeypatch,
+    report_text,
+):
+    monkeypatch.setenv(
+        "SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR",
+        str(tmp_path / "oracle"),
+    )
+    monkeypatch.setenv(
+        "SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX",
+        "test-oracle",
+    )
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        content = (
+            report_text(instance_id)
+            if callable(report_text)
+            else str(report_text)
+        )
+        (report_dir / "report.json").write_text(
+            content,
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "official stdout",
+            "",
+        )
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+    patch = _valid_model_patch()
+    return run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": patch,
+        "model_patch_sha256": sha256(
+            patch.encode("utf-8")
+        ).hexdigest(),
+        "frozen_decisions_path": str(
+            tmp_path / "frozen_decisions.json"
+        ),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+
+@pytest.mark.parametrize(
+    ("report_text", "expected_reason"),
+    (
+        ("{not-json", "official_instance_report_malformed"),
+        (json.dumps([]), "official_instance_report_row_mismatch"),
+    ),
+)
+def test_official_oracle_rejects_malformed_report_document(
+    tmp_path,
+    monkeypatch,
+    report_text,
+    expected_reason,
+):
+    result = _run_official_oracle_with_report_text(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        report_text=report_text,
+    )
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == expected_reason
+
+
+def test_official_oracle_rejects_resolved_false_with_passing_buckets(
+    tmp_path,
+    monkeypatch,
+):
+    result = _run_official_oracle_with_report_text(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        report_text=lambda instance_id: json.dumps({
+            instance_id: {
+                "resolved": False,
+                "tests_status": {
+                    "FAIL_TO_PASS": {
+                        "success": ["test_fixed"],
+                        "failure": [],
+                    },
+                    "PASS_TO_PASS": {
+                        "success": ["test_existing"],
+                        "failure": [],
+                    },
+                },
+            }
+        }),
+    )
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "official_report_resolved_status_mismatch"
+    )
+
+
+@pytest.mark.parametrize(
+    ("fail_to_pass_bucket", "expected_reason"),
+    (
+        (
+            {"success": [""], "failure": []},
+            "FAIL_TO_PASS_success_entry_malformed",
+        ),
+        (
+            {"success": ["test_fixed", "test_fixed"], "failure": []},
+            "FAIL_TO_PASS_success_duplicate",
+        ),
+        (
+            {"success": ["test_fixed"], "failure": ["test_fixed"]},
+            "FAIL_TO_PASS_success_failure_overlap",
+        ),
+    ),
+)
+def test_official_oracle_rejects_malformed_or_ambiguous_test_identifiers(
+    tmp_path,
+    monkeypatch,
+    fail_to_pass_bucket,
+    expected_reason,
+):
+    result = _run_official_oracle_with_report_text(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        report_text=lambda instance_id: json.dumps({
+            instance_id: {
+                "resolved": True,
+                "tests_status": {
+                    "FAIL_TO_PASS": fail_to_pass_bucket,
+                    "PASS_TO_PASS": {
+                        "success": ["test_existing"],
+                        "failure": [],
+                    },
+                },
+            }
+        }),
+    )
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "official_report_status_bucket_unavailable:"
+        + expected_reason
+    )
+
+
+def test_official_oracle_rejects_cross_category_test_identifier_overlap(
+    tmp_path,
+    monkeypatch,
+):
+    result = _run_official_oracle_with_report_text(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        report_text=lambda instance_id: json.dumps({
+            instance_id: {
+                "resolved": True,
+                "tests_status": {
+                    "FAIL_TO_PASS": {
+                        "success": ["test_shared"],
+                        "failure": [],
+                    },
+                    "PASS_TO_PASS": {
+                        "success": ["test_shared"],
+                        "failure": [],
+                    },
+                },
+            }
+        }),
+    )
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "official_report_status_bucket_unavailable:"
+        "FAIL_TO_PASS_PASS_TO_PASS_test_id_overlap"
+    )
 
 
 def test_official_harness_oracle_nonzero_return_is_unavailable(tmp_path, monkeypatch):

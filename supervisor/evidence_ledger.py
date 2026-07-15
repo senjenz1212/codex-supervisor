@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import errno
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -69,7 +70,12 @@ EVENT_HASH_SCHEMA_ALLOWED_PREDECESSORS_BY_SCHEMA: dict[
 EVENT_IDENTITY_SCHEMA_VERSION = "evidence-ledger-event-identity/v1"
 EVENT_IDENTITY_CHAIN_SCOPE = "event-id-chain/v1"
 EVENT_IDENTITY_HEAD_SCOPE = "head-event/v1"
+EVIDENCE_COMMIT_EVENT_KIND = "harness.evidence.committed"
+EVIDENCE_COMMIT_EVENT_SOURCE = "evidence_committer"
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "evidence-ledger-artifact-manifest/v1"
+ARTIFACT_MANIFEST_ATTESTATION_SCHEMA_VERSION = (
+    "evidence-ledger-artifact-manifest-attestation/v1"
+)
 LEGACY_RAW_PAYLOAD_COMMITMENT_SCHEMA_VERSION = (
     "evidence-ledger-legacy-raw-payload/v1"
 )
@@ -77,6 +83,9 @@ CHECKPOINT_SCHEMA_VERSION = "evidence-ledger-checkpoint/v2"
 IN_TOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 CHECKPOINT_PREDICATE_TYPE = (
     "https://codex-supervisor.local/attestations/evidence-ledger-checkpoint/v1"
+)
+ARTIFACT_MANIFEST_PREDICATE_TYPE = (
+    "https://codex-supervisor.local/attestations/artifact-manifest/v1"
 )
 NATIVE_GENESIS = "native"
 LEGACY_IMPORT_GENESIS = "legacy-import"
@@ -410,6 +419,280 @@ def build_artifact_manifest(
         **body,
         "manifest_hash": artifact_manifest_hash(body),
     }
+
+
+def _validate_artifact_manifest(
+    manifest: Mapping[str, Any],
+) -> tuple[tuple[str, str, int, str, str], ...]:
+    required_keys = {
+        "schema_version",
+        "artifacts",
+        "manifest_hash",
+    }
+    allowed_keys = required_keys | {"metadata"}
+    if (
+        not isinstance(manifest, Mapping)
+        or not required_keys.issubset(manifest)
+        or set(manifest) - allowed_keys
+        or manifest.get("schema_version")
+        != ARTIFACT_MANIFEST_SCHEMA_VERSION
+    ):
+        raise ArtifactIntegrityError(
+            "artifact manifest has a noncanonical shape"
+        )
+    try:
+        declared_hash = _require_canonical_sha256(
+            manifest.get("manifest_hash")
+        )
+    except ValueError as exc:
+        raise ArtifactIntegrityError(str(exc)) from exc
+    if artifact_manifest_hash(manifest) != declared_hash:
+        raise ArtifactIntegrityError("artifact manifest hash mismatch")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ArtifactIntegrityError(
+            "artifact manifest artifacts must be a list"
+        )
+    if "metadata" in manifest and not isinstance(
+        manifest.get("metadata"),
+        Mapping,
+    ):
+        raise ArtifactIntegrityError(
+            "artifact manifest metadata must be an object"
+        )
+    descriptors: list[tuple[str, str, int, str, str]] = []
+    seen_names: set[str] = set()
+    for artifact in artifacts:
+        if not isinstance(artifact, Mapping):
+            raise ArtifactIntegrityError(
+                "artifact descriptor must be an object"
+            )
+        descriptor = _validate_artifact_descriptor(artifact)
+        if descriptor[0] in seen_names:
+            raise ArtifactIntegrityError(
+                "artifact manifest contains a duplicate descriptor"
+            )
+        seen_names.add(descriptor[0])
+        descriptors.append(descriptor)
+    return tuple(descriptors)
+
+
+def create_artifact_manifest_attestation(
+    manifest: Mapping[str, Any],
+    *,
+    manifest_bytes: bytes,
+    signer: Signer,
+    created_at: int,
+    manifest_name: str = "artifact-manifest.json",
+    signer_provider_id: str | None = None,
+) -> dict[str, Any]:
+    """Directly sign one immutable artifact manifest as an in-toto statement."""
+    _validate_artifact_manifest(manifest)
+    declared_hash = str(manifest["manifest_hash"])
+    exact_manifest_bytes = _canonical_manifest_file_bytes(
+        manifest,
+        manifest_bytes,
+    )
+    manifest_file_sha256 = sha256_hex(exact_manifest_bytes)
+    if type(created_at) is not int or created_at < 0:
+        raise ValueError("artifact manifest attestation created_at is invalid")
+    normalized_name = _normalize_artifact_name(manifest_name)
+    signer_identity = _checkpoint_signer_identity(
+        signer,
+        provider_id=signer_provider_id,
+    )
+    statement: dict[str, Any] = {
+        "_type": IN_TOTO_STATEMENT_TYPE,
+        "subject": [{
+            "name": normalized_name,
+            "digest": {"sha256": manifest_file_sha256},
+        }],
+        "predicateType": ARTIFACT_MANIFEST_PREDICATE_TYPE,
+        "predicate": {
+            "schema_version": ARTIFACT_MANIFEST_ATTESTATION_SCHEMA_VERSION,
+            "manifest_schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "manifest_hash": declared_hash,
+            "signer_provider_id": signer_identity["provider_id"],
+            "signer_key_id": signer_identity["key_id"],
+            "signer_algorithm": signer_identity["algorithm"],
+            "created_at": created_at,
+        },
+    }
+    signed_payload = canonical_json_bytes(statement)
+    signature = _sign_checkpoint(
+        signer,
+        signed_payload,
+        expected_key_id=signer_identity["key_id"],
+        expected_algorithm=signer_identity["algorithm"],
+    )
+    return {
+        **statement,
+        "signatures": [signature],
+        "signing_payload_sha256": sha256_hex(signed_payload),
+    }
+
+
+def verify_artifact_manifest_attestation(
+    attestation: Mapping[str, Any],
+    *,
+    manifest: Mapping[str, Any],
+    manifest_bytes: bytes,
+    verifier: Any,
+) -> bool:
+    """Verify manifest identity, signed payload, signer metadata, and signature."""
+    if not isinstance(attestation, Mapping) or set(attestation) != {
+        "_type",
+        "subject",
+        "predicateType",
+        "predicate",
+        "signatures",
+        "signing_payload_sha256",
+    }:
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation has a noncanonical shape"
+        )
+    if (
+        attestation.get("_type") != IN_TOTO_STATEMENT_TYPE
+        or attestation.get("predicateType")
+        != ARTIFACT_MANIFEST_PREDICATE_TYPE
+    ):
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation type is invalid"
+        )
+    _validate_artifact_manifest(manifest)
+    manifest_hash = str(manifest["manifest_hash"])
+    exact_manifest_bytes = _canonical_manifest_file_bytes(
+        manifest,
+        manifest_bytes,
+    )
+    manifest_file_sha256 = sha256_hex(exact_manifest_bytes)
+    subject = attestation.get("subject")
+    if (
+        not isinstance(subject, list)
+        or len(subject) != 1
+        or not isinstance(subject[0], Mapping)
+        or set(subject[0]) != {"name", "digest"}
+        or not isinstance(subject[0].get("digest"), Mapping)
+        or set(subject[0]["digest"]) != {"sha256"}
+        or subject[0]["digest"].get("sha256") != manifest_file_sha256
+    ):
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation file digest mismatch"
+        )
+    _normalize_artifact_name(subject[0].get("name"))
+    predicate = attestation.get("predicate")
+    expected_predicate_keys = {
+        "schema_version",
+        "manifest_schema_version",
+        "manifest_hash",
+        "signer_provider_id",
+        "signer_key_id",
+        "signer_algorithm",
+        "created_at",
+    }
+    if (
+        not isinstance(predicate, Mapping)
+        or set(predicate) != expected_predicate_keys
+        or predicate.get("schema_version")
+        != ARTIFACT_MANIFEST_ATTESTATION_SCHEMA_VERSION
+        or predicate.get("manifest_schema_version")
+        != ARTIFACT_MANIFEST_SCHEMA_VERSION
+        or predicate.get("manifest_hash") != manifest_hash
+        or type(predicate.get("created_at")) is not int
+        or int(predicate["created_at"]) < 0
+    ):
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation predicate is invalid"
+        )
+    try:
+        key_id = _canonical_signer_text(
+            predicate.get("signer_key_id"),
+            field="key_id",
+        )
+        algorithm = _canonical_signer_text(
+            predicate.get("signer_algorithm"),
+            field="algorithm",
+        )
+        _canonical_signer_text(
+            predicate.get("signer_provider_id"),
+            field="provider_id",
+        )
+    except ValueError as exc:
+        raise ArtifactIntegrityError(str(exc)) from exc
+    statement = {
+        "_type": attestation["_type"],
+        "subject": subject,
+        "predicateType": attestation["predicateType"],
+        "predicate": predicate,
+    }
+    signed_payload = canonical_json_bytes(statement)
+    try:
+        declared_payload_hash = _require_canonical_sha256(
+            attestation.get("signing_payload_sha256")
+        )
+    except ValueError as exc:
+        raise ArtifactIntegrityError(str(exc)) from exc
+    if sha256_hex(signed_payload) != declared_payload_hash:
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation signing payload hash mismatch"
+        )
+    signatures = attestation.get("signatures")
+    if not isinstance(signatures, list) or not signatures:
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation signature is missing"
+        )
+    accepted = False
+    verify = getattr(verifier, "verify", None)
+    for signature in signatures:
+        if (
+            not isinstance(signature, Mapping)
+            or signature.get("key_id") != key_id
+            or signature.get("algorithm") != algorithm
+            or not isinstance(signature.get("signature"), str)
+            or not str(signature["signature"]).strip()
+        ):
+            raise ArtifactIntegrityError(
+                "artifact manifest attestation signature metadata is invalid"
+            )
+        try:
+            valid = (
+                verify(signed_payload, signature)
+                if callable(verify)
+                else verifier(signed_payload, signature)
+            )
+        except Exception as exc:
+            raise ArtifactIntegrityError(
+                "artifact manifest attestation signature verification failed"
+            ) from exc
+        if inspect.isawaitable(valid):
+            close = getattr(valid, "close", None)
+            if callable(close):
+                close()
+            raise ArtifactIntegrityError(
+                "artifact manifest attestation verifier must be synchronous"
+            )
+        accepted = valid is True or accepted
+    if not accepted:
+        raise ArtifactIntegrityError(
+            "artifact manifest attestation signature is invalid"
+        )
+    return True
+
+
+def _canonical_manifest_file_bytes(
+    manifest: Mapping[str, Any],
+    manifest_bytes: bytes,
+) -> bytes:
+    if not isinstance(manifest_bytes, bytes):
+        raise ArtifactIntegrityError(
+            "artifact manifest file bytes must be supplied exactly"
+        )
+    canonical = canonical_json_bytes(manifest)
+    if manifest_bytes != canonical:
+        raise ArtifactIntegrityError(
+            "artifact manifest file bytes are not canonical JSON"
+        )
+    return manifest_bytes
 
 
 EMPTY_ARTIFACT_MANIFEST = build_artifact_manifest(())
@@ -1873,49 +2156,73 @@ class ContentAddressedArtifactStore:
     ) -> dict[str, Any]:
         manifest = build_artifact_manifest(artifacts, metadata=metadata)
         self.verify_manifest(manifest)
+        manifest_body_bytes = canonical_json_bytes(
+            {
+                key: value
+                for key, value in manifest.items()
+                if key != "manifest_hash"
+            }
+        )
+        # The v1 manifest hash commits to the body without its self-hash.
+        manifest_body = self.put_bytes(
+            manifest_body_bytes,
+            name="artifact-manifest.json",
+            media_type="application/vnd.codex-supervisor.artifact-manifest+json",
+        )
+        if (
+            manifest_body["digest"]["sha256"]
+            != manifest["manifest_hash"]
+        ):
+            raise ArtifactIntegrityError(
+                "artifact manifest hash does not address canonical body bytes"
+            )
+        # Attestations bind the full manifest file, so retain those bytes too.
         self.put_bytes(
-            canonical_json_bytes(
-                {key: value for key, value in manifest.items() if key != "manifest_hash"}
-            ),
+            canonical_json_bytes(manifest),
             name="artifact-manifest.json",
             media_type="application/vnd.codex-supervisor.artifact-manifest+json",
         )
         return manifest
 
+    def create_manifest_attestation(
+        self,
+        manifest: Mapping[str, Any],
+        *,
+        signer: Signer,
+        verifier: Any,
+        created_at: int,
+        manifest_name: str = "artifact-manifest.json",
+        signer_provider_id: str | None = None,
+    ) -> dict[str, Any]:
+        self.verify_manifest(manifest)
+        manifest_bytes = canonical_json_bytes(manifest)
+        attestation = create_artifact_manifest_attestation(
+            manifest,
+            manifest_bytes=manifest_bytes,
+            signer=signer,
+            created_at=created_at,
+            manifest_name=manifest_name,
+            signer_provider_id=signer_provider_id,
+        )
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=manifest,
+            manifest_bytes=manifest_bytes,
+            verifier=verifier,
+        )
+        self.put_bytes(
+            canonical_json_bytes(attestation),
+            name="artifact-manifest.attestation.json",
+            media_type=(
+                "application/vnd.codex-supervisor."
+                "artifact-manifest-attestation+json"
+            ),
+        )
+        return attestation
+
     def verify_manifest(self, manifest: Mapping[str, Any]) -> bool:
-        allowed_keys = {
-            "schema_version",
-            "artifacts",
-            "metadata",
-            "manifest_hash",
-        }
-        if (
-            not isinstance(manifest, Mapping)
-            or set(manifest) - allowed_keys
-            or manifest.get("schema_version")
-            != ARTIFACT_MANIFEST_SCHEMA_VERSION
-        ):
-            raise ArtifactIntegrityError(
-                "artifact manifest has a noncanonical shape"
-            )
-        declared = _require_canonical_sha256(manifest.get("manifest_hash"))
-        if artifact_manifest_hash(manifest) != declared:
-            raise ArtifactIntegrityError("artifact manifest hash mismatch")
-        artifacts = manifest.get("artifacts")
-        if not isinstance(artifacts, list):
-            raise ArtifactIntegrityError("artifact manifest artifacts must be a list")
-        seen_names: set[str] = set()
-        for artifact in artifacts:
-            if not isinstance(artifact, Mapping):
-                raise ArtifactIntegrityError("artifact descriptor must be an object")
-            name, digest, declared_size, _media_type, _uri = (
-                _validate_artifact_descriptor(artifact)
-            )
-            if name in seen_names:
-                raise ArtifactIntegrityError(
-                    "artifact manifest contains a duplicate descriptor"
-                )
-            seen_names.add(name)
+        descriptors = _validate_artifact_manifest(manifest)
+        for _name, digest, declared_size, _media_type, _uri in descriptors:
             value = self.read_bytes(digest)
             if len(value) != declared_size:
                 raise ArtifactIntegrityError(
@@ -2208,6 +2515,8 @@ verify_event_chain_authoritatively = verify_authoritative_event_chain
 
 
 __all__ = [
+    "ARTIFACT_MANIFEST_ATTESTATION_SCHEMA_VERSION",
+    "ARTIFACT_MANIFEST_PREDICATE_TYPE",
     "ARTIFACT_MANIFEST_SCHEMA_VERSION",
     "CHECKPOINT_SCHEMA_VERSION",
     "CHECKPOINT_PREDICATE_TYPE",
@@ -2220,6 +2529,8 @@ __all__ = [
     "EVENT_IDENTITY_CHAIN_SCOPE",
     "EVENT_IDENTITY_HEAD_SCOPE",
     "EVENT_IDENTITY_SCHEMA_VERSION",
+    "EVIDENCE_COMMIT_EVENT_KIND",
+    "EVIDENCE_COMMIT_EVENT_SOURCE",
     "ArtifactIntegrityError",
     "LedgerError",
     "LedgerFields",
@@ -2242,6 +2553,7 @@ __all__ = [
     "compute_event_hash",
     "compute_event_identity_hash",
     "compute_head_event_identity_hash",
+    "create_artifact_manifest_attestation",
     "create_ledger_checkpoint",
     "event_hash_schema_transition_allowed",
     "legacy_raw_payload_manifest_hash",
@@ -2254,4 +2566,5 @@ __all__ = [
     "verify_event_chain",
     "verify_event_chain_authoritatively",
     "verify_event_chain_structure",
+    "verify_artifact_manifest_attestation",
 ]

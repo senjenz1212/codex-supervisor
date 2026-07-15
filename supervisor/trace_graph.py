@@ -21,8 +21,17 @@ from uuid import UUID
 
 TRACE_GRAPH_SCHEMA_VERSION = "supervisor-trace-graph/v1"
 TRACE_GRAPH_STORE_SCHEMA_VERSION = "supervisor-trace-graph-store/v1"
-TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION = (
+TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION = (
     "supervisor-trace-graph-lifecycle/v1"
+)
+TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION = (
+    "supervisor-trace-graph-lifecycle/v2"
+)
+_TRACE_GRAPH_LIFECYCLE_SUPPORTED_SCHEMA_VERSIONS = frozenset(
+    {
+        TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION,
+        TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
+    }
 )
 TRACE_CLOSURE_BINDING_SCHEMA_VERSION = "supervisor-trace-closure-binding/v1"
 TRACE_CLOSURE_BINDING_ATTRIBUTE = "trace_closure_binding"
@@ -76,7 +85,7 @@ class EdgeType(str, Enum):
 
 
 class TraceLifecycleStage(str, Enum):
-    """Ordered immutable revisions of one trace evidence lifecycle."""
+    """Ordered stage projections derived from one completed trace graph."""
 
     PLANNING = "planning"
     RUNTIME = "runtime"
@@ -891,7 +900,10 @@ class TraceLifecycleRevision:
             raise TraceGraphError(
                 f"unsupported trace lifecycle stage: {self.stage}"
             ) from exc
-        if self.schema_version != TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION:
+        if (
+            self.schema_version
+            not in _TRACE_GRAPH_LIFECYCLE_SUPPORTED_SCHEMA_VERSIONS
+        ):
             raise TraceGraphError(
                 "unsupported trace lifecycle schema: "
                 f"{self.schema_version}"
@@ -1855,41 +1867,55 @@ def _trace_waiver_key(waiver: TraceWaiver) -> str:
 
 def _trace_graph_record_payloads(
     graph: TraceGraph,
-) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+) -> tuple[
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+]:
     return (
-        {
-            node.identity.canonical_key: _canonical_json(node.to_dict())
+        tuple(
+            (node.identity.canonical_key, _canonical_json(node.to_dict()))
             for node in graph.nodes
-        },
-        {
-            _trace_edge_key(edge): _canonical_json(edge.to_dict())
+        ),
+        tuple(
+            (_trace_edge_key(edge), _canonical_json(edge.to_dict()))
             for edge in graph.edges
-        },
-        {
-            _trace_waiver_key(waiver): _canonical_json(waiver.to_dict())
+        ),
+        tuple(
+            (_trace_waiver_key(waiver), _canonical_json(waiver.to_dict()))
             for waiver in graph.waivers
-        },
+        ),
     )
 
 
-def _trace_graph_is_record_extension(
+def _trace_graph_record_maps(
+    graph: TraceGraph,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    nodes, edges, waivers = _trace_graph_record_payloads(graph)
+    return (dict(nodes), dict(edges), dict(waivers))
+
+
+def _trace_graph_preserves_parent_projection(
     *,
-    committed: TraceGraph,
-    live: TraceGraph,
+    parent_stage: TraceLifecycleStage,
+    parent: TraceGraph,
+    child: TraceGraph,
 ) -> bool:
-    committed_payloads = _trace_graph_record_payloads(committed)
-    live_payloads = _trace_graph_record_payloads(live)
-    for committed_records, live_records in zip(
-        committed_payloads,
-        live_payloads,
-    ):
-        for key, payload in committed_records.items():
-            if live_records.get(key) != payload:
-                return False
-    return True
+    projected_parent = child.lifecycle_revision(parent_stage)
+    return _trace_graph_has_same_ordered_records(projected_parent, parent)
 
 
-def _trace_graph_has_same_records(
+def _trace_graph_preserves_legacy_parent_record_set(
+    *,
+    parent_stage: TraceLifecycleStage,
+    parent: TraceGraph,
+    child: TraceGraph,
+) -> bool:
+    projected_parent = child.lifecycle_revision(parent_stage)
+    return _trace_graph_has_same_record_set(projected_parent, parent)
+
+
+def _trace_graph_has_same_ordered_records(
     first: TraceGraph,
     second: TraceGraph,
 ) -> bool:
@@ -1898,8 +1924,15 @@ def _trace_graph_has_same_records(
     )
 
 
+def _trace_graph_has_same_record_set(
+    first: TraceGraph,
+    second: TraceGraph,
+) -> bool:
+    return _trace_graph_record_maps(first) == _trace_graph_record_maps(second)
+
+
 class TraceGraphStore:
-    """Append-only SQLite persistence for one incrementally built graph."""
+    """Append-only SQLite persistence for ordered graph stage projections."""
 
     def __init__(self, path: str | Path) -> None:
         raw_path = str(path)
@@ -1961,7 +1994,7 @@ class TraceGraphStore:
         stage: TraceLifecycleStage,
         graph: TraceGraph,
     ) -> TraceLifecycleRevision:
-        """Append one cumulative stage without inventing missing history."""
+        """Append one cumulative stage projection without changing its parent."""
         if not isinstance(graph, TraceGraph):
             raise TraceGraphError(
                 "TraceGraphStore.append_lifecycle_revision requires a "
@@ -2004,7 +2037,7 @@ class TraceGraphStore:
                 if typed_stage is not expected_stage:
                     if not existing:
                         raise TraceGraphError(
-                            "planning lifecycle revision must be committed first"
+                            "planning stage projection must be persisted first"
                         )
                     raise TraceGraphError(
                         "trace lifecycle revisions must be committed in order: "
@@ -2017,7 +2050,7 @@ class TraceGraphStore:
                     previous = self._load_lifecycle_revision_unlocked(
                         existing[-1]
                     )
-                    if not _trace_graph_has_same_records(
+                    if not _trace_graph_has_same_record_set(
                         live_graph,
                         previous,
                     ):
@@ -2025,13 +2058,14 @@ class TraceGraphStore:
                             "trace store contains unversioned trace records "
                             "after its latest lifecycle revision"
                         )
-                    if not _trace_graph_is_record_extension(
-                        committed=previous,
-                        live=graph,
+                    if not _trace_graph_preserves_parent_projection(
+                        parent_stage=existing[-1].stage,
+                        parent=previous,
+                        child=graph,
                     ):
                         raise TraceGraphError(
-                            "trace lifecycle revision is not an append-only "
-                            "extension of its parent"
+                            "trace lifecycle revision does not preserve its "
+                            "exact ordered parent projection"
                         )
                 elif (
                     live_graph.nodes
@@ -2040,7 +2074,7 @@ class TraceGraphStore:
                 ):
                     raise TraceGraphError(
                         "trace store contains unversioned trace records; "
-                        "refusing to invent a planning precommit"
+                        "refusing to derive a planning stage projection"
                     )
 
                 projected = graph.lifecycle_revision(typed_stage)
@@ -2069,7 +2103,7 @@ class TraceGraphStore:
                 for waiver in graph.waivers:
                     self._append_waiver(waiver)
                 appended_graph = self._load_graph_unlocked()
-                if not _trace_graph_has_same_records(
+                if not _trace_graph_has_same_record_set(
                     appended_graph,
                     graph,
                 ):
@@ -2265,6 +2299,7 @@ class TraceGraphStore:
             _trace_lifecycle_revision_from_row(row)
             for row in rows
         )
+        loaded: list[TraceGraph] = []
         for index, revision in enumerate(revisions):
             if index >= len(_TRACE_LIFECYCLE_ORDER):
                 raise TraceGraphError(
@@ -2283,7 +2318,51 @@ class TraceGraphStore:
                 raise TraceGraphError(
                     "trace lifecycle revision chain is invalid"
                 )
-            self._load_lifecycle_revision_unlocked(revision)
+            graph = self._load_lifecycle_revision_unlocked(revision)
+            if not _trace_graph_has_same_ordered_records(
+                graph.lifecycle_revision(revision.stage),
+                graph,
+            ):
+                raise TraceGraphError(
+                    "trace lifecycle revision contains records from a later "
+                    f"stage than {revision.stage.value}"
+                )
+            if not any(
+                _NODE_LIFECYCLE_STAGE[node.identity.node_type]
+                is revision.stage
+                for node in graph.nodes
+            ):
+                raise TraceGraphError(
+                    "trace lifecycle revision adds no "
+                    f"{revision.stage.value} nodes"
+                )
+            preserves_parent = True
+            if index:
+                if (
+                    revision.schema_version
+                    == TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION
+                ):
+                    preserves_parent = (
+                        _trace_graph_preserves_legacy_parent_record_set(
+                            parent_stage=revisions[index - 1].stage,
+                            parent=loaded[-1],
+                            child=graph,
+                        )
+                    )
+                else:
+                    preserves_parent = (
+                        _trace_graph_preserves_parent_projection(
+                            parent_stage=revisions[index - 1].stage,
+                            parent=loaded[-1],
+                            child=graph,
+                        )
+                    )
+            if not preserves_parent:
+                raise TraceGraphError(
+                    "trace lifecycle revision does not preserve its exact "
+                    "ordered parent projection"
+                )
+            loaded.append(graph)
         return revisions
 
     def _load_lifecycle_revision_unlocked(

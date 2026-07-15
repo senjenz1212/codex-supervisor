@@ -5,6 +5,7 @@ import copy
 import errno
 import hashlib
 import hmac
+import json
 import multiprocessing
 import os
 import sqlite3
@@ -25,10 +26,12 @@ from supervisor.evidence_ledger import (
     canonical_json_bytes,
     canonical_payload_hash,
     compute_event_hash,
+    create_artifact_manifest_attestation,
     create_ledger_checkpoint,
     legacy_raw_payload_manifest_hash,
     rebuild_projection,
     sha256_hex,
+    verify_artifact_manifest_attestation,
     verify_event_chain_structure,
 )
 from supervisor.ledger_checkpoints import (
@@ -129,7 +132,7 @@ def _authoritative_projection_arguments(
     return {
         "checkpoint_store": checkpoints,
         "verifier": key,
-        "trusted_checkpoint_pins": trusted,
+        "expected_stream_checkpoint_pins": trusted,
     }
 
 
@@ -593,6 +596,318 @@ def test_artifact_manifest_accepts_identical_content_under_distinct_names(
     manifest = store.create_manifest([first, second])
 
     assert store.verify_manifest(manifest) is True
+
+
+def test_create_manifest_hash_addresses_retrievable_cas_bytes(tmp_path):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+
+    manifest = store.create_manifest(
+        [descriptor],
+        metadata={"run_id": "manifest-readback"},
+    )
+
+    manifest_body = {
+        key: value
+        for key, value in manifest.items()
+        if key != "manifest_hash"
+    }
+    assert store.read_bytes(manifest["manifest_hash"]) == canonical_json_bytes(
+        manifest_body
+    )
+
+
+def test_artifact_manifest_has_a_direct_detached_signature(tmp_path):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+
+    attestation = store.create_manifest_attestation(
+        manifest,
+        signer=signer,
+        verifier=signer,
+        created_at=1234,
+    )
+
+    assert attestation["subject"] == [{
+        "name": "artifact-manifest.json",
+        "digest": {
+            "sha256": sha256_hex(canonical_json_bytes(manifest))
+        },
+    }]
+    assert attestation["predicate"]["manifest_hash"] == manifest["manifest_hash"]
+    assert attestation["predicate"]["signer_provider_id"] == signer.provider_id
+    assert attestation["signatures"][0]["key_id"] == signer.key_id
+    assert verify_artifact_manifest_attestation(
+        attestation,
+        manifest=manifest,
+        manifest_bytes=canonical_json_bytes(manifest),
+        verifier=signer,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("artifacts", {}, "artifacts must be a list"),
+        ("metadata", [], "metadata must be an object"),
+        ("unexpected", True, "noncanonical shape"),
+        (
+            "schema_version",
+            "evidence-ledger-artifact-manifest/v2",
+            "noncanonical shape",
+        ),
+    ),
+)
+@pytest.mark.parametrize("entrypoint", ("store", "standalone"))
+def test_create_manifest_attestation_rejects_structurally_invalid_manifest(
+    tmp_path,
+    entrypoint,
+    field,
+    value,
+    message,
+):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    invalid = copy.deepcopy(manifest)
+    invalid[field] = value
+    invalid["manifest_hash"] = artifact_manifest_hash(invalid)
+
+    with pytest.raises(
+        ArtifactIntegrityError,
+        match=message,
+    ):
+        if entrypoint == "store":
+            store.create_manifest_attestation(
+                invalid,
+                signer=signer,
+                verifier=signer,
+                created_at=1234,
+            )
+        else:
+            create_artifact_manifest_attestation(
+                invalid,
+                manifest_bytes=canonical_json_bytes(invalid),
+                signer=signer,
+                created_at=1234,
+            )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("artifacts", {}, "artifacts must be a list"),
+        ("metadata", [], "metadata must be an object"),
+        ("unexpected", True, "noncanonical shape"),
+        (
+            "schema_version",
+            "evidence-ledger-artifact-manifest/v2",
+            "noncanonical shape",
+        ),
+    ),
+)
+def test_verify_manifest_attestation_rejects_structurally_invalid_manifest(
+    tmp_path,
+    field,
+    value,
+    message,
+):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    attestation = create_artifact_manifest_attestation(
+        manifest,
+        manifest_bytes=canonical_json_bytes(manifest),
+        signer=signer,
+        created_at=1234,
+    )
+    invalid = copy.deepcopy(manifest)
+    invalid[field] = value
+    invalid["manifest_hash"] = artifact_manifest_hash(invalid)
+    invalid_bytes = canonical_json_bytes(invalid)
+    attestation["subject"][0]["digest"]["sha256"] = sha256_hex(invalid_bytes)
+    attestation["predicate"]["manifest_hash"] = invalid["manifest_hash"]
+    signed_statement = {
+        "_type": attestation["_type"],
+        "subject": attestation["subject"],
+        "predicateType": attestation["predicateType"],
+        "predicate": attestation["predicate"],
+    }
+    signed_payload = canonical_json_bytes(signed_statement)
+    attestation["signing_payload_sha256"] = sha256_hex(signed_payload)
+    attestation["signatures"][0]["signature"] = base64.b64encode(
+        signer.sign(signed_payload)
+    ).decode("ascii")
+
+    with pytest.raises(ArtifactIntegrityError, match=message):
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=invalid,
+            manifest_bytes=invalid_bytes,
+            verifier=signer,
+        )
+
+
+def test_artifact_manifest_signature_rejects_manifest_or_signature_tamper(tmp_path):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    manifest_bytes = canonical_json_bytes(manifest)
+    attestation = create_artifact_manifest_attestation(
+        manifest,
+        manifest_bytes=manifest_bytes,
+        signer=signer,
+        created_at=1234,
+    )
+
+    changed_manifest = copy.deepcopy(manifest)
+    changed_manifest["metadata"] = {"changed": True}
+    changed_manifest["manifest_hash"] = artifact_manifest_hash(changed_manifest)
+    with pytest.raises(ArtifactIntegrityError, match="file digest"):
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=changed_manifest,
+            manifest_bytes=canonical_json_bytes(changed_manifest),
+            verifier=signer,
+        )
+
+    changed_attestation = copy.deepcopy(attestation)
+    changed_attestation["signatures"][0]["signature"] = base64.b64encode(
+        b"forged"
+    ).decode("ascii")
+    with pytest.raises(ArtifactIntegrityError, match="signature"):
+        verify_artifact_manifest_attestation(
+            changed_attestation,
+            manifest=manifest,
+            manifest_bytes=manifest_bytes,
+            verifier=signer,
+        )
+
+
+def test_artifact_manifest_signature_rejects_async_verifier(tmp_path):
+    class AsyncRejectingVerifier:
+        async def verify(self, _payload, _signature):
+            return False
+
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    manifest_bytes = canonical_json_bytes(manifest)
+    attestation = create_artifact_manifest_attestation(
+        manifest,
+        manifest_bytes=manifest_bytes,
+        signer=signer,
+        created_at=1234,
+    )
+
+    with pytest.raises(
+        ArtifactIntegrityError,
+        match="verifier must be synchronous",
+    ):
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=manifest,
+            manifest_bytes=manifest_bytes,
+            verifier=AsyncRejectingVerifier(),
+        )
+
+
+def test_artifact_manifest_signature_requires_exact_true_verdict(tmp_path):
+    class TruthyRejectingVerifier:
+        def verify(self, _payload, _signature):
+            return "invalid-signature"
+
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    manifest_bytes = canonical_json_bytes(manifest)
+    attestation = create_artifact_manifest_attestation(
+        manifest,
+        manifest_bytes=manifest_bytes,
+        signer=signer,
+        created_at=1234,
+    )
+
+    with pytest.raises(
+        ArtifactIntegrityError,
+        match="signature is invalid",
+    ):
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=manifest,
+            manifest_bytes=manifest_bytes,
+            verifier=TruthyRejectingVerifier(),
+        )
+
+
+def test_artifact_manifest_signature_rejects_noncanonical_file_bytes(tmp_path):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    signer = HmacCheckpointKey()
+    descriptor = store.put_bytes(
+        b"immutable evidence",
+        name="evidence.txt",
+        media_type="text/plain",
+    )
+    manifest = store.create_manifest([descriptor])
+    manifest_bytes = canonical_json_bytes(manifest)
+    attestation = create_artifact_manifest_attestation(
+        manifest,
+        manifest_bytes=manifest_bytes,
+        signer=signer,
+        created_at=1234,
+    )
+    differently_encoded = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+    assert differently_encoded != manifest_bytes
+
+    with pytest.raises(
+        ArtifactIntegrityError,
+        match="file bytes are not canonical JSON",
+    ):
+        verify_artifact_manifest_attestation(
+            attestation,
+            manifest=manifest,
+            manifest_bytes=differently_encoded,
+            verifier=signer,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1575,6 +1890,104 @@ def test_quality_projection_rebuild_requires_authoritative_checkpoint(
 
     with pytest.raises(RuntimeError, match="authoritative checkpoint"):
         state.rebuild_quality_trend_projection_from_ledger()
+
+
+def test_quality_projection_rebuild_rejects_empty_expected_inventory(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+
+    with pytest.raises(
+        RuntimeError,
+        match="expected stream inventory must be non-empty",
+    ):
+        state.rebuild_quality_trend_projection_from_ledger(
+            checkpoint_store=LedgerCheckpointStore(
+                tmp_path / "projection-checkpoints"
+            ),
+            verifier=HmacCheckpointKey(),
+            expected_stream_checkpoint_pins={},
+        )
+
+
+def test_quality_projection_rebuild_repairs_one_deleted_row_from_inventory(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    for gate in ("execution", "outcome_review"):
+        state.upsert_quality_trend_row(
+            run_id="quality-run",
+            task_id="quality-task",
+            task_class="source_change",
+            gate=gate,
+            accepted=True,
+            first_pass_accepted=gate == "execution",
+            revision_rounds=0 if gate == "execution" else 1,
+            time_to_accepted_outcome_s=1.0,
+        )
+    expected = state.quality_trend_projection_snapshot()
+    authoritative = _authoritative_projection_arguments(
+        state,
+        tmp_path,
+        "quality-run",
+    )
+    state._conn.execute(
+        """
+        DELETE FROM supervisor_quality_trends
+         WHERE run_id=? AND gate=?
+        """,
+        ("quality-run", "outcome_review"),
+    )
+    state._conn.commit()
+
+    restored = state.rebuild_quality_trend_projection_from_ledger(
+        replace=True,
+        **authoritative,
+    )
+
+    assert canonical_json_bytes(restored) == canonical_json_bytes(expected)
+
+
+def test_quality_projection_rebuild_rejects_deleted_expected_stream(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    for run_id in ("surviving-run", "deleted-run"):
+        state.upsert_quality_trend_row(
+            run_id=run_id,
+            task_id=f"{run_id}-task",
+            task_class="source_change",
+            gate="execution",
+            accepted=True,
+            first_pass_accepted=True,
+            revision_rounds=0,
+            time_to_accepted_outcome_s=1.0,
+        )
+    authoritative = _authoritative_projection_arguments(
+        state,
+        tmp_path,
+        "surviving-run",
+        "deleted-run",
+    )
+    state._conn.execute("DROP TRIGGER events_no_delete")
+    state._conn.execute(
+        "DELETE FROM events WHERE run_id=?",
+        ("deleted-run",),
+    )
+    state._conn.execute(
+        "DELETE FROM supervisor_quality_trends WHERE run_id=?",
+        ("deleted-run",),
+    )
+    state._conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="deleted-run: checkpoint_event_count_mismatch",
+    ):
+        state.rebuild_quality_trend_projection_from_ledger(
+            replace=True,
+            **authoritative,
+        )
 
 
 def test_quality_projection_rejects_unauthorized_event_source(tmp_path):

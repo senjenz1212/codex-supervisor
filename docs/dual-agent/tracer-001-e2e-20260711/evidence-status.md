@@ -1,9 +1,18 @@
-# Evidence Status: TRACER-001
+# Evidence Status: TRACER-001-HERMETIC
 
 ## Status
 
 **GREEN for hermetic composition only. Operational/external efficacy is NOT
 RUN and is not claimed. The achieved and asserted ClaimGate level is L1.**
+
+The original operational requirement is tracked separately as
+`TRACER-001-OPERATIONAL` and remains blocked.
+
+The persisted TRACE lifecycle is a post-execution projection of one already
+completed graph. Its hash chain proves immutable stage partitioning and order;
+it does **not** attest that planning was persisted before runtime execution.
+New lifecycle revisions use schema v2 for exact ordered-parent semantics;
+legacy v1 stores remain readable under their original record-set semantics.
 
 ## Dedicated Hermetic Proof
 

@@ -11,9 +11,14 @@ release blocker.**
 - canonical event hash chaining in SQLite and PostgreSQL schemas;
 - immutable UPDATE/DELETE guards;
 - structural and authoritative verification APIs;
-- symlink-safe content-addressed artifact manifests;
+- symlink-safe content-addressed artifact manifests plus detached direct
+  manifest signatures;
 - append-only signed checkpoint storage and trusted-pin protocol;
-- deterministic projection checks used by the hermetic tracer.
+- deterministic projection checks for the exact evidence-authoritative scope
+  in `docs/program/harness-v1/projection-registry.yaml`, with exact pytest-node
+  attribution proving the registered implementations executed;
+- one state-level idempotency/authority claim for each evidence-commit manifest
+  event, preventing duplicate publication across committer roots.
 
 ## Not Yet Proven
 
@@ -24,6 +29,8 @@ release blocker.**
 - The TRACER local HMAC and sibling pin directory prove API composition only.
 - No pilot, confirmation, promotion, deployment, or scale run used this
   evidence.
+- Unregistered Supervisor materializations are not claimed to rebuild from the
+  ledger.
 
 ## Claim Boundary
 

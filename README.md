@@ -387,13 +387,24 @@ cd ~/Documents/codex-supervisor
 source .venv/bin/activate
 python -m pytest -q
 python -m compileall -q supervisor daemon.py mcp_tools
+make test-postgres
+make test-projection-registry
 ```
 
 Current verified result:
 
 ```text
-2443 passed, 24 skipped
+2674 tests collected
+2641 passed, 33 skipped
+PostgreSQL conformance: 48 passed
 ```
+
+`make test-postgres` uses `CODEX_SUPERVISOR_POSTGRES_TEST_DSN` when supplied.
+Otherwise it starts and removes an isolated `postgres:16-alpine` container on
+an ephemeral localhost port, so the PostgreSQL lane does not silently remain
+skipped during release verification. These results were observed on July 14,
+2026; see `docs/program/harness-v1/verification-20260713.md` for the exact
+commands and claim boundary.
 
 ## Replay Fixtures
 
@@ -421,6 +432,12 @@ auto-improvement requires validated L3 evidence, recorded report/proposal
 authority, exact artifact hashes, and named-human approval. PILOT-001 has not
 run, so no causal-improvement, ROI, portability, or safe-auto-improvement
 claims are made.
+
+Completed evidence commits use schema v2 and require both the full trace
+lifecycle projection and a directly signed artifact-manifest attestation.
+Operational SWE-bench grading remains blocked: the current backend-run guard
+prevents replay but does not yet atomically journal a recoverable grade across
+a process crash.
 
 Two related config blocks under `supervisor:` are documented in
 `config.example.yaml`:

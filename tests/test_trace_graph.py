@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
 from uuid import RFC_4122, UUID, uuid4
 
@@ -22,6 +24,7 @@ from supervisor.trace_graph import (
     InvalidTraceIdentity,
     NodeType,
     ProvKind,
+    TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION,
     TRACE_CLOSURE_BINDING_ATTRIBUTE,
     TraceClosureBinding,
     TraceEdge,
@@ -29,6 +32,7 @@ from supervisor.trace_graph import (
     TraceGraphError,
     TraceGraphStore,
     TraceIdentity,
+    TraceLifecycleRevision,
     TraceLifecycleStage,
     TraceNode,
     TracePlanningArtifactRef,
@@ -1180,7 +1184,7 @@ def test_trace_graph_store_pins_queryable_lifecycle_revisions(
             )
 
 
-def test_trace_graph_lifecycle_preserves_interleaved_record_order(
+def test_trace_graph_lifecycle_preserves_order_within_each_stage(
     tmp_path: Path,
 ) -> None:
     graph, nodes = _closed_graph()
@@ -1191,16 +1195,23 @@ def test_trace_graph_lifecycle_preserves_interleaved_record_order(
                 NodeType.OBJ,
                 NodeType.RUN,
                 NodeType.REQ,
-                NodeType.GRADE,
-                NodeType.TEST,
-                NodeType.ANL,
-                NodeType.ASN,
-                NodeType.DEC,
                 NodeType.ART,
+                NodeType.TEST,
+                NodeType.GRADE,
+                NodeType.ASN,
+                NodeType.ANL,
+                NodeType.DEC,
                 NodeType.PROMOTION,
             )
         ),
-        edges=tuple(reversed(graph.edges)),
+        edges=(
+            graph.edges[0],
+            graph.edges[3],
+            graph.edges[1],
+            graph.edges[4],
+            graph.edges[2],
+            *graph.edges[5:],
+        ),
         decision_grade_validator=graph.decision_grade_validator,
     )
     database = tmp_path / "trace-lifecycle-order.db"
@@ -1226,7 +1237,216 @@ def test_trace_graph_lifecycle_preserves_interleaved_record_order(
     assert reloaded.canonical_bytes() == interleaved.canonical_bytes()
 
 
-def test_trace_graph_store_refuses_to_invent_a_missing_planning_precommit(
+@pytest.mark.parametrize("record_kind", ("nodes", "edges"))
+def test_trace_graph_lifecycle_rejects_reordered_parent_records(
+    tmp_path: Path,
+    record_kind: str,
+) -> None:
+    graph, _ = _closed_graph()
+    planning = graph.lifecycle_revision(TraceLifecycleStage.PLANNING)
+    runtime = graph.lifecycle_revision(TraceLifecycleStage.RUNTIME)
+    assert len(getattr(planning, record_kind)) > 1
+
+    nodes = runtime.nodes
+    edges = runtime.edges
+    if record_kind == "nodes":
+        nodes = (
+            *reversed(planning.nodes),
+            *runtime.nodes[len(planning.nodes):],
+        )
+    else:
+        edges = (
+            *reversed(planning.edges),
+            *runtime.edges[len(planning.edges):],
+        )
+    reordered_runtime = TraceGraph(
+        nodes=nodes,
+        edges=edges,
+        waivers=runtime.waivers,
+        decision_grade_validator=runtime.decision_grade_validator,
+    )
+
+    with TraceGraphStore(tmp_path / f"trace-{record_kind}.db") as store:
+        store.append_lifecycle_revision(
+            TraceLifecycleStage.PLANNING,
+            planning,
+        )
+        with pytest.raises(
+            TraceGraphError,
+            match="does not preserve.*parent projection",
+        ):
+            store.append_lifecycle_revision(
+                TraceLifecycleStage.RUNTIME,
+                reordered_runtime,
+            )
+
+
+def test_trace_graph_lifecycle_rejects_reordered_parent_on_reload(
+    tmp_path: Path,
+) -> None:
+    graph, _ = _closed_graph()
+    planning = graph.lifecycle_revision(TraceLifecycleStage.PLANNING)
+    runtime = graph.lifecycle_revision(TraceLifecycleStage.RUNTIME)
+    planning_identities = {
+        node.identity for node in planning.nodes
+    }
+    reordered_runtime = TraceGraph(
+        nodes=(
+            *reversed(planning.nodes),
+            *(
+                node
+                for node in runtime.nodes
+                if node.identity not in planning_identities
+            ),
+        ),
+        edges=runtime.edges,
+        waivers=runtime.waivers,
+        decision_grade_validator=runtime.decision_grade_validator,
+    )
+    database = tmp_path / "trace-reordered-reload.db"
+
+    with TraceGraphStore(database) as store:
+        parent = store.append_lifecycle_revision(
+            TraceLifecycleStage.PLANNING,
+            planning,
+        )
+        store.append(reordered_runtime)
+        child = TraceLifecycleRevision.create(
+            stage=TraceLifecycleStage.RUNTIME,
+            graph=reordered_runtime,
+            parent_revision_hash=parent.revision_hash,
+        )
+        payload_json = json.dumps(
+            child.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        store._initialise_lifecycle_schema_unlocked()
+        store._conn.execute(
+            """
+            INSERT INTO trace_lifecycle_revisions(
+              lifecycle_sequence, stage, revision_hash,
+              parent_revision_hash, graph_sha256,
+              node_count, edge_count, waiver_count,
+              payload_json, payload_hash
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                child.sequence,
+                child.stage.value,
+                child.revision_hash,
+                child.parent_revision_hash,
+                child.graph_sha256,
+                child.node_count,
+                child.edge_count,
+                child.waiver_count,
+                payload_json,
+                sha256(payload_json.encode("utf-8")).hexdigest(),
+            ),
+        )
+
+    with TraceGraphStore(database) as store:
+        with pytest.raises(
+            TraceGraphError,
+            match="does not preserve.*parent projection",
+        ):
+            store.list_lifecycle_revisions()
+
+
+def test_trace_graph_lifecycle_preserves_legacy_v1_reordered_parent_reads(
+    tmp_path: Path,
+) -> None:
+    graph, _ = _closed_graph()
+    planning = graph.lifecycle_revision(TraceLifecycleStage.PLANNING)
+    runtime = graph.lifecycle_revision(TraceLifecycleStage.RUNTIME)
+    planning_identities = {
+        node.identity for node in planning.nodes
+    }
+    reordered_runtime = TraceGraph(
+        nodes=(
+            *reversed(planning.nodes),
+            *(
+                node
+                for node in runtime.nodes
+                if node.identity not in planning_identities
+            ),
+        ),
+        edges=runtime.edges,
+        waivers=runtime.waivers,
+        decision_grade_validator=runtime.decision_grade_validator,
+    )
+
+    def as_legacy(
+        revision: TraceLifecycleRevision,
+    ) -> TraceLifecycleRevision:
+        payload = revision.to_dict()
+        payload["schema_version"] = (
+            TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION
+        )
+        payload.pop("revision_hash")
+        return replace(
+            revision,
+            schema_version=TRACE_GRAPH_LIFECYCLE_LEGACY_SCHEMA_VERSION,
+            revision_hash=canonical_revision_hash(payload),
+        )
+
+    parent = as_legacy(
+        TraceLifecycleRevision.create(
+            stage=TraceLifecycleStage.PLANNING,
+            graph=planning,
+            parent_revision_hash=None,
+        )
+    )
+    child = as_legacy(
+        TraceLifecycleRevision.create(
+            stage=TraceLifecycleStage.RUNTIME,
+            graph=reordered_runtime,
+            parent_revision_hash=parent.revision_hash,
+        )
+    )
+    database = tmp_path / "trace-legacy-v1-reordered.db"
+
+    with TraceGraphStore(database) as store:
+        store.append(reordered_runtime)
+        store._initialise_lifecycle_schema_unlocked()
+        for revision in (parent, child):
+            payload_json = json.dumps(
+                revision.to_dict(),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            store._conn.execute(
+                """
+                INSERT INTO trace_lifecycle_revisions(
+                  lifecycle_sequence, stage, revision_hash,
+                  parent_revision_hash, graph_sha256,
+                  node_count, edge_count, waiver_count,
+                  payload_json, payload_hash
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    revision.sequence,
+                    revision.stage.value,
+                    revision.revision_hash,
+                    revision.parent_revision_hash,
+                    revision.graph_sha256,
+                    revision.node_count,
+                    revision.edge_count,
+                    revision.waiver_count,
+                    payload_json,
+                    sha256(payload_json.encode("utf-8")).hexdigest(),
+                ),
+            )
+
+    with TraceGraphStore(database) as store:
+        assert store.list_lifecycle_revisions() == (parent, child)
+
+
+def test_trace_graph_store_requires_planning_projection_first(
     tmp_path: Path,
 ) -> None:
     graph, _ = _closed_graph()
@@ -1235,7 +1455,7 @@ def test_trace_graph_store_refuses_to_invent_a_missing_planning_precommit(
     with TraceGraphStore(database) as store:
         with pytest.raises(
             TraceGraphError,
-            match="planning lifecycle revision must be committed first",
+            match="planning stage projection must be persisted first",
         ):
             store.append_lifecycle_revision(
                 TraceLifecycleStage.DECISION,
@@ -1245,7 +1465,7 @@ def test_trace_graph_store_refuses_to_invent_a_missing_planning_precommit(
         store.append(graph)
         with pytest.raises(
             TraceGraphError,
-            match="unversioned trace records",
+            match="refusing to derive a planning stage projection",
         ):
             store.append_lifecycle_revision(
                 TraceLifecycleStage.PLANNING,
