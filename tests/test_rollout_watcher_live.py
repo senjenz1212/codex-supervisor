@@ -5,6 +5,7 @@ grows under the sessions root, and the supervisor records exactly-once events,
 an immutable run snapshot, and the durable tail offset used after daemon restart.
 """
 from __future__ import annotations
+import asyncio
 import json
 import os
 import time
@@ -49,6 +50,88 @@ def _register_rollout(
         scope_contract=scope,
     )
     return run_id
+
+
+def _watcher(tmp_path: Path) -> RolloutWatcher:
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    sessions_root.mkdir(exist_ok=True)
+    registry_dir.mkdir(exist_ok=True)
+    return RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=State(str(tmp_path / "state.db")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_deleted_path_prunes_idle_drain_lock(tmp_path):
+    watcher = _watcher(tmp_path)
+    path = tmp_path / "sessions" / "rollout-idle.jsonl"
+
+    async with watcher._drain_path_lock(path):
+        assert path in watcher._drain_locks
+    assert path not in watcher._drain_locks
+
+    watcher._forget_deleted_path(path)
+
+    assert path not in watcher._drain_locks
+
+
+@pytest.mark.asyncio
+async def test_deleted_path_prunes_lock_after_active_drain_finishes(tmp_path):
+    watcher = _watcher(tmp_path)
+    path = tmp_path / "sessions" / "rollout-active.jsonl"
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold_lock() -> None:
+        async with watcher._drain_path_lock(path):
+            entered.set()
+            await release.wait()
+
+    task = asyncio.create_task(hold_lock())
+    await entered.wait()
+
+    watcher._forget_deleted_path(path)
+    assert path in watcher._drain_locks
+
+    release.set()
+    await task
+
+    assert path not in watcher._drain_locks
+
+
+@pytest.mark.asyncio
+async def test_delete_recreate_keeps_one_serialization_lock(tmp_path):
+    watcher = _watcher(tmp_path)
+    path = tmp_path / "sessions" / "rollout-recreated.jsonl"
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def first_drain() -> None:
+        async with watcher._drain_path_lock(path):
+            first_entered.set()
+            await release_first.wait()
+
+    async def recreated_drain() -> None:
+        async with watcher._drain_path_lock(path):
+            second_entered.set()
+
+    first = asyncio.create_task(first_drain())
+    await first_entered.wait()
+    watcher._forget_deleted_path(path)
+    second = asyncio.create_task(recreated_drain())
+    await asyncio.sleep(0)
+
+    assert not second_entered.is_set()
+
+    release_first.set()
+    await asyncio.gather(first, second)
+
+    assert second_entered.is_set()
+    assert path not in watcher._drain_locks
 
 
 @pytest.mark.asyncio

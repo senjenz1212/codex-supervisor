@@ -466,6 +466,11 @@ backfilled in-process. Above 10,000 legacy events startup refuses and the
 ledger must be backfilled offline with
 `supervisor.schema_migrations.migrate_legacy_event_ledger_offline` while no
 other process touches the database (startup prints the exact command).
+Canonical quality-projection evidence is also startup-bounded. If the event
+or trend scan, or the affected projection set, exceeds its dedicated startup
+limit, startup refuses and prints the exact
+`migrate_quality_projection_evidence_offline` command to run under the same
+exclusive-maintenance rule.
 Postgres-backed deployments must run `make migrate POSTGRES_DSN=...` before
 starting; startup refuses to run when the schema is behind the pinned alembic
 head.

@@ -20,7 +20,7 @@ import re
 from typing import Any, Callable
 
 
-_V1_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+_COMMON_LEADING_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # PEM-encoded private/public keys (multi-line).
     (re.compile(r"-----BEGIN [A-Z ]+?KEY-----.*?-----END [A-Z ]+?KEY-----",
                 re.DOTALL),
@@ -31,12 +31,8 @@ _V1_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # Standalone bearer token snippets inside JSON values or exception text.
     (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
      r"\1[REDACTED_BEARER]"),
-    # Anthropic-style API keys: sk-ant-...
-    (re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_\-]{6,}"),
-     "[REDACTED_API_KEY]"),
-    # OpenAI-style keys: sk-... and sk-proj-...
-    (re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_\-]{6,}"),
-     "[REDACTED_API_KEY]"),
+)
+_COMMON_TRAILING_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # GitHub personal access tokens.
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}"),
      "[REDACTED_GITHUB_TOKEN]"),
@@ -49,7 +45,28 @@ _V1_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         r"\s*[=:]\s*)\S+"),
      r"\1[REDACTED]"),
 )
-_V2_PATTERNS = _V1_PATTERNS
+
+# v1 must reproduce the original values-only rules byte-for-byte, including
+# their historical tendency to redact an embedded ``sk-`` substring.
+_V1_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    *_COMMON_LEADING_PATTERNS,
+    # Anthropic-style API keys: sk-ant-...
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{6,}"),
+     "[REDACTED_API_KEY]"),
+    # OpenAI-style keys: sk-... and sk-proj-...
+    (re.compile(r"sk-(?:proj-)?[A-Za-z0-9_\-]{6,}"),
+     "[REDACTED_API_KEY]"),
+    *_COMMON_TRAILING_PATTERNS,
+)
+_V2_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    *_COMMON_LEADING_PATTERNS,
+    # Avoid corrupting ordinary identifiers that merely contain ``sk-``.
+    (re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_\-]{6,}"),
+     "[REDACTED_API_KEY]"),
+    (re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_\-]{6,}"),
+     "[REDACTED_API_KEY]"),
+    *_COMMON_TRAILING_PATTERNS,
+)
 _PATTERNS = _V2_PATTERNS
 
 

@@ -166,6 +166,9 @@ async def test_agent_invoker_defaults_to_isolated_env_and_acks_outbox(
 
     assert runtime.tasks[0].inherit_env is False
     assert state.list_decision_outbox()[0]["status"] == "acked"
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM verdicts"
+    ).fetchone()[0] == 1
 
 
 @pytest.mark.asyncio
@@ -310,11 +313,14 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
             inherit_agent_environment=False,
         )
 
-        await invoker._handle(Decision(
-            kind="review_updates",
-            run_id="run-vela",
-            payload={"event_id": 21},
-        ))
+        await state.enqueue_decision(
+            Decision(
+                kind="review_updates",
+                run_id="run-vela",
+                payload={"event_id": 21},
+            )
+        )
+        await invoker.run_once()
 
         assert _FakeOptions.seen is not None
         allowed = _FakeOptions.seen.allowed_tools
@@ -408,16 +414,16 @@ async def test_agent_invoker_run_survives_ack_failure(
         agent_runtime=runtime,
         retry_base_delay_s=0,
     )
-    original_ack = state.ack_decision
+    original_commit = state.commit_decision_verdict
     failed_once: list[str] = []
 
-    def flaky_ack(decision, **kwargs):
+    def flaky_commit(decision, **kwargs):
         if not failed_once:
             failed_once.append(decision.decision_id)
-            return False
-        return original_ack(decision, **kwargs)
+            return None
+        return original_commit(decision, **kwargs)
 
-    state.ack_decision = flaky_ack
+    state.commit_decision_verdict = flaky_commit
 
     run_task = asyncio.create_task(invoker.run())
 
@@ -435,3 +441,12 @@ async def test_agent_invoker_run_survives_ack_failure(
 
     assert len(failed_once) == 1
     assert len(runtime.tasks) == 2
+    verdicts = state._conn.execute(
+        "SELECT decision_id, run_id FROM verdicts"
+    ).fetchall()
+    assert [(row["decision_id"], row["run_id"]) for row in verdicts] == [
+        (
+            state.list_decision_outbox()[1]["decision_id"],
+            "run-ack-succeeds",
+        )
+    ]

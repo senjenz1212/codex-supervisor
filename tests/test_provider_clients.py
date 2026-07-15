@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import functools
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -77,6 +80,84 @@ async def test_openai_compatible_adapter_supports_async_clients():
     assert response.text == "done"
     assert response.resolved_model == "served-model"
     assert response.provider == "litellm"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_adapter_accepts_decorated_async_clients():
+    seen = {}
+
+    def sync_wrapper(async_callable):
+        @functools.wraps(async_callable)
+        def wrapped(*args, **kwargs):
+            return async_callable(*args, **kwargs)
+
+        return wrapped
+
+    class Completions:
+        @sync_wrapper
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(
+                model="served-model",
+                choices=[
+                    SimpleNamespace(message=SimpleNamespace(content="done"))
+                ],
+                usage=SimpleNamespace(prompt_tokens=5, completion_tokens=3),
+            )
+
+    response = await OpenAICompatibleModelClient(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=Completions())
+        )
+    ).complete(
+        ModelRequest(
+            model="requested-model",
+            messages=(ModelMessage("user", "hello"),),
+        )
+    )
+
+    assert seen["model"] == "requested-model"
+    assert response.text == "done"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_adapter_offloads_sync_clients():
+    event_loop_thread = threading.get_ident()
+    provider_thread = None
+
+    class Completions:
+        def create(self, **_kwargs):
+            nonlocal provider_thread
+            provider_thread = threading.get_ident()
+            return SimpleNamespace(
+                model="served-model",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="done")
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=5,
+                    completion_tokens=3,
+                ),
+            )
+
+    client = OpenAICompatibleModelClient(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=Completions())
+        )
+    )
+
+    response = await client.complete(
+        ModelRequest(
+            model="requested-model",
+            messages=(ModelMessage("user", "hello"),),
+        )
+    )
+
+    assert response.text == "done"
+    assert provider_thread is not None
+    assert provider_thread != event_loop_thread
 
 
 @pytest.mark.asyncio
@@ -185,3 +266,46 @@ async def test_embedding_adapter_returns_normalized_vectors():
         [1.0, 2.5],
         [3.0, 4.0],
     ]
+
+
+@pytest.mark.asyncio
+async def test_embedding_adapter_offloads_sync_clients():
+    event_loop_thread = threading.get_ident()
+    provider_thread = None
+
+    class Embeddings:
+        def create(self, **_kwargs):
+            nonlocal provider_thread
+            provider_thread = threading.get_ident()
+            return SimpleNamespace(
+                data=[SimpleNamespace(embedding=[1, 2.5])]
+            )
+
+    client = OpenAIEmbeddingClient(
+        SimpleNamespace(embeddings=Embeddings())
+    )
+
+    assert await client.embed(model="embed-v1", texts=["a"]) == [
+        [1.0, 2.5]
+    ]
+
+    assert provider_thread is not None
+    assert provider_thread != event_loop_thread
+
+
+@pytest.mark.asyncio
+async def test_embedding_adapter_enforces_async_timeout():
+    never = asyncio.Event()
+
+    class Embeddings:
+        async def create(self, **_kwargs):
+            await never.wait()
+            raise AssertionError("unreachable")
+
+    client = OpenAIEmbeddingClient(
+        SimpleNamespace(embeddings=Embeddings()),
+        timeout_s=0.01,
+    )
+
+    with pytest.raises(asyncio.TimeoutError):
+        await client.embed(model="embed-v1", texts=["a"])

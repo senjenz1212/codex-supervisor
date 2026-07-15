@@ -2273,6 +2273,33 @@ async def test_new_receipts_pin_the_redaction_rules_version(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_new_receipts_use_the_exact_pinned_redactor(
+    tmp_path,
+    monkeypatch,
+):
+    _state, service, source, _artifacts, _calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="pinned-redactor-callable",
+    )
+
+    monkeypatch.setattr(
+        "supervisor.historical_evaluation.redact",
+        lambda _value: pytest.fail(
+            "receipt generation must not use the mutable live redactor"
+        ),
+    )
+
+    receipt = await service.replay(request)
+
+    assert receipt.redaction_rules_version == (
+        RECEIPT_REDACTION_RULES_VERSION
+    )
+    assert receipt.result["deterministic"] is True
+
+
+@pytest.mark.asyncio
 async def test_stored_receipts_survive_later_redaction_rule_additions(
     tmp_path,
     monkeypatch,

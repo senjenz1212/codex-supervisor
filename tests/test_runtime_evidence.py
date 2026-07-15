@@ -86,6 +86,28 @@ def test_supervisor_owned_exclusion_rejects_path_separator_task_ids() -> None:
     )
 
 
+def test_supervisor_owned_exclusion_fails_closed_when_tracking_is_unknown(
+) -> None:
+    from supervisor.runtime_evidence import _is_supervisor_owned_runtime_path
+
+    candidates = (
+        ".handoff/packet.json",
+        "runs/run-1/result.json",
+        "state.db",
+    )
+    for path in candidates:
+        assert not _is_supervisor_owned_runtime_path(
+            path,
+            task_id="task-1",
+            tracked_paths=None,
+        )
+        assert _is_supervisor_owned_runtime_path(
+            path,
+            task_id="task-1",
+            tracked_paths=frozenset(),
+        )
+
+
 def test_python_pytest_command_resolves_bare_test_name(tmp_path: Path) -> None:
     _write_test(
         tmp_path / "tests" / "test_runtime_target.py",

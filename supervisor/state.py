@@ -445,6 +445,7 @@ END;
 
 CREATE TABLE IF NOT EXISTS verdicts (
   verdict_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  decision_id   TEXT,
   run_id        TEXT NOT NULL,
   event_id      INTEGER,
   phase         TEXT NOT NULL,
@@ -5722,6 +5723,105 @@ class State:
         self._conn.commit()
         return cur.lastrowid or 0
 
+    def commit_decision_verdict(
+        self,
+        decision: Decision,
+        *,
+        model: str,
+        output: dict[str, Any],
+        latency_ms: int,
+        mode: str | None = None,
+        event_id: int | None = None,
+        now: float | None = None,
+    ) -> int | None:
+        """Atomically publish one leased decision verdict and acknowledge it.
+
+        Decision identity and verdict routing are loaded from the durable
+        outbox row. A stale, expired, released, or caller-substituted lease
+        cannot publish a verdict.
+        """
+
+        safe = redact(output)
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                timestamp = time.time() if now is None else float(now)
+                row = self._conn.execute(
+                    """SELECT decision_id, kind, run_id, status, lease_token,
+                              lease_expires_at
+                         FROM decision_outbox
+                        WHERE decision_id=?""",
+                    (str(decision.decision_id),),
+                ).fetchone()
+                if (
+                    row is None
+                    or str(row["kind"]) != str(decision.kind)
+                    or str(row["run_id"]) != str(decision.run_id)
+                    or str(row["status"]) != "leased"
+                    or str(row["lease_token"] or "")
+                    != str(decision.lease_token)
+                    or row["lease_expires_at"] is None
+                    or float(row["lease_expires_at"]) <= timestamp
+                ):
+                    self._conn.rollback()
+                    return None
+
+                kind = str(row["kind"])
+                run_id = str(row["run_id"])
+                layer = "L4" if kind == "adjudicate_drift" else None
+                cur = self._conn.execute(
+                    """INSERT INTO verdicts(
+                         decision_id, run_id, event_id, phase, layer, model,
+                         output_json, latency_ms, mode, created_at)
+                       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(row["decision_id"]),
+                        run_id,
+                        event_id,
+                        kind,
+                        layer,
+                        model,
+                        json.dumps(safe),
+                        latency_ms,
+                        mode,
+                        int(timestamp),
+                    ),
+                )
+                changed = self._conn.execute(
+                    """UPDATE decision_outbox
+                          SET status='acked',
+                              lease_token=NULL,
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              updated_at=?,
+                              acked_at=?
+                        WHERE decision_id=?
+                          AND kind=?
+                          AND run_id=?
+                          AND status='leased'
+                          AND lease_token=?
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at > ?""",
+                    (
+                        timestamp,
+                        timestamp,
+                        str(row["decision_id"]),
+                        kind,
+                        run_id,
+                        str(decision.lease_token),
+                        timestamp,
+                    ),
+                ).rowcount
+                if changed != 1:
+                    self._conn.rollback()
+                    return None
+                verdict_id = int(cur.lastrowid or 0)
+                self._conn.commit()
+                return verdict_id
+            except Exception:
+                self._conn.rollback()
+                raise
+
     # --- hook_requests ---
     def write_hook_request(self, *, run_id: str | None, hook_event: str,
                             tool_name: str | None, payload: dict,
@@ -6302,12 +6402,12 @@ class State:
         lease_s: float = 60.0,
         now: float | None = None,
     ) -> Decision | None:
-        timestamp = time.time() if now is None else float(now)
         lease_seconds = max(0.001, float(lease_s))
         lease_token = uuid.uuid4().hex
         with self._write_lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                timestamp = time.time() if now is None else float(now)
                 row = self._conn.execute(
                     """SELECT decision_id
                          FROM decision_outbox
@@ -6406,27 +6506,39 @@ class State:
         *,
         now: float | None = None,
     ) -> bool:
-        timestamp = time.time() if now is None else float(now)
         with self._write_lock:
-            changed = self._conn.execute(
-                """UPDATE decision_outbox
-                      SET status='acked',
-                          lease_token=NULL,
-                          leased_by=NULL,
-                          lease_expires_at=NULL,
-                          updated_at=?,
-                          acked_at=?
-                    WHERE decision_id=?
-                      AND status='leased'
-                      AND lease_token=?""",
-                (
-                    timestamp,
-                    timestamp,
-                    str(decision.decision_id),
-                    str(decision.lease_token),
-                ),
-            ).rowcount
-            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                timestamp = time.time() if now is None else float(now)
+                changed = self._conn.execute(
+                    """UPDATE decision_outbox
+                          SET status='acked',
+                              lease_token=NULL,
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              updated_at=?,
+                              acked_at=?
+                        WHERE decision_id=?
+                          AND kind=?
+                          AND run_id=?
+                          AND status='leased'
+                          AND lease_token=?
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at > ?""",
+                    (
+                        timestamp,
+                        timestamp,
+                        str(decision.decision_id),
+                        str(decision.kind),
+                        str(decision.run_id),
+                        str(decision.lease_token),
+                        timestamp,
+                    ),
+                ).rowcount
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
         return changed == 1
 
     def retry_decision(
@@ -6437,30 +6549,42 @@ class State:
         delay_s: float,
         now: float | None = None,
     ) -> bool:
-        timestamp = time.time() if now is None else float(now)
-        available_at = timestamp + max(0.0, float(delay_s))
         with self._write_lock:
-            changed = self._conn.execute(
-                """UPDATE decision_outbox
-                      SET status='pending',
-                          available_at=?,
-                          lease_token=NULL,
-                          leased_by=NULL,
-                          lease_expires_at=NULL,
-                          last_error=?,
-                          updated_at=?
-                    WHERE decision_id=?
-                      AND status='leased'
-                      AND lease_token=?""",
-                (
-                    available_at,
-                    str(error)[:4000],
-                    timestamp,
-                    str(decision.decision_id),
-                    str(decision.lease_token),
-                ),
-            ).rowcount
-            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                timestamp = time.time() if now is None else float(now)
+                available_at = timestamp + max(0.0, float(delay_s))
+                changed = self._conn.execute(
+                    """UPDATE decision_outbox
+                          SET status='pending',
+                              available_at=?,
+                              lease_token=NULL,
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              last_error=?,
+                              updated_at=?
+                        WHERE decision_id=?
+                          AND kind=?
+                          AND run_id=?
+                          AND status='leased'
+                          AND lease_token=?
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at > ?""",
+                    (
+                        available_at,
+                        str(error)[:4000],
+                        timestamp,
+                        str(decision.decision_id),
+                        str(decision.kind),
+                        str(decision.run_id),
+                        str(decision.lease_token),
+                        timestamp,
+                    ),
+                ).rowcount
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
         if changed:
             self._decision_wakeup.set()
         return changed == 1
@@ -6472,29 +6596,41 @@ class State:
         error: str,
         now: float | None = None,
     ) -> bool:
-        timestamp = time.time() if now is None else float(now)
         with self._write_lock:
-            changed = self._conn.execute(
-                """UPDATE decision_outbox
-                      SET status='dead_letter',
-                          lease_token=NULL,
-                          leased_by=NULL,
-                          lease_expires_at=NULL,
-                          last_error=?,
-                          updated_at=?,
-                          dead_lettered_at=?
-                    WHERE decision_id=?
-                      AND status='leased'
-                      AND lease_token=?""",
-                (
-                    str(error)[:4000],
-                    timestamp,
-                    timestamp,
-                    str(decision.decision_id),
-                    str(decision.lease_token),
-                ),
-            ).rowcount
-            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                timestamp = time.time() if now is None else float(now)
+                changed = self._conn.execute(
+                    """UPDATE decision_outbox
+                          SET status='dead_letter',
+                              lease_token=NULL,
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              last_error=?,
+                              updated_at=?,
+                              dead_lettered_at=?
+                        WHERE decision_id=?
+                          AND kind=?
+                          AND run_id=?
+                          AND status='leased'
+                          AND lease_token=?
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at > ?""",
+                    (
+                        str(error)[:4000],
+                        timestamp,
+                        timestamp,
+                        str(decision.decision_id),
+                        str(decision.kind),
+                        str(decision.run_id),
+                        str(decision.lease_token),
+                        timestamp,
+                    ),
+                ).rowcount
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
         return changed == 1
 
     def available_decision_count(

@@ -403,18 +403,31 @@ def _is_supervisor_owned_runtime_path(
         normalized = normalized[2:]
     if not normalized:
         return False
-    tracked = tracked_paths or frozenset()
+    tracked_known = tracked_paths is not None
+    tracked = tracked_paths if tracked_paths is not None else frozenset()
     if normalized == ".handoff" or normalized.startswith(".handoff/"):
-        return ".handoff" not in tracked and normalized not in tracked
+        return (
+            tracked_known
+            and ".handoff" not in tracked
+            and normalized not in tracked
+        )
     if normalized == "runs" or normalized.startswith("runs/"):
-        return "runs" not in tracked and normalized not in tracked
+        return (
+            tracked_known
+            and "runs" not in tracked
+            and normalized not in tracked
+        )
     if normalized in {
         "state.db",
         "state.db-journal",
         "state.db-shm",
         "state.db-wal",
     }:
-        return "state.db" not in tracked and normalized not in tracked
+        return (
+            tracked_known
+            and "state.db" not in tracked
+            and normalized not in tracked
+        )
     task_id_text = str(task_id)
     if (
         not task_id_text

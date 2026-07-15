@@ -23,6 +23,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 from urllib.parse import unquote, urlsplit
 
+from .redaction import redact
 from .swe_bench_official_oracle import (
     SWE_BENCH_BOUND_ORACLE_RECEIPT_SCHEMA_VERSION,
     SweBenchVerifierExecutionSpec,
@@ -1204,9 +1205,25 @@ class UnityTestFrameworkVerifier:
                 self._run_unity_test_framework,
                 frozen_result,
             )
-        passed = bool(result.get("passed"))
-        raw_score = result.get("score")
-        score = float(raw_score) if raw_score is not None else (1.0 if passed else 0.0)
+        contract_error, passed, score = _validate_unity_runner_contract(
+            result
+        )
+        if contract_error is not None:
+            return Grade(
+                verifier_id=self.verifier_id,
+                verifier_version=self.verifier_version,
+                verifier_hash=self.verifier_hash,
+                frozen_result_hash=frozen_result.result_hash,
+                passed=False,
+                score=0.0,
+                evidence=_unity_verifier_contract_failure_evidence(
+                    result,
+                    error=contract_error,
+                ),
+                failure_classification="verifier_contract_failure",
+            )
+        assert passed is not None
+        assert score is not None
         return Grade(
             verifier_id=self.verifier_id,
             verifier_version=self.verifier_version,
@@ -1214,7 +1231,9 @@ class UnityTestFrameworkVerifier:
             frozen_result_hash=frozen_result.result_hash,
             passed=passed,
             score=score,
-            evidence=dict(result.get("evidence") or {}),
+            evidence=_preserve_unity_verifier_value(
+                result.get("evidence") or {}
+            ),
             failure_classification=str(result.get("failure_classification") or ""),
             flake_classification=str(result.get("flake_classification") or ""),
         )
@@ -1614,6 +1633,194 @@ def _unity_infrastructure_result(
         "failure_classification": "verifier_infrastructure_unavailable",
         "flake_classification": flake_classification,
     }
+
+
+def _validate_unity_runner_contract(
+    result: Any,
+) -> tuple[str | None, bool | None, float | None]:
+    if not isinstance(result, Mapping):
+        return "runner result must be a mapping", None, None
+    raw_passed = result.get("passed")
+    if type(raw_passed) is not bool:
+        return "passed must be a literal boolean", None, None
+    passed = bool(raw_passed)
+    raw_score = result.get("score")
+    if raw_score is None:
+        score = 1.0 if passed else 0.0
+    else:
+        if type(raw_score) not in {int, float}:
+            return "score must be an integer or float", None, None
+        try:
+            score = float(raw_score)
+        except (OverflowError, TypeError, ValueError):
+            return "score cannot be represented as a finite float", None, None
+        if not math.isfinite(score):
+            return "score must be finite", None, None
+        if not 0.0 <= score <= 1.0:
+            return "score must be between 0 and 1", None, None
+    raw_evidence = result.get("evidence")
+    if raw_evidence is not None and not isinstance(raw_evidence, Mapping):
+        return "evidence must be a mapping", None, None
+    return None, passed, score
+
+
+def _unity_verifier_contract_failure_evidence(
+    result: Any,
+    *,
+    error: str,
+) -> dict[str, Any]:
+    if isinstance(result, Mapping):
+        reported_passed = result.get("passed")
+        reported_score = result.get("score")
+        reported_evidence = result.get("evidence")
+    else:
+        reported_passed = None
+        reported_score = None
+        reported_evidence = {
+            "result_type": type(result).__name__,
+        }
+    return {
+        "schema_version": "unity-verifier-contract-failure/v1",
+        "reason": "unity_verifier_contract_failure",
+        "contract_error": str(error),
+        "reported_passed": _preserve_unity_verifier_value(
+            reported_passed
+        ),
+        "reported_score": _preserve_unity_verifier_value(
+            reported_score
+        ),
+        "reported_evidence": _preserve_unity_verifier_value(
+            reported_evidence
+        ),
+    }
+
+
+def _preserve_unity_verifier_value(
+    value: Any,
+    *,
+    depth: int = 0,
+) -> Any:
+    """Redact and bound untrusted verifier evidence into canonical JSON."""
+
+    if depth >= 8:
+        return {
+            "truncated": True,
+            "value_type": type(value).__name__,
+        }
+    if isinstance(value, Mapping):
+        preserved: dict[str, Any] = {}
+        try:
+            items = iter(value.items())
+            for index in range(101):
+                try:
+                    key, item = next(items)
+                except StopIteration:
+                    break
+                if index == 100:
+                    remaining = (
+                        max(1, len(value) - 100)
+                        if isinstance(value, dict)
+                        else True
+                    )
+                    preserved[
+                        _unique_unity_verifier_evidence_key(
+                            "<truncated-entry-count>",
+                            preserved,
+                        )
+                    ] = remaining
+                    break
+                normalized_key = (
+                    _redact_unity_verifier_text(key)
+                    if isinstance(key, str)
+                    else (
+                        f"<non-string-key-{index}:"
+                        f"{type(key).__name__}>"
+                    )
+                )
+                preserved[
+                    _unique_unity_verifier_evidence_key(
+                        normalized_key,
+                        preserved,
+                    )
+                ] = _preserve_unity_verifier_value(
+                    item,
+                    depth=depth + 1,
+                )
+        except Exception as exc:
+            preserved[
+                _unique_unity_verifier_evidence_key(
+                    "<preservation-error>",
+                    preserved,
+                )
+            ] = {
+                "reason": "mapping_iteration_failed",
+                "error_type": type(exc).__name__,
+            }
+        return preserved
+    if isinstance(value, (list, tuple)):
+        preserved_items = [
+            _preserve_unity_verifier_value(item, depth=depth + 1)
+            for item in value[:100]
+        ]
+        if len(value) > 100:
+            preserved_items.append(
+                {"truncated_item_count": len(value) - 100}
+            )
+        return preserved_items
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return _redact_unity_verifier_text(value)
+    if isinstance(value, int):
+        if value.bit_length() <= 1024:
+            return value
+        return {
+            "value_type": "int",
+            "bit_length": value.bit_length(),
+        }
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        return {
+            "value_type": "float",
+            "value": (
+                "nan"
+                if math.isnan(value)
+                else ("infinity" if value > 0 else "-infinity")
+            ),
+        }
+    if isinstance(value, bytes):
+        return {
+            "value_type": "bytes",
+            "size": len(value),
+            "sha256": hashlib.sha256(value).hexdigest(),
+        }
+    return {
+        "value_type": type(value).__name__,
+    }
+
+
+def _redact_unity_verifier_text(value: str) -> str:
+    try:
+        redacted = redact(value)
+    except Exception:
+        return "[REDACTION_FAILED]"
+    return str(redacted)[:4000]
+
+
+def _unique_unity_verifier_evidence_key(
+    key: str,
+    existing: Mapping[str, Any],
+) -> str:
+    candidate = str(key)[:4000]
+    if candidate not in existing:
+        return candidate
+    suffix = 2
+    while True:
+        numbered = f"{candidate[:3980]}_{suffix}"
+        if numbered not in existing:
+            return numbered
+        suffix += 1
 
 
 def _unity_version_from_path(executable: Path) -> str:

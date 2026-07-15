@@ -776,6 +776,80 @@ async def test_runtime_cleanup_failure_does_not_mask_caller_cancellation() -> No
 
 
 @pytest.mark.asyncio
+async def test_runtime_cleanup_deadline_returns_unconfirmed_without_abandoning_reaper(
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    completed = asyncio.Event()
+
+    class StuckCancellationRuntime:
+        kind = "stuck-cancellation"
+
+        async def cancel(self, handle: AgentRunHandle) -> None:
+            started.set()
+            await release.wait()
+            completed.set()
+
+    handle = AgentRunHandle(
+        run_id="cleanup-deadline-run",
+        task_id="cleanup-deadline-task",
+        runtime="stuck-cancellation",
+        session_id="cleanup-deadline-session",
+        capabilities={},
+    )
+    loop = asyncio.get_running_loop()
+    started_at = loop.time()
+
+    result = await cancel_runtime_after_failure(
+        StuckCancellationRuntime(),
+        handle,
+        logger=logging.getLogger(__name__),
+        deadline_s=0.01,
+    )
+
+    assert loop.time() - started_at < 0.5
+    assert result.confirmed is False
+    assert result.reason == "cleanup_deadline_exceeded"
+    assert started.is_set()
+    assert completed.is_set() is False
+
+    release.set()
+    await asyncio.wait_for(completed.wait(), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_runtime_cleanup_reports_confirmed_only_after_cancel_finishes(
+) -> None:
+    completed = asyncio.Event()
+
+    class ConfirmedCancellationRuntime:
+        kind = "confirmed-cancellation"
+
+        async def cancel(self, handle: AgentRunHandle) -> None:
+            await asyncio.sleep(0)
+            completed.set()
+
+    handle = AgentRunHandle(
+        run_id="cleanup-confirmed-run",
+        task_id="cleanup-confirmed-task",
+        runtime="confirmed-cancellation",
+        session_id="cleanup-confirmed-session",
+        capabilities={},
+    )
+
+    result = await cancel_runtime_after_failure(
+        ConfirmedCancellationRuntime(),
+        handle,
+        logger=logging.getLogger(__name__),
+        deadline_s=1,
+    )
+
+    assert completed.is_set()
+    assert result.confirmed is True
+    assert result.reason == "containment_reap_confirmed"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("runtime_cls", "binary"),
     ((ClaudeCodeRuntime, "claude"), (CodexRuntime, "codex")),

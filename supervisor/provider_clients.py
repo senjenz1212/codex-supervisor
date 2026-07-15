@@ -1,6 +1,7 @@
 """Concrete provider adapters behind model-neutral client protocols."""
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 from typing import Any, Mapping, Sequence
@@ -11,6 +12,31 @@ from .model_client import (
     ModelResponse,
 )
 from .provider_routing import direct_anthropic_env
+
+
+def _is_async_callable(value: Any) -> bool:
+    if inspect.iscoroutinefunction(value):
+        return True
+    call = getattr(value, "__call__", None)
+    return call is not None and inspect.iscoroutinefunction(call)
+
+
+async def _invoke_provider(
+    callable_value: Any,
+    *,
+    field: str,
+    kwargs: Mapping[str, Any],
+) -> Any:
+    if not callable(callable_value):
+        raise TypeError(f"{field} must be callable")
+    if _is_async_callable(callable_value):
+        result = callable_value(**dict(kwargs))
+    else:
+        result = await asyncio.to_thread(
+            callable_value,
+            **dict(kwargs),
+        )
+    return await result if inspect.isawaitable(result) else result
 
 
 class AnthropicModelClient(CallableModelClient):
@@ -39,7 +65,11 @@ class AnthropicModelClient(CallableModelClient):
         }
         if system:
             kwargs["system"] = system
-        response = await self.client.messages.create(**kwargs)
+        response = await _invoke_provider(
+            self.client.messages.create,
+            field="client.messages.create",
+            kwargs=kwargs,
+        )
         text = "\n".join(
             str(getattr(block, "text", ""))
             for block in (getattr(response, "content", ()) or ())
@@ -78,8 +108,11 @@ class OpenAICompatibleModelClient(CallableModelClient):
         }
         if request.tools:
             kwargs["tools"] = [dict(tool) for tool in request.tools]
-        raw = self.client.chat.completions.create(**kwargs)
-        response = await raw if inspect.isawaitable(raw) else raw
+        response = await _invoke_provider(
+            self.client.chat.completions.create,
+            field="client.chat.completions.create",
+            kwargs=kwargs,
+        )
         choices: Sequence[Any] = getattr(response, "choices", ()) or ()
         if not choices:
             raise ValueError("OpenAI-compatible response has no choices")
@@ -120,13 +153,28 @@ class OpenAICompatibleModelClient(CallableModelClient):
 class OpenAIEmbeddingClient:
     """Narrow embedding seam used by semantic drift detection."""
 
-    def __init__(self, client: Any, *, provider: str = "openai_compatible") -> None:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        provider: str = "openai_compatible",
+        timeout_s: float = 60.0,
+    ) -> None:
+        if float(timeout_s) <= 0:
+            raise ValueError("timeout_s must be positive")
         self.client = client
         self.provider = provider
+        self.timeout_s = float(timeout_s)
 
     async def embed(self, *, model: str, texts: Sequence[str]) -> list[list[float]]:
-        raw = self.client.embeddings.create(model=model, input=list(texts))
-        response = await raw if inspect.isawaitable(raw) else raw
+        response = await asyncio.wait_for(
+            _invoke_provider(
+                self.client.embeddings.create,
+                field="client.embeddings.create",
+                kwargs={"model": model, "input": list(texts)},
+            ),
+            timeout=self.timeout_s,
+        )
         rows = getattr(response, "data", ()) or ()
         return [
             [float(value) for value in (getattr(row, "embedding", ()) or ())]

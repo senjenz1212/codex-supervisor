@@ -32,6 +32,7 @@ from supervisor.task_environment import (
     TaskSpec,
     default_task_platform,
 )
+from supervisor.runtime_cleanup import RuntimeCleanupResult
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -604,6 +605,96 @@ async def test_repository_arm_executor_cancels_runtime_before_teardown_on_caller
     assert len(runtime.cancelled) == 1
     assert len(environment.torn_down) == 1
     assert not environment.torn_down[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_repository_arm_executor_quarantines_workspace_when_cleanup_unconfirmed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo, revision = _repo(tmp_path)
+
+    class BlockingRuntime(DeterministicRuntime):
+        def __init__(self) -> None:
+            super().__init__()
+            self.streaming = asyncio.Event()
+
+        async def start(self, task: AgentTask) -> AgentRunHandle:
+            self.tasks[task.task_id] = task
+            self.started_tasks.append(task)
+            return AgentRunHandle(
+                run_id=f"run-{task.task_id}",
+                task_id=task.task_id,
+                runtime=self.kind,
+                session_id=f"session-{task.task_id}",
+                capabilities={"filesystem_isolation": True},
+            )
+
+        async def stream(self, handle: AgentRunHandle):
+            self.streaming.set()
+            await asyncio.Future()
+            yield  # pragma: no cover
+
+    class RecordingEnvironment(GenericRepositoryTask):
+        def __init__(self, *, work_root: Path) -> None:
+            super().__init__(work_root=work_root)
+            self.materialized = None
+            self.torn_down: list[Path] = []
+
+        async def materialize(self, spec):
+            self.materialized = await super().materialize(spec)
+            return self.materialized
+
+        async def teardown(self, task) -> None:
+            self.torn_down.append(task.workspace)
+            await super().teardown(task)
+
+    async def unconfirmed_cleanup(*_args, **_kwargs):
+        return RuntimeCleanupResult(
+            confirmed=False,
+            reason="cleanup_deadline_exceeded",
+        )
+
+    monkeypatch.setattr(
+        "supervisor.arm_executor.cancel_runtime_after_failure",
+        unconfirmed_cleanup,
+    )
+    runtime = BlockingRuntime()
+    environment = RecordingEnvironment(work_root=tmp_path / "work")
+    executor = RepositoryArmExecutor(
+        task_environment=environment,
+        runtimes={arm: runtime for arm in Arm},
+        plans={
+            arm: _plan(
+                arm=arm,
+                model="deterministic-v1",
+                instruction_prefix=arm.value,
+            )
+            for arm in Arm
+        },
+    )
+    execution = asyncio.create_task(
+        executor.execute(
+            arm=Arm.B,
+            task=_task(repo, revision),
+            budget=ArmBudget(
+                max_tokens=100,
+                max_cost_usd=1.0,
+                timeout_s=30,
+                max_retries=0,
+            ),
+            assignment_id="assignment-unconfirmed-cleanup",
+        )
+    )
+    await asyncio.wait_for(runtime.streaming.wait(), timeout=2)
+
+    execution.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await execution
+
+    assert environment.materialized is not None
+    assert environment.torn_down == []
+    assert environment.materialized.workspace.exists()
 
 
 @pytest.mark.asyncio

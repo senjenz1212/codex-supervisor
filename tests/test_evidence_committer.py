@@ -73,6 +73,50 @@ class SimulatedCrash(RuntimeError):
     pass
 
 
+class _TrackingSqliteConnection(sqlite3.Connection):
+    closed = False
+
+    def close(self) -> None:
+        self.closed = True
+        super().close()
+
+
+@pytest.mark.parametrize("raise_inside", [False, True])
+def test_outbox_connection_closes_after_context_exit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raise_inside: bool,
+) -> None:
+    committer = object.__new__(EvidenceCommitter)
+    committer.outbox_path = tmp_path / "evidence-outbox.db"
+    opened: list[_TrackingSqliteConnection] = []
+    connect = sqlite3.connect
+
+    def tracking_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        kwargs["factory"] = _TrackingSqliteConnection
+        connection = connect(*args, **kwargs)
+        assert isinstance(connection, _TrackingSqliteConnection)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(
+        "supervisor.evidence_committer.sqlite3.connect",
+        tracking_connect,
+    )
+
+    if raise_inside:
+        with pytest.raises(SimulatedCrash):
+            with committer._outbox_connection() as connection:
+                connection.execute("SELECT 1")
+                raise SimulatedCrash
+    else:
+        with committer._outbox_connection() as connection:
+            connection.execute("SELECT 1")
+
+    assert len(opened) == 1
+    assert opened[0].closed is True
+
+
 class _IndependentCheckpointPins:
     """Test double for a rollback-independent trusted pin domain."""
 

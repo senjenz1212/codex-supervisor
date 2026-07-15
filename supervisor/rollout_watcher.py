@@ -11,6 +11,8 @@ join are durably quarantined and replayed after registration.
 from __future__ import annotations
 import asyncio
 import base64
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 import hashlib
 import json
 import logging
@@ -19,7 +21,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Awaitable
+from typing import Any, AsyncIterator, Callable, Awaitable
 from watchfiles import awatch, Change
 
 from .run_registry import (
@@ -33,6 +35,13 @@ from .runtime_health import record_subsystem_health
 from .target.types import ScopeContract
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class _DrainLockEntry:
+    lock: asyncio.Lock
+    users: int = 0
+
 
 ROLLOUT_RE = re.compile(
     r"rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([0-9a-f-]+)\.jsonl$"
@@ -130,7 +139,7 @@ class RolloutWatcher:
         self.state = state
         self.on_event = on_event
         self.offsets: dict[Path, int] = {}
-        self._drain_locks: dict[Path, asyncio.Lock] = {}
+        self._drain_locks: dict[Path, _DrainLockEntry] = {}
         self.started_at = time.time()
         self.startup_backfill_s = startup_backfill_s
         self.sweep_interval_s = sweep_interval_s
@@ -153,7 +162,7 @@ class RolloutWatcher:
                     if change in (Change.added, Change.modified):
                         await self._drain_file_guarded(p)
                     elif change == Change.deleted:
-                        self.offsets.pop(p, None)
+                        self._forget_deleted_path(p)
         finally:
             sweep_task.cancel()
             await asyncio.gather(sweep_task, return_exceptions=True)
@@ -239,9 +248,32 @@ class RolloutWatcher:
             )
 
     async def _drain_file(self, path: Path) -> None:
-        lock = self._drain_locks.setdefault(path, asyncio.Lock())
-        async with lock:
+        async with self._drain_path_lock(path):
             await self._drain_file_locked(path)
+
+    @asynccontextmanager
+    async def _drain_path_lock(
+        self,
+        path: Path,
+    ) -> AsyncIterator[None]:
+        entry = self._drain_locks.get(path)
+        if entry is None:
+            entry = _DrainLockEntry(lock=asyncio.Lock())
+            self._drain_locks[path] = entry
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if (
+                entry.users == 0
+                and self._drain_locks.get(path) is entry
+            ):
+                self._drain_locks.pop(path, None)
+
+    def _forget_deleted_path(self, path: Path) -> None:
+        self.offsets.pop(path, None)
 
     async def _drain_file_locked(self, path: Path) -> None:
         quarantine_path = self._quarantine_path(path)
@@ -630,8 +662,7 @@ class RolloutWatcher:
                 self._drop_undecodable_quarantine(quarantine_path)
                 continue
             path = Path(header["rollout_path"])
-            lock = self._drain_locks.setdefault(path, asyncio.Lock())
-            async with lock:
+            async with self._drain_path_lock(path):
                 await self._replay_quarantine(quarantine_path)
 
     async def _replay_quarantine(self, quarantine_path: Path) -> bool:

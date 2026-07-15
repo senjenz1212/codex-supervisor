@@ -21,8 +21,10 @@ from supervisor.quality_projection import (
 )
 from supervisor.schema_migrations import (
     LegacyEventLedgerBackfillRequired,
+    QualityProjectionBackfillRequired,
     applied_migrations,
     migrate_legacy_event_ledger_offline,
+    migrate_quality_projection_evidence_offline,
     run_forward_migrations,
 )
 from supervisor.state import State
@@ -50,6 +52,7 @@ EXPECTED_MIGRATIONS = [
         "version": 18,
         "name": "historical_operation_claims.execution_ownership",
     },
+    {"version": 19, "name": "verdicts.decision_id"},
 ]
 
 
@@ -87,6 +90,95 @@ def test_forward_migrations_are_idempotent(tmp_path):
 
     assert applied_migrations(conn) == EXPECTED_MIGRATIONS
     assert conn.execute("PRAGMA recursive_triggers").fetchone()[0] == 1
+
+
+def test_forward_migration_adds_unique_decision_binding_to_legacy_verdicts(
+    tmp_path,
+) -> None:
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE verdicts (
+             verdict_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             phase TEXT NOT NULL,
+             model TEXT NOT NULL,
+             output_json TEXT NOT NULL,
+             created_at INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO verdicts(
+             run_id, phase, model, output_json, created_at)
+           VALUES('legacy-run', 'legacy-phase', 'legacy-model', '{}', 1)"""
+    )
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(verdicts)").fetchall()
+    }
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(verdicts)").fetchall()
+    }
+    assert "decision_id" in columns
+    assert "idx_verdicts_decision_id" in indexes
+    assert conn.execute(
+        "SELECT decision_id FROM verdicts"
+    ).fetchone()[0] is None
+    conn.execute(
+        """INSERT INTO verdicts(
+             decision_id, run_id, phase, model, output_json, created_at)
+           VALUES('decision-1', 'run', 'phase', 'model', '{}', 2)"""
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """INSERT INTO verdicts(
+                 decision_id, run_id, phase, model, output_json, created_at)
+               VALUES('decision-1', 'run', 'phase', 'model', '{}', 3)"""
+        )
+
+
+def test_state_startup_migrates_legacy_verdicts_before_creating_index(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE verdicts (
+             verdict_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             event_id INTEGER,
+             phase TEXT NOT NULL,
+             layer TEXT,
+             model TEXT NOT NULL,
+             output_json TEXT NOT NULL,
+             latency_ms INTEGER,
+             mode TEXT,
+             created_at INTEGER NOT NULL
+           )"""
+    )
+    conn.commit()
+    conn.close()
+
+    state = State(str(db_path))
+
+    columns = {
+        row["name"]
+        for row in state._conn.execute(
+            "PRAGMA table_info(verdicts)"
+        ).fetchall()
+    }
+    indexes = {
+        row["name"]
+        for row in state._conn.execute(
+            "PRAGMA index_list(verdicts)"
+        ).fetchall()
+    }
+    assert "decision_id" in columns
+    assert "idx_verdicts_decision_id" in indexes
 
 
 def test_forward_migrations_roll_back_all_ddl_after_late_failure(
@@ -1565,6 +1657,218 @@ def test_migration_backfills_canonical_quality_projection_evidence(tmp_path):
     assert rebuild_quality_trend_projection(
         projection_events
     ) == state.quality_trend_projection_snapshot()
+
+
+def test_large_quality_projection_backfill_requires_offline_migration(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    conn.execute(
+        """CREATE TABLE supervisor_quality_trends (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             task_class TEXT NOT NULL,
+             gate TEXT NOT NULL,
+             accepted INTEGER NOT NULL,
+             first_pass_accepted INTEGER NOT NULL,
+             revision_rounds INTEGER NOT NULL,
+             time_to_accepted_outcome_s REAL,
+             p11_audit_sample_size INTEGER NOT NULL DEFAULT 0,
+             false_accept_count INTEGER NOT NULL DEFAULT 0,
+             false_accept_denominator INTEGER NOT NULL DEFAULT 0,
+             false_accept_rate REAL NOT NULL DEFAULT 0.0,
+             policy_overlay_hash TEXT,
+             policy_proposal_id TEXT,
+             details_json TEXT NOT NULL DEFAULT '{}',
+             computed_at INTEGER NOT NULL,
+             UNIQUE(run_id, gate)
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO supervisor_quality_trends(
+             run_id, task_id, task_class, gate, accepted,
+             first_pass_accepted, revision_rounds,
+             time_to_accepted_outcome_s, p11_audit_sample_size,
+             false_accept_count, false_accept_denominator,
+             false_accept_rate, policy_overlay_hash,
+             policy_proposal_id, details_json, computed_at)
+           VALUES(
+             'large-quality-run', 'task', 'source_change',
+             'outcome_review', 1, 1, 0, 1.0, 0, 0, 0, 0.0,
+             NULL, NULL, '{}', 123
+           )"""
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        schema_migrations,
+        "MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS",
+        0,
+    )
+
+    with pytest.raises(
+        QualityProjectionBackfillRequired,
+        match="migrate_quality_projection_evidence_offline",
+    ):
+        run_forward_migrations(conn)
+
+    assert conn.execute(
+        """SELECT COUNT(*)
+             FROM events
+            WHERE kind=?""",
+        (QUALITY_TREND_PROJECTION_EVENT,),
+    ).fetchone()[0] == 0
+    conn.close()
+
+    migrate_quality_projection_evidence_offline(db_path)
+
+    migrated = sqlite3.connect(db_path)
+    assert migrated.execute(
+        """SELECT COUNT(*)
+             FROM events
+            WHERE kind=?""",
+        (QUALITY_TREND_PROJECTION_EVENT,),
+    ).fetchone()[0] == 1
+    assert {
+        row["version"]: row["name"]
+        for row in applied_migrations(migrated)
+    }[13] == "storage.integrity_v2"
+    migrated.close()
+
+
+def test_quality_projection_backfill_bounds_total_event_scan(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.write_event(
+        run_id="unrelated-run",
+        source="test",
+        kind="unrelated.event",
+        payload={"status": "recorded"},
+    )
+    state._conn.execute(
+        """INSERT INTO supervisor_quality_trends(
+             run_id, task_id, task_class, gate, accepted,
+             first_pass_accepted, revision_rounds,
+             time_to_accepted_outcome_s, p11_audit_sample_size,
+             false_accept_count, false_accept_denominator,
+             false_accept_rate, policy_overlay_hash,
+             policy_proposal_id, details_json, computed_at)
+           VALUES(
+             'quality-run', 'task', 'source_change', 'outcome_review',
+             1, 1, 0, 1.0, 0, 0, 0, 0.0, '', '', '{}', 100
+           )"""
+    )
+    state._conn.commit()
+
+    with pytest.raises(
+        QualityProjectionBackfillRequired,
+        match="event_scan_limit_exceeded",
+    ):
+        schema_migrations._backfill_canonical_quality_projection_evidence(
+            state._conn,
+            max_affected_rows=10,
+            max_event_scan_rows=0,
+            max_trend_scan_rows=10,
+        )
+
+
+def test_quality_projection_backfill_bounds_projection_event_scan(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_quality_trend_row(
+        run_id="quality-event-bound",
+        task_id="task",
+        task_class="source_change",
+        gate="outcome_review",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+    )
+
+    with pytest.raises(
+        QualityProjectionBackfillRequired,
+        match="event_scan_limit_exceeded",
+    ):
+        schema_migrations._backfill_canonical_quality_projection_evidence(
+            state._conn,
+            max_affected_rows=10,
+            max_event_scan_rows=0,
+            max_trend_scan_rows=10,
+        )
+
+
+def test_quality_projection_backfill_is_one_pass_and_counts_only_affected_rows(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        state._conn.execute(
+            """INSERT INTO supervisor_quality_trends(
+                 run_id, task_id, task_class, gate, accepted,
+                 first_pass_accepted, revision_rounds,
+                 time_to_accepted_outcome_s, p11_audit_sample_size,
+                 false_accept_count, false_accept_denominator,
+                 false_accept_rate, policy_overlay_hash,
+                 policy_proposal_id, details_json, computed_at)
+               VALUES(?, ?, 'source_change', 'outcome_review', 1, 1, 0,
+                      1.0, 0, 0, 0, 0.0, '', '', '{}', ?)""",
+            (f"quality-run-{index}", f"task-{index}", 100 + index),
+        )
+    state._conn.commit()
+    statements: list[str] = []
+    state._conn.set_trace_callback(statements.append)
+    try:
+        schema_migrations._backfill_canonical_quality_projection_evidence(
+            state._conn,
+            max_affected_rows=3,
+            max_event_scan_rows=10,
+            max_trend_scan_rows=3,
+        )
+        first_count = state._conn.execute(
+            """SELECT COUNT(*)
+                 FROM events
+                WHERE kind=?""",
+            (QUALITY_TREND_PROJECTION_EVENT,),
+        ).fetchone()[0]
+        schema_migrations._backfill_canonical_quality_projection_evidence(
+            state._conn,
+            max_affected_rows=0,
+            max_event_scan_rows=10,
+            max_trend_scan_rows=3,
+        )
+    finally:
+        state._conn.set_trace_callback(None)
+
+    assert first_count == 3
+    assert state._conn.execute(
+        """SELECT COUNT(*)
+             FROM events
+            WHERE kind=?""",
+        (QUALITY_TREND_PROJECTION_EVENT,),
+    ).fetchone()[0] == 3
+    normalized = [" ".join(statement.split()) for statement in statements]
+    assert not any(
+        "WHERE run_id=" in statement
+        and "AND kind=" in statement
+        and "SELECT payload_json" in statement
+        for statement in normalized
+    )
+    assert any(
+        "SELECT event_id FROM events ORDER BY event_id ASC LIMIT" in statement
+        for statement in normalized
+    )
 
 
 def test_sqlite_quality_projection_migration_writer_redacts_before_hashing(

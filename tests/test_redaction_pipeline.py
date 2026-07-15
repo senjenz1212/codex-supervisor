@@ -125,6 +125,16 @@ def test_redaction_does_not_corrupt_identifiers_containing_sk_prefix():
     assert redact_for_telegram(identifier) == identifier
 
 
+def test_legacy_redaction_keeps_the_original_embedded_key_semantics():
+    from supervisor.redaction import redact_for_telegram, redact_v1, redact_v2
+
+    historical_value = "prefixsk-abcdef"
+
+    assert redact_v1(historical_value) == "prefix[REDACTED_API_KEY]"
+    assert redact_v2(historical_value) == historical_value
+    assert redact_for_telegram(historical_value) == historical_value
+
+
 def test_event_payload_object_keys_are_redacted_before_persistence(tmp_path):
     state = State(str(tmp_path / "object-key.db"))
     state.write_event(

@@ -333,6 +333,196 @@ async def test_hidden_verifier_material_never_enters_the_agent_workspace(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("passed", "score"),
+    (
+        (True, True),
+        (True, "1.0"),
+        (True, float("nan")),
+        (True, float("inf")),
+        (True, float("-inf")),
+        (True, 10**10000),
+        (False, -0.01),
+        (True, 1.01),
+    ),
+    ids=(
+        "boolean-score",
+        "string-score",
+        "nan-score",
+        "positive-infinity-score",
+        "negative-infinity-score",
+        "overflow-score",
+        "below-zero",
+        "above-one",
+    ),
+)
+async def test_unity_verifier_rejects_invalid_runner_score_contract(
+    tmp_path: Path,
+    passed,
+    score,
+) -> None:
+    hidden_root = tmp_path / "hidden"
+    hidden_root.mkdir()
+    frozen = FrozenTaskResult.create(
+        task_id="unity-contract",
+        task_family="unity",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="",
+        output="done",
+    )
+    verifier = UnityTestFrameworkVerifier(
+        verifier_id="unity-hidden",
+        verifier_version="1",
+        hidden_root=hidden_root,
+        runner=lambda _frozen, _hidden: {
+            "passed": passed,
+            "score": score,
+            "evidence": {
+                "retained": "runner evidence",
+                "non_finite": float("nan"),
+            },
+        },
+    )
+
+    grade = await verifier.verify(frozen)
+
+    assert grade.passed is False
+    assert grade.score == 0.0
+    assert grade.failure_classification == "verifier_contract_failure"
+    receipt = grade.to_dict()["evidence"]
+    assert receipt["reason"] == "unity_verifier_contract_failure"
+    assert receipt["reported_evidence"]["retained"] == "runner evidence"
+    json.dumps(receipt, allow_nan=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("passed", "score"),
+    (
+        (True, 0.0),
+        (True, 0.5),
+        (False, 0.5),
+        (False, 1.0),
+    ),
+)
+async def test_unity_verifier_preserves_independent_pass_and_score(
+    tmp_path: Path,
+    passed: bool,
+    score: float,
+) -> None:
+    hidden_root = tmp_path / "hidden"
+    hidden_root.mkdir()
+    frozen = FrozenTaskResult.create(
+        task_id="unity-contract",
+        task_family="unity",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="",
+        output="done",
+    )
+    verifier = UnityTestFrameworkVerifier(
+        verifier_id="unity-hidden",
+        verifier_version="1",
+        hidden_root=hidden_root,
+        runner=lambda _frozen, _hidden: {
+            "passed": passed,
+            "score": score,
+            "evidence": {"retained": "runner evidence"},
+        },
+    )
+
+    grade = await verifier.verify(frozen)
+
+    assert grade.passed is passed
+    assert grade.score == score
+    assert grade.failure_classification == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("passed", (None, 0, 1, "true", [], {}))
+async def test_unity_verifier_requires_literal_boolean_passed(
+    tmp_path: Path,
+    passed,
+) -> None:
+    hidden_root = tmp_path / "hidden"
+    hidden_root.mkdir()
+    frozen = FrozenTaskResult.create(
+        task_id="unity-contract",
+        task_family="unity",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="",
+        output="done",
+    )
+    verifier = UnityTestFrameworkVerifier(
+        verifier_id="unity-hidden",
+        verifier_version="1",
+        hidden_root=hidden_root,
+        runner=lambda _frozen, _hidden: {
+            "passed": passed,
+            "score": 0.0,
+            "evidence": {"retained": "runner evidence"},
+        },
+    )
+
+    grade = await verifier.verify(frozen)
+
+    assert grade.passed is False
+    assert grade.score == 0.0
+    assert grade.failure_classification == "verifier_contract_failure"
+    assert (
+        grade.to_dict()["evidence"]["reported_evidence"]["retained"]
+        == "runner evidence"
+    )
+
+
+@pytest.mark.asyncio
+async def test_unity_verifier_bounds_evidence_before_recursive_redaction(
+    tmp_path: Path,
+) -> None:
+    hidden_root = tmp_path / "hidden"
+    hidden_root.mkdir()
+    frozen = FrozenTaskResult.create(
+        task_id="unity-bounded-evidence",
+        task_family="unity",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="",
+        output="done",
+    )
+    evidence: dict[str, object] = {
+        "secret": "ANTHROPIC_API_KEY=sk-ant-veryverysecret",
+    }
+    cursor = evidence
+    for _ in range(2_000):
+        child: dict[str, object] = {}
+        cursor["child"] = child
+        cursor = child
+    verifier = UnityTestFrameworkVerifier(
+        verifier_id="unity-hidden",
+        verifier_version="1",
+        hidden_root=hidden_root,
+        runner=lambda _frozen, _hidden: {
+            "passed": True,
+            "score": 1.0,
+            "evidence": evidence,
+        },
+    )
+
+    grade = await verifier.verify(frozen)
+
+    assert grade.passed is True
+    receipt = grade.to_dict()["evidence"]
+    assert "veryverysecret" not in json.dumps(receipt)
+    node = receipt
+    for _ in range(7):
+        node = node["child"]
+    assert node["child"]["truncated"] is True
+    json.dumps(receipt, allow_nan=False)
+
+
+@pytest.mark.asyncio
 async def test_unity_verifier_applies_frozen_patch_and_runs_hidden_tests_in_isolation(
     tmp_path: Path,
 ) -> None:

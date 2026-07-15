@@ -300,6 +300,7 @@ class RepositoryArmExecutor:
             attempt_record: dict[str, Any] | None = None
             handle = None
             handle_active = False
+            teardown_safe = True
             streamed_events = []
             isolation: dict[str, str] = {}
             execution_task_id = ""
@@ -620,12 +621,38 @@ class RepositoryArmExecutor:
                 )
             except BaseException as caught:
                 if handle is not None and handle_active:
-                    await cancel_runtime_after_failure(
+                    cleanup = await cancel_runtime_after_failure(
                         runtime,
                         handle,
                         logger=log,
                     )
-                    handle_active = False
+                    handle_active = not cleanup.confirmed
+                    teardown_safe = cleanup.confirmed
+                    if not cleanup.confirmed and isinstance(
+                        caught,
+                        Exception,
+                    ):
+                        raise ArmExecutionError(
+                            "runtime cleanup could not confirm containment "
+                            f"reap: {cleanup.reason}",
+                            attempts=attempts,
+                            cost_usd=total_cost,
+                            latency_ms=_elapsed_ms(started_at),
+                            token_usage=total_token_usage,
+                            attempt_records=tuple(attempt_records),
+                            failure_classification=(
+                                "runtime_cleanup_unconfirmed"
+                            ),
+                            metadata={
+                                "runtime_plan": execution_plan,
+                                "cleanup_reason": cleanup.reason,
+                                "quarantined_workspace": (
+                                    str(materialized.workspace)
+                                    if materialized is not None
+                                    else ""
+                                ),
+                            },
+                        ) from caught
                 if isinstance(caught, ArmExecutionError):
                     raise
                 if not isinstance(caught, Exception):
@@ -737,7 +764,7 @@ class RepositoryArmExecutor:
                     metadata={"runtime_plan": execution_plan},
                 ) from exc
             finally:
-                if materialized is not None:
+                if materialized is not None and teardown_safe:
                     await self.task_environment.teardown(materialized)
 
         raise ArmExecutionError(

@@ -1655,7 +1655,16 @@ def _required_sha256(field_name: str, value: Any) -> str:
 
 def _redact_result_mapping(value: Any) -> dict[str, Any]:
     normalized = _normalise_json_mapping(value, field="result")
-    safe = _normalise_json_mapping(redact(normalized), field="result")
+    redactor = _RECEIPT_REDACTORS_BY_VERSION[
+        RECEIPT_REDACTION_RULES_VERSION
+    ]
+    try:
+        redacted = redactor(normalized)
+    except ValueError as exc:
+        raise HistoricalSemanticsError(
+            f"historical result cannot be redacted safely: {exc}"
+        ) from exc
+    safe = _normalise_json_mapping(redacted, field="result")
     changed_identity_fields = sorted(
         field_name
         for field_name in _RESULT_IDENTITY_FIELDS

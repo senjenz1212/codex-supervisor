@@ -110,6 +110,7 @@ def _config(tmp_path: Path, *, mode: str) -> Config:
 def test_state_factory_defaults_to_explicit_diagnostic_only(tmp_path):
     state = build_state(_config(tmp_path, mode="diagnostic_only"))
     assert state.event_ledger_assurance == "diagnostic-only"
+    assert "commit_decision_verdict" in DAEMON_REQUIRED_STATE_METHODS
     require_state_capabilities(
         state,
         required_methods=DAEMON_REQUIRED_STATE_METHODS,

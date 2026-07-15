@@ -4646,12 +4646,17 @@ class EvidenceCommitter:
             )
         return row
 
-    def _outbox_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _outbox_connection(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.outbox_path, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA synchronous=FULL")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA synchronous=FULL")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _observe_phase(self, phase: str) -> None:
         if self.phase_observer is not None:

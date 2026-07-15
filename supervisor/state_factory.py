@@ -32,6 +32,7 @@ DAEMON_REQUIRED_STATE_METHODS = frozenset(
         "claim_next_dual_agent_workflow_job_for_dispatch",
         "complete_action",
         "complete_autoresearch_experiment_run",
+        "commit_decision_verdict",
         "complete_dual_agent_workflow_job",
         "complete_supervisor_turn",
         "count_autoresearch_experiments_started_since",

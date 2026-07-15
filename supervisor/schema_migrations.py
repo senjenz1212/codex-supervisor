@@ -27,7 +27,29 @@ from .quality_projection import (
 
 MigrationFn = Callable[[sqlite3.Connection], None]
 MAX_STARTUP_LEGACY_EVENT_BACKFILL = 10_000
+MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS = 10_000
+MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS = 50_000
+MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS = 50_000
 EVENT_LEDGER_MIGRATION_VERSION = 12
+STORAGE_INTEGRITY_V2_MIGRATION_VERSION = 13
+_QUALITY_PROJECTION_REQUIRED_TREND_COLUMNS = {
+    "run_id",
+    "task_id",
+    "task_class",
+    "gate",
+    "accepted",
+    "first_pass_accepted",
+    "revision_rounds",
+    "time_to_accepted_outcome_s",
+    "p11_audit_sample_size",
+    "false_accept_count",
+    "false_accept_denominator",
+    "false_accept_rate",
+    "policy_overlay_hash",
+    "policy_proposal_id",
+    "details_json",
+    "computed_at",
+}
 
 
 @dataclass(frozen=True)
@@ -41,9 +63,17 @@ class LegacyEventLedgerBackfillRequired(RuntimeError):
     """Normal startup found historical events that need an offline import."""
 
 
+class QualityProjectionBackfillRequired(RuntimeError):
+    """Normal startup found a quality projection backfill above its bounds."""
+
+
 def run_forward_migrations(conn: sqlite3.Connection) -> None:
     """Apply startup-safe migrations and repair required integrity objects."""
-    _run_forward_migrations(conn, allow_legacy_event_backfill=False)
+    _run_forward_migrations(
+        conn,
+        allow_legacy_event_backfill=False,
+        allow_quality_projection_backfill=False,
+    )
 
 
 def migrate_legacy_event_ledger_offline(db_path: str | Path) -> None:
@@ -59,7 +89,34 @@ def migrate_legacy_event_ledger_offline(db_path: str | Path) -> None:
     try:
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("BEGIN EXCLUSIVE")
-        _run_forward_migrations(conn, allow_legacy_event_backfill=True)
+        _run_forward_migrations(
+            conn,
+            allow_legacy_event_backfill=True,
+            allow_quality_projection_backfill=True,
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def migrate_quality_projection_evidence_offline(
+    db_path: str | Path,
+) -> None:
+    """Backfill canonical quality projection evidence under an exclusive lock."""
+
+    path = str(Path(db_path).expanduser())
+    conn = sqlite3.connect(path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("BEGIN EXCLUSIVE")
+        _run_forward_migrations(
+            conn,
+            allow_legacy_event_backfill=False,
+            allow_quality_projection_backfill=True,
+        )
     except Exception:
         conn.rollback()
         raise
@@ -71,6 +128,7 @@ def _run_forward_migrations(
     conn: sqlite3.Connection,
     *,
     allow_legacy_event_backfill: bool,
+    allow_quality_projection_backfill: bool,
 ) -> None:
     try:
         conn.execute("PRAGMA recursive_triggers = ON")
@@ -142,7 +200,27 @@ def _run_forward_migrations(
             existing_name = applied.get(migration.version)
             if existing_name is not None:
                 continue
-            migration.apply(conn)
+            if migration.version == STORAGE_INTEGRITY_V2_MIGRATION_VERSION:
+                _migration_storage_integrity_v2(
+                    conn,
+                    max_affected_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS
+                    ),
+                    max_event_scan_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS
+                    ),
+                    max_trend_scan_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS
+                    ),
+                )
+            else:
+                migration.apply(conn)
             conn.execute(
                 """INSERT INTO schema_migrations(version, name, applied_at)
                    VALUES(?, ?, ?)""",
@@ -730,8 +808,25 @@ def _migration_evidence_ledger(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migration_storage_integrity_v2(conn: sqlite3.Connection) -> None:
-    _backfill_canonical_quality_projection_evidence(conn)
+def _migration_storage_integrity_v2(
+    conn: sqlite3.Connection,
+    *,
+    max_affected_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS
+    ),
+    max_event_scan_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS
+    ),
+    max_trend_scan_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS
+    ),
+) -> None:
+    _backfill_canonical_quality_projection_evidence(
+        conn,
+        max_affected_rows=max_affected_rows,
+        max_event_scan_rows=max_event_scan_rows,
+        max_trend_scan_rows=max_trend_scan_rows,
+    )
     _repair_required_integrity_objects(conn)
 
 
@@ -1172,46 +1267,148 @@ def _sqlite_main_database_path(conn: sqlite3.Connection) -> str:
     return ""
 
 
+def _quality_projection_backfill_message(
+    conn: sqlite3.Connection,
+    *,
+    affected_row_count: int,
+    event_scan_count: int,
+    projection_event_count: int,
+    trend_scan_count: int,
+    reason: str,
+) -> str:
+    database_path = _sqlite_main_database_path(conn)
+    target = repr(database_path or "/path/to/state.db")
+    return (
+        "canonical quality projection evidence backfill requires offline "
+        f"maintenance: reason={reason}; affected_rows={affected_row_count}; "
+        f"event_rows_scanned={event_scan_count}; "
+        f"projection_events={projection_event_count}; "
+        f"trend_rows_scanned={trend_scan_count}. Normal State startup will "
+        "not perform an unbounded projection backfill. "
+        "Stop all supervisor processes, then run "
+        "`uv run python -c \"from supervisor.schema_migrations import "
+        "migrate_quality_projection_evidence_offline; "
+        f"migrate_quality_projection_evidence_offline({target})\"`."
+    )
+
+
 def _backfill_canonical_quality_projection_evidence(
     conn: sqlite3.Connection,
+    *,
+    max_affected_rows: int | None = None,
+    max_event_scan_rows: int | None = None,
+    max_trend_scan_rows: int | None = None,
 ) -> None:
     if not _table_exists(conn, "events"):
         return
-    required_trend_columns = {
-        "run_id",
-        "task_id",
-        "task_class",
-        "gate",
-        "accepted",
-        "first_pass_accepted",
-        "revision_rounds",
-        "time_to_accepted_outcome_s",
-        "p11_audit_sample_size",
-        "false_accept_count",
-        "false_accept_denominator",
-        "false_accept_rate",
-        "policy_overlay_hash",
-        "policy_proposal_id",
-        "details_json",
-        "computed_at",
-    }
-    if not required_trend_columns <= _columns(
+    if not _QUALITY_PROJECTION_REQUIRED_TREND_COLUMNS <= _columns(
         conn,
         "supervisor_quality_trends",
     ):
         return
+    if conn.execute(
+        "SELECT 1 FROM supervisor_quality_trends LIMIT 1"
+    ).fetchone() is None:
+        return
     _ensure_event_ledger_columns(conn)
-    rows = conn.execute(
-        """SELECT run_id, task_id, task_class, gate, accepted,
-                  first_pass_accepted, revision_rounds,
-                  time_to_accepted_outcome_s, p11_audit_sample_size,
-                  false_accept_count, false_accept_denominator,
-                  false_accept_rate, policy_overlay_hash,
-                  policy_proposal_id, details_json, computed_at
-             FROM supervisor_quality_trends
-            ORDER BY run_id ASC, gate ASC"""
+    if max_event_scan_rows is None:
+        event_scan_count_row = conn.execute(
+            "SELECT COUNT(*) FROM events"
+        ).fetchone()
+        event_scan_count = int(
+            event_scan_count_row[0]
+            if event_scan_count_row is not None
+            else 0
+        )
+    else:
+        event_scan_limit = max(0, int(max_event_scan_rows))
+        event_scan_rows = conn.execute(
+            """SELECT event_id
+                 FROM events
+                ORDER BY event_id ASC
+                LIMIT ?""",
+            (event_scan_limit + 1,),
+        ).fetchall()
+        event_scan_count = len(event_scan_rows)
+        if event_scan_count > event_scan_limit:
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=0,
+                    event_scan_count=event_scan_count,
+                    projection_event_count=0,
+                    trend_scan_count=0,
+                    reason="event_scan_limit_exceeded",
+                )
+            )
+    current_projection_payloads: dict[tuple[str, str], str] = {}
+    projection_event_rows = conn.execute(
+        """SELECT run_id, payload_json
+             FROM events
+            WHERE kind=?
+            ORDER BY event_id ASC""",
+        (QUALITY_TREND_PROJECTION_EVENT,),
     ).fetchall()
+    projection_event_count = len(projection_event_rows)
+    for event_row in projection_event_rows:
+        try:
+            observed = json.loads(
+                _row_str(event_row, "payload_json", 1)
+            )
+        except json.JSONDecodeError:
+            continue
+        projection_row = (
+            observed.get("projection_row")
+            if isinstance(observed, dict)
+            else None
+        )
+        if not isinstance(projection_row, dict):
+            continue
+        gate = str(projection_row.get("gate") or "")
+        if not gate:
+            continue
+        current_projection_payloads[
+            (_row_str(event_row, "run_id", 0), gate)
+        ] = json.dumps(
+            observed,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+
+    trend_query = """SELECT run_id, task_id, task_class, gate, accepted,
+                            first_pass_accepted, revision_rounds,
+                            time_to_accepted_outcome_s, p11_audit_sample_size,
+                            false_accept_count, false_accept_denominator,
+                            false_accept_rate, policy_overlay_hash,
+                            policy_proposal_id, details_json, computed_at
+                       FROM supervisor_quality_trends
+                      ORDER BY run_id ASC, gate ASC"""
+    if max_trend_scan_rows is None:
+        rows = conn.execute(trend_query)
+    else:
+        rows = conn.execute(
+            trend_query + " LIMIT ?",
+            (max(0, int(max_trend_scan_rows)) + 1,),
+        )
+    affected: list[tuple[str, dict[str, object]]] = []
+    trend_scan_count = 0
     for row in rows:
+        trend_scan_count += 1
+        if (
+            max_trend_scan_rows is not None
+            and trend_scan_count > max_trend_scan_rows
+        ):
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=len(affected),
+                    event_scan_count=event_scan_count,
+                    projection_event_count=projection_event_count,
+                    trend_scan_count=trend_scan_count,
+                    reason="trend_scan_limit_exceeded",
+                )
+            )
         try:
             details = json.loads(_row_str(row, "details_json", 14) or "{}")
         except json.JSONDecodeError:
@@ -1272,63 +1469,39 @@ def _backfill_canonical_quality_projection_evidence(
             kind=QUALITY_TREND_PROJECTION_EVENT,
             payload=quality_trend_projection_event_payload(projection_row),
         )
-        if _quality_projection_evidence_is_current(
-            conn,
-            run_id=projection_row["run_id"],
-            gate=projection_row["gate"],
-            payload=payload,
-        ):
-            continue
-        _append_legacy_quality_projection_event(
-            conn,
-            run_id=projection_row["run_id"],
-            payload=payload,
-        )
-
-
-def _quality_projection_evidence_is_current(
-    conn: sqlite3.Connection,
-    *,
-    run_id: str,
-    gate: str,
-    payload: dict[str, object],
-) -> bool:
-    expected = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    )
-    rows = conn.execute(
-        """SELECT payload_json
-             FROM events
-            WHERE run_id=? AND kind=?
-            ORDER BY event_sequence DESC""",
-        (run_id, QUALITY_TREND_PROJECTION_EVENT),
-    ).fetchall()
-    for row in rows:
-        try:
-            observed = json.loads(_row_str(row, "payload_json", 0))
-        except json.JSONDecodeError:
-            continue
-        projection_row = (
-            observed.get("projection_row")
-            if isinstance(observed, dict)
-            else None
-        )
-        if (
-            not isinstance(projection_row, dict)
-            or str(projection_row.get("gate") or "") != gate
-        ):
-            continue
-        canonical_observed = json.dumps(
-            observed,
+        expected = json.dumps(
+            payload,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
         )
-        return canonical_observed == expected
-    return False
+        identity = (
+            str(projection_row["run_id"]),
+            str(projection_row["gate"]),
+        )
+        if current_projection_payloads.get(identity) == expected:
+            continue
+        affected.append((str(projection_row["run_id"]), payload))
+        if (
+            max_affected_rows is not None
+            and len(affected) > max_affected_rows
+        ):
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=len(affected),
+                    event_scan_count=event_scan_count,
+                    projection_event_count=projection_event_count,
+                    trend_scan_count=trend_scan_count,
+                    reason="affected_row_limit_exceeded",
+                )
+            )
+    for run_id, payload in affected:
+        _append_legacy_quality_projection_event(
+            conn,
+            run_id=run_id,
+            payload=payload,
+        )
 
 
 def _append_legacy_quality_projection_event(
@@ -1429,6 +1602,8 @@ def _validate_quality_trend_audits(conn: sqlite3.Connection) -> None:
 
 def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
     _ensure_event_idempotency_claim_objects(conn)
+    if _table_exists(conn, "verdicts"):
+        _migration_verdict_decision_id(conn)
     if _table_exists(conn, "events"):
         _ensure_event_ledger_columns(conn)
         conn.execute(
@@ -1867,6 +2042,18 @@ def _row_optional_float(
     return None if value is None else float(value)
 
 
+def _migration_verdict_decision_id(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "verdicts"):
+        return
+    if "decision_id" not in _columns(conn, "verdicts"):
+        conn.execute("ALTER TABLE verdicts ADD COLUMN decision_id TEXT")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_verdicts_decision_id
+           ON verdicts(decision_id)
+           WHERE decision_id IS NOT NULL"""
+    )
+
+
 MIGRATIONS: tuple[SchemaMigration, ...] = (
     SchemaMigration(1, "actions.resume_requested_at", _migration_actions_resume_requested_at),
     SchemaMigration(
@@ -1953,5 +2140,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         18,
         "historical_operation_claims.execution_ownership",
         _migration_historical_operation_execution_ownership,
+    ),
+    SchemaMigration(
+        19,
+        "verdicts.decision_id",
+        _migration_verdict_decision_id,
     ),
 )

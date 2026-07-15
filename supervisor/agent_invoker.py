@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from .agent_runtime import AgentRuntime, AgentTask
@@ -26,6 +27,13 @@ SKILL_FOR_DECISION = {
     "plan_recovery":    "plan-recovery",
     "review_updates":   "review-updates",
 }
+
+
+@dataclass(frozen=True)
+class _DecisionVerdict:
+    model: str
+    output: dict[str, object]
+    latency_ms: int = 0
 
 
 class AgentInvoker:
@@ -66,7 +74,7 @@ class AgentInvoker:
 
         decision = await self.state.next_decision(lease_s=DECISION_LEASE_S)
         try:
-            await self._handle(decision)
+            verdict = await self._handle(decision)
         except asyncio.CancelledError:
             self.state.retry_decision(
                 decision,
@@ -105,13 +113,24 @@ class AgentInvoker:
                 exc,
             )
             return
-        if not self.state.ack_decision(decision):
+        settled = (
+            self.state.ack_decision(decision)
+            if verdict is None
+            else self.state.commit_decision_verdict(
+                decision,
+                model=verdict.model,
+                output=verdict.output,
+                latency_ms=verdict.latency_ms,
+            )
+            is not None
+        )
+        if not settled:
             raise RuntimeError(
                 "decision completed but its durable lease could not be acked: "
                 f"{decision.decision_id}"
             )
 
-    async def _handle(self, d: Decision) -> None:
+    async def _handle(self, d: Decision) -> _DecisionVerdict | None:
         skill_name = SKILL_FOR_DECISION.get(d.kind)
         if not skill_name:
             log.warning("unknown decision kind: %s", d.kind)
@@ -163,9 +182,7 @@ class AgentInvoker:
                 outputs.append(result.output)
 
             verdict_model = result.resolved_model or model
-            self.state.write_verdict(
-                run_id=d.run_id, phase=d.kind,
-                layer="L4" if d.kind == "adjudicate_drift" else None,
+            return _DecisionVerdict(
                 model=verdict_model,
                 output={
                     "agent_outputs": outputs,
