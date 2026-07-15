@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -226,15 +227,16 @@ class WorkflowJobDispatcher:
             row = claimed_row
             result_path = Path(str(row["result_path"]))
             failure_error = "worker_lease_stale_or_dead"
-            malformed_result = False
             result: dict[str, Any] | None = None
-            if result_path.exists():
+            # A prepared spawn has no durably recorded worker generation.
+            # Any result at that point is unowned and must not terminalize this
+            # attempt or a later retry.
+            if recovery_point == "spawned" and result_path.exists():
                 try:
                     loaded = json.loads(result_path.read_text(encoding="utf-8"))
                     result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
                 except (OSError, json.JSONDecodeError) as e:
                     failure_error = f"malformed_worker_result: {e}"
-                    malformed_result = True
             termination = self._terminate_row_worker(row)
             if not termination["safe_to_finalize"]:
                 deferred = self._defer_unsafe_cleanup(
@@ -276,8 +278,7 @@ class WorkflowJobDispatcher:
                     continue
                 except ValueError as e:
                     failure_error = f"malformed_worker_result: {e}"
-                    malformed_result = True
-            if recovery_point == "spawn_prepared" and not malformed_result:
+            if recovery_point == "spawn_prepared":
                 retried = self._schedule_retry_or_park(
                     row,
                     error="spawn_prepared_recovered_without_worker_identity",
@@ -364,6 +365,17 @@ class WorkflowJobDispatcher:
             return refreshed or row
         row = prepared
         try:
+            self._quarantine_stale_result(
+                row,
+                result_path=result_path,
+                reason="before_new_spawn_attempt",
+            )
+        except OSError as exc:
+            return self._schedule_retry_or_park(
+                row,
+                error=f"stale_result_quarantine_failed: {exc}",
+            )
+        try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             with log_path.open("ab") as log_file:
                 process = self.popen(
@@ -380,13 +392,31 @@ class WorkflowJobDispatcher:
         except OSError as e:
             return self._schedule_retry_or_park(row, error=str(e))
 
-        identity = self.process_identity_probe(int(process.pid))
+        identity = self._verified_popen_identity(
+            process,
+            containment_id=containment_id,
+            expected_pgid=int(process.pid),
+        )
         if identity is None:
-            worker_pgid = int(process.pid)
-            worker_started_at: float | None = None
-        else:
-            worker_pgid = int(identity[0])
-            worker_started_at = float(identity[1])
+            termination = self._terminate_process_group(
+                None,
+                process=process,
+                expected_containment_started_at=row[
+                    "worker_prepared_at"
+                ],
+                expected_containment_id=containment_id,
+            )
+            if not termination["safe_to_finalize"]:
+                return self._defer_unsafe_cleanup(
+                    row,
+                    termination=termination,
+                )
+            return self._schedule_retry_or_park(
+                row,
+                error="spawned_worker_identity_untrusted",
+            )
+        worker_pgid = int(identity[0])
+        worker_started_at = float(identity[1])
         try:
             spawned = self.state.record_dual_agent_workflow_job_spawned(
                 job_id=row["job_id"],
@@ -408,6 +438,9 @@ class WorkflowJobDispatcher:
                 process,
                 expected_pgid=int(worker_pgid),
                 expected_started_at=worker_started_at,
+                expected_containment_started_at=row[
+                    "worker_prepared_at"
+                ],
                 expected_containment_id=containment_id,
             )
             refreshed = self.state.get_dual_agent_workflow_job(
@@ -437,12 +470,6 @@ class WorkflowJobDispatcher:
                     job_id=row["job_id"]
                 )
                 cleanup_row = reaped_row or cleanup_row
-                completed = self._complete_from_result_file(
-                    cleanup_row,
-                    result_path=result_path,
-                )
-                if completed is not None:
-                    return completed
                 return self._schedule_retry_or_park(
                     cleanup_row,
                     error=f"failed_to_persist_spawned_worker: {e}",
@@ -461,44 +488,6 @@ class WorkflowJobDispatcher:
                 },
             )
 
-        if identity is None:
-            termination = self._terminate_process(
-                process,
-                expected_pgid=worker_pgid,
-                expected_started_at=worker_started_at,
-                expected_containment_id=containment_id,
-            )
-            if not termination["safe_to_finalize"]:
-                return self._defer_unsafe_cleanup(
-                    row,
-                    termination=termination,
-                )
-            try:
-                self._record_worker_reaped(row, termination)
-            except Exception:
-                return self._defer_unsafe_cleanup(
-                    row,
-                    termination={
-                        **termination,
-                        "status": "worker_reap_persistence_failed",
-                        "safe_to_finalize": False,
-                    },
-                )
-            reaped_row = self.state.get_dual_agent_workflow_job(
-                job_id=row["job_id"]
-            )
-            row = reaped_row or row
-            completed = self._complete_from_result_file(
-                row,
-                result_path=result_path,
-            )
-            if completed is not None:
-                return completed
-            return self._schedule_retry_or_park(
-                row,
-                error="spawned_worker_identity_unavailable",
-            )
-
         self._write_job_event(
             row,
             status="running",
@@ -511,31 +500,39 @@ class WorkflowJobDispatcher:
         refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
         return refreshed or row
 
-    def _complete_from_result_file(
+    def _quarantine_stale_result(
         self,
         row: Any,
         *,
         result_path: Path,
-    ) -> Any | None:
+        reason: str,
+    ) -> Path | None:
         if not result_path.exists():
             return None
-        try:
-            loaded = json.loads(result_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
-        status = str(result.get("status") or "completed")
-        try:
-            self.state.complete_dual_agent_workflow_job(
-                job_id=row["job_id"],
-                status=status,
-                terminal_outcome=result,
-                error="",
-            )
-        except (ValueError, RuntimeError):
-            return None
-        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
-        return refreshed or row
+        content = result_path.read_bytes()
+        quarantine_dir = result_path.parent / ".quarantine"
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        quarantine_path = quarantine_dir / (
+            f"{result_path.name}.attempt-{int(row['dispatch_attempts'] or 0)}."
+            f"{time.time_ns()}.stale"
+        )
+        os.replace(result_path, quarantine_path)
+        self._write_job_event(
+            row,
+            status="result_quarantined",
+            recovery_point=str(row["recovery_point"] or "request_written"),
+            error=reason,
+            extra={
+                "result_quarantine": {
+                    "original_path": str(result_path),
+                    "quarantine_path": str(quarantine_path),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "byte_count": len(content),
+                    "reason": reason,
+                }
+            },
+        )
+        return quarantine_path
 
     def _schedule_retry_or_park(self, row: Any, *, error: str) -> Any:
         attempts = int(row["dispatch_attempts"] or 0) + 1
@@ -768,6 +765,7 @@ class WorkflowJobDispatcher:
         worker_started_at: float | None = None,
         worker_containment_id: str | None = None,
         error: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         payload = {
             "job_id": row["job_id"],
@@ -785,6 +783,8 @@ class WorkflowJobDispatcher:
             "transport_recovery": "detached_cli_worker",
             "dispatcher_id": self.dispatcher_id,
         }
+        if extra:
+            payload.update(extra)
         self.state.write_event(
             run_id=row["run_id"],
             source="dual_agent",
@@ -816,11 +816,77 @@ class WorkflowJobDispatcher:
     ) -> bool:
         return abs(float(observed) - float(expected)) <= 0.001
 
+    def _verified_popen_identity(
+        self,
+        process: Any,
+        *,
+        containment_id: str,
+        expected_pgid: int,
+        expected_started_at: float | None = None,
+    ) -> tuple[int, float] | None:
+        """Verify one still-live Popen generation before trusting its PID."""
+        try:
+            pid = int(getattr(process, "pid", 0) or 0)
+            if pid <= 0 or process.poll() is not None:
+                return None
+            first = self.process_identity_probe(pid)
+            if first is None:
+                return None
+            first_pgid = int(first[0])
+            first_started_at = float(first[1])
+            if (
+                first_pgid != int(expected_pgid)
+                or (
+                    expected_started_at is not None
+                    and not self._same_process_start(
+                        first_started_at,
+                        expected_started_at,
+                    )
+                )
+            ):
+                return None
+            if self._process_containment_id(pid) != containment_id:
+                return None
+            second = self.process_identity_probe(pid)
+            if second is None:
+                return None
+            second_pgid = int(second[0])
+            second_started_at = float(second[1])
+            if (
+                second_pgid != int(expected_pgid)
+                or not self._same_process_start(
+                    second_started_at,
+                    first_started_at,
+                )
+                or self._process_containment_id(pid) != containment_id
+                or process.poll() is not None
+            ):
+                return None
+            return second_pgid, second_started_at
+        except (
+            AttributeError,
+            IndexError,
+            OSError,
+            psutil.AccessDenied,
+            psutil.NoSuchProcess,
+            psutil.ZombieProcess,
+            ProcessLookupError,
+            TypeError,
+            ValueError,
+            OverflowError,
+        ):
+            return None
+
     def _terminate_row_worker(self, row: Any) -> dict[str, Any]:
+        try:
+            prepared_at = row["worker_prepared_at"]
+        except (KeyError, IndexError):
+            prepared_at = None
         return self._terminate_process_group(
             row["pid"],
             expected_pgid=row["worker_pgid"],
             expected_started_at=row["worker_started_at"],
+            expected_containment_started_at=prepared_at,
             expected_containment_id=(
                 str(row["worker_containment_id"])
                 if row["worker_containment_id"]
@@ -857,6 +923,7 @@ class WorkflowJobDispatcher:
         process: Any = None,
         expected_pgid: Any = None,
         expected_started_at: Any = None,
+        expected_containment_started_at: Any = None,
         expected_containment_id: str | None = None,
     ) -> dict[str, Any]:
         recorded_containment_id = (
@@ -870,13 +937,19 @@ class WorkflowJobDispatcher:
             and expected_started_at is None
             and recorded_containment_id
         ):
-            return terminate_containment(
-                root_pid=None,
-                expected_root_started_at=None,
-                expected_process_group_id=None,
-                containment_id=recorded_containment_id,
-                process=process,
-            )
+            containment_only_kwargs: dict[str, Any] = {
+                "root_pid": None,
+                "expected_root_started_at": None,
+                "expected_process_group_id": None,
+                "containment_id": recorded_containment_id,
+                "process": process,
+                "unreadable_scope": "same_user",
+            }
+            if expected_containment_started_at is not None:
+                containment_only_kwargs["scan_started_at"] = (
+                    expected_containment_started_at
+                )
+            return terminate_containment(**containment_only_kwargs)
         try:
             pid = int(pid)
         except (TypeError, ValueError, OverflowError):
@@ -1009,6 +1082,11 @@ class WorkflowJobDispatcher:
             containment_id=containment_id,
             process=process,
             root_pid_reused=root_pid_reused,
+            scan_started_at=expected_containment_started_at,
+            # Tree-only scans can miss an unreadable descendant after it
+            # reparents. Terminal cleanup therefore keeps the broader
+            # same-user fail-closed scope.
+            unreadable_scope="same_user",
         )
 
     @staticmethod
@@ -1038,14 +1116,75 @@ class WorkflowJobDispatcher:
         *,
         expected_pgid: int | None = None,
         expected_started_at: float | None = None,
+        expected_containment_started_at: float | None = None,
         expected_containment_id: str | None = None,
     ) -> dict[str, Any]:
+        pid = int(getattr(process, "pid", 0) or 0)
+        recorded_containment_id = str(
+            expected_containment_id or ""
+        ).strip()
+        try:
+            process_exited = process.poll() is not None
+        except Exception:
+            process_exited = True
+        if process_exited:
+            if recorded_containment_id:
+                return self._terminate_process_group(
+                    None,
+                    process=process,
+                    expected_containment_started_at=(
+                        expected_containment_started_at
+                    ),
+                    expected_containment_id=recorded_containment_id,
+                )
+            return self._terminate_process_group(
+                pid,
+                process=process,
+                expected_pgid=expected_pgid,
+                expected_started_at=expected_started_at,
+            )
+        containment_id = (
+            recorded_containment_id
+            if recorded_containment_id
+            else self._process_containment_id(pid)
+        )
+        trusted_pgid = int(
+            expected_pgid if expected_pgid is not None else pid
+        )
+        verified = (
+            self._verified_popen_identity(
+                process,
+                containment_id=containment_id,
+                expected_pgid=trusted_pgid,
+                expected_started_at=expected_started_at,
+            )
+            if containment_id
+            else None
+        )
+        if verified is None:
+            if containment_id:
+                return self._terminate_process_group(
+                    None,
+                    process=process,
+                    expected_containment_started_at=(
+                        expected_containment_started_at
+                    ),
+                    expected_containment_id=containment_id,
+                )
+            return self._unsafe_termination_result(
+                status="worker_containment_identity_missing",
+                pid=pid,
+                pgid=trusted_pgid,
+            )
         return self._terminate_process_group(
-            int(getattr(process, "pid", 0) or 0),
+            pid,
             process=process,
-            expected_pgid=expected_pgid,
-            expected_started_at=expected_started_at,
-            expected_containment_id=expected_containment_id,
+            expected_pgid=verified[0],
+            expected_started_at=verified[1],
+            expected_containment_started_at=(
+                expected_containment_started_at
+            ),
+            expected_containment_id=containment_id,
         )
 
     @staticmethod
@@ -1058,9 +1197,11 @@ class WorkflowJobDispatcher:
                 )
             )
         except (
+            OSError,
             psutil.AccessDenied,
             psutil.NoSuchProcess,
             psutil.ZombieProcess,
+            ProcessLookupError,
         ):
             return ""
 

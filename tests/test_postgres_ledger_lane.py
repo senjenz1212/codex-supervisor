@@ -35,7 +35,11 @@ from supervisor.ledger_checkpoints import (
     checkpoint_identity,
 )
 from supervisor.quality_trends import query_quality_trends, record_quality_trends_for_run, record_transport_incident
-from supervisor.state import State, is_postgres_state_dsn
+from supervisor.state import (
+    HISTORICAL_OPERATION_EVENT_SOURCE,
+    State,
+    is_postgres_state_dsn,
+)
 
 
 def test_state_uses_sqlite_for_filesystem_paths(tmp_path):
@@ -376,6 +380,15 @@ def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in (
         POSTGRES_SCHEMA_SQL
     )
+    assert "execution_owner_token TEXT" in POSTGRES_SCHEMA_SQL
+    assert "execution_generation INTEGER NOT NULL DEFAULT 0" in (
+        POSTGRES_SCHEMA_SQL
+    )
+    assert "execution_heartbeat_at DOUBLE PRECISION" in POSTGRES_SCHEMA_SQL
+    assert "idx_historical_operation_claims_execution_owner" in (
+        POSTGRES_SCHEMA_SQL
+    )
+    assert "WHERE execution_owner_token IS NOT NULL" in POSTGRES_SCHEMA_SQL
 
 
 def test_postgres_historical_reservation_does_not_read_terminal_variables():
@@ -390,8 +403,11 @@ def test_postgres_historical_reservation_does_not_read_terminal_variables():
     }
 
     class _Result:
+        def __init__(self, value):
+            self._value = value
+
         def fetchone(self):
-            return row
+            return self._value
 
     class _Transaction:
         def __enter__(self):
@@ -408,8 +424,11 @@ def test_postgres_historical_reservation_does_not_read_terminal_variables():
             return _Transaction()
 
         def execute(self, statement, _params=None):
-            self.statements.append(str(statement))
-            return _Result()
+            text = str(statement)
+            self.statements.append(text)
+            if "clock_timestamp()" in text:
+                return _Result({"state_now": 1})
+            return _Result(row)
 
     connection = _Connection()
     state = PostgresState.__new__(PostgresState)
@@ -424,8 +443,9 @@ def test_postgres_historical_reservation_does_not_read_terminal_variables():
 
     assert reserved is True
     assert claimed == row
-    assert len(connection.statements) == 1
-    assert "INSERT INTO historical_operation_claims" in connection.statements[0]
+    assert len(connection.statements) == 2
+    assert "clock_timestamp()" in connection.statements[0]
+    assert "INSERT INTO historical_operation_claims" in connection.statements[1]
 
 
 def test_postgres_historical_completion_validates_source_and_request_link():
@@ -510,6 +530,10 @@ def test_alembic_migration_and_make_target_exist():
     overlay_migration = Path("migrations/versions/20260610_0004_policy_overlay_trend_columns.py").read_text(
         encoding="utf-8"
     )
+    historical_ownership_migration = Path(
+        "migrations/versions/"
+        "20260715_0002_historical_execution_ownership.py"
+    ).read_text(encoding="utf-8")
     makefile = Path("Makefile").read_text(encoding="utf-8")
     config_example = Path("config.example.yaml").read_text(encoding="utf-8")
 
@@ -534,6 +558,17 @@ def test_alembic_migration_and_make_target_exist():
     assert 'down_revision = "20260610_0003"' in overlay_migration
     assert "policy_overlay_hash" in overlay_migration
     assert "retired_at" in overlay_migration
+    assert 'revision = "20260715_0002"' in historical_ownership_migration
+    assert 'down_revision = "20260715_0001"' in (
+        historical_ownership_migration
+    )
+    assert "execution_owner_token" in historical_ownership_migration
+    assert "execution_generation" in historical_ownership_migration
+    assert "execution_heartbeat_at" in historical_ownership_migration
+    assert (
+        "historical execution-ownership migration requires quiescence"
+        in historical_ownership_migration
+    )
     assert "uv run --extra postgres alembic -c alembic.ini upgrade head" in makefile
     assert "PgBouncer" in config_example
     assert "state_db: ~/.codex-supervisor/state.db" in config_example
@@ -607,6 +642,8 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
         "idx_supervisor_autoresearch_experiments_status",
         "UNIQUE(run_id, gate)",
         "signal_key TEXT NOT NULL UNIQUE",
+        "idx_historical_operation_claims_execution_owner",
+        "WHERE execution_owner_token IS NOT NULL",
     ):
         assert required_snippet in inline
         assert required_snippet in migration
@@ -618,6 +655,10 @@ def test_postgres_migrations_lock_before_inspection_in_runtime_write_order():
     ).read_text(encoding="utf-8")
     identity_migration = Path(
         "migrations/versions/20260712_0002_workflow_process_identity.py"
+    ).read_text(encoding="utf-8")
+    historical_ownership_migration = Path(
+        "migrations/versions/"
+        "20260715_0002_historical_execution_ownership.py"
     ).read_text(encoding="utf-8")
 
     lock_markers = (
@@ -647,6 +688,20 @@ def test_postgres_migrations_lock_before_inspection_in_runtime_write_order():
     assert (
         "CREATE TRIGGER dual_agent_workflow_jobs_no_truncate"
         in identity_migration
+    )
+    historical_lock_position = historical_ownership_migration.index(
+        "LOCK TABLE historical_operation_claims"
+    )
+    historical_quiescence_position = historical_ownership_migration.index(
+        "SELECT operation_id"
+    )
+    historical_alter_position = historical_ownership_migration.index(
+        "ADD COLUMN IF NOT EXISTS execution_owner_token"
+    )
+    assert (
+        historical_lock_position
+        < historical_quiescence_position
+        < historical_alter_position
     )
 
 
@@ -696,7 +751,7 @@ def test_postgres_startup_refuses_to_rewrite_existing_unmigrated_schema():
     with pytest.raises(RuntimeError, match="make migrate"):
         state.apply_schema()
 
-    assert POSTGRES_ALEMBIC_HEAD == "20260715_0001"
+    assert POSTGRES_ALEMBIC_HEAD == "20260715_0002"
     assert not any("UPDATE events" in sql for sql in connection.statements)
     assert not any("DROP TRIGGER" in sql for sql in connection.statements)
 
@@ -755,6 +810,44 @@ def test_alembic_lessons_revision_upgrades_from_applied_base(monkeypatch):
             conn.execute(
                 """INSERT INTO event_stream_sequences(run_id, last_event_id)
                    VALUES('legacy-run-a', 2), ('legacy-run-b', 1)"""
+            )
+            conn.commit()
+
+        command.upgrade(cfg, "20260715_0001")
+        with psycopg.connect(dsn_with_schema) as conn:
+            conn.execute(
+                """INSERT INTO historical_operation_claims(
+                     operation_id, request_hash, operation, status,
+                     terminal_event_id, created_at, updated_at)
+                   VALUES(
+                     'live-historical-migration-claim', %s, 'replay',
+                     'running', NULL, 1, 1
+                   )""",
+                ("a" * 64,),
+            )
+            conn.commit()
+
+        with pytest.raises(
+            RuntimeError,
+            match="execution-ownership migration requires quiescence",
+        ):
+            command.upgrade(cfg, "head")
+
+        with psycopg.connect(dsn_with_schema) as conn:
+            assert conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()[0] == "20260715_0001"
+            assert conn.execute(
+                """SELECT column_name
+                     FROM information_schema.columns
+                    WHERE table_schema=current_schema()
+                      AND table_name='historical_operation_claims'
+                      AND column_name='execution_owner_token'"""
+            ).fetchone() is None
+            conn.execute(
+                """UPDATE historical_operation_claims
+                      SET status='failed'
+                    WHERE operation_id='live-historical-migration-claim'"""
             )
             conn.commit()
 
@@ -1021,6 +1114,30 @@ def _reserve_job(
         request_payload_json=json.dumps(payload, sort_keys=True),
         config_path=str(tmp_path / "config.yaml"),
     )
+
+
+def _insert_legacy_postgres_historical_event(
+    state: PostgresState,
+    *,
+    run_id: str,
+    kind: str,
+    payload: dict,
+) -> int:
+    """Build a controlled legacy fixture without reopening the public bypass."""
+    with state._write_lock:
+        with state._conn.transaction():
+            event_id = state._insert_event_unlocked(
+                run_id=run_id,
+                source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                kind=kind,
+                payload=payload,
+            )
+    state._coordinate_committed_event(
+        run_id=run_id,
+        event_id=event_id,
+        event_kind=kind,
+    )
+    return event_id
 
 
 def test_postgres_partitioned_per_run_catch_up(postgres_state):
@@ -1513,6 +1630,7 @@ def test_postgres_generic_job_update_cannot_forge_worker_reap_proof(
 
 def test_postgres_historical_claim_requires_authorized_linked_terminal(
     postgres_state,
+    monkeypatch,
 ):
     operation_id = "historical-postgres-linked"
     request_hash = "c" * 64
@@ -1535,8 +1653,20 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
             payload={"request_hash": request_hash},
         )
 
-    requested_event_id = (
-        postgres_state.write_historical_operation_event(
+    for kind in (
+        "historical_operation.requested",
+        "historical_operation.completed",
+        "historical_operation.failed",
+    ):
+        with pytest.raises(ValueError, match="owner-fenced state methods"):
+            postgres_state.write_historical_operation_event(
+                run_id=operation_id,
+                kind=kind,
+                payload={"request_hash": request_hash},
+            )
+
+    requested_event_id = _insert_legacy_postgres_historical_event(
+        postgres_state,
         run_id=operation_id,
         kind="historical_operation.requested",
         payload={
@@ -1544,10 +1674,9 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
             "request_hash": request_hash,
             "request": {"operation": "replay"},
         },
-        )
     )
-    terminal_event_id = (
-        postgres_state.write_historical_operation_event(
+    terminal_event_id = _insert_legacy_postgres_historical_event(
+        postgres_state,
         run_id=operation_id,
         kind="historical_operation.completed",
         payload={
@@ -1556,7 +1685,6 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
             "request_hash": request_hash,
             "requested_event_id": requested_event_id,
         },
-        )
     )
 
     assert postgres_state.complete_historical_operation(
@@ -1571,6 +1699,150 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
         status="completed",
         terminal_event_id=terminal_event_id,
     ) == 0
+
+    owned_bypass_id = "historical-postgres-owned-legacy-bypass"
+    owned_bypass_hash = "1" * 64
+    bypass_reserved, reserved = postgres_state.reserve_historical_operation(
+        operation_id=owned_bypass_id,
+        request_hash=owned_bypass_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    bypass_claim, bypass_requested_event_id, acquired = (
+        postgres_state.claim_historical_operation_execution(
+            operation_id=owned_bypass_id,
+            request_hash=owned_bypass_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token="postgres-owned-legacy-bypass",
+            expected_claim_updated_at=bypass_reserved["updated_at"],
+            expected_execution_owner_token=bypass_reserved[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=bypass_reserved[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=bypass_reserved[
+                "execution_heartbeat_at"
+            ],
+        )
+    )
+    assert acquired is True
+    assert bypass_claim["execution_generation"] == 1
+    assert bypass_requested_event_id is not None
+    bypass_terminal_event_id = _insert_legacy_postgres_historical_event(
+        postgres_state,
+        run_id=owned_bypass_id,
+        kind="historical_operation.completed",
+        payload={
+            "operation_id": owned_bypass_id,
+            "operation": "replay",
+            "request_hash": owned_bypass_hash,
+            "requested_event_id": bypass_requested_event_id,
+        },
+    )
+    with pytest.raises(RuntimeError, match="compare-and-set failed"):
+        postgres_state.complete_historical_operation(
+            operation_id=owned_bypass_id,
+            request_hash=owned_bypass_hash,
+            status="completed",
+            terminal_event_id=bypass_terminal_event_id,
+        )
+    assert postgres_state._conn.execute(
+        """SELECT status
+             FROM historical_operation_claims
+            WHERE operation_id=%s""",
+        (owned_bypass_id,),
+    ).fetchone()["status"] == "running"
+
+    late_release_id = "historical-postgres-late-preflight-release"
+    late_release_hash = "2" * 64
+    preflight_claim, reserved = (
+        postgres_state.reserve_historical_operation(
+            operation_id=late_release_id,
+            request_hash=late_release_hash,
+            operation="replay",
+        )
+    )
+    assert reserved is True
+    execution_claim, late_requested_event_id, acquired = (
+        postgres_state.claim_historical_operation_execution(
+            operation_id=late_release_id,
+            request_hash=late_release_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token="postgres-late-release-owner",
+            expected_claim_updated_at=preflight_claim["updated_at"],
+            expected_execution_owner_token=preflight_claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=preflight_claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=preflight_claim[
+                "execution_heartbeat_at"
+            ],
+        )
+    )
+    assert acquired is True
+    assert late_requested_event_id is not None
+    late_terminal_event_id, created = (
+        postgres_state.terminalize_historical_operation_execution(
+            operation_id=late_release_id,
+            request_hash=late_release_hash,
+            operation="replay",
+            owner_token="postgres-late-release-owner",
+            execution_generation=execution_claim[
+                "execution_generation"
+            ],
+            status="completed",
+            payload={
+                "operation_id": late_release_id,
+                "operation": "replay",
+                "request_hash": late_release_hash,
+                "requested_event_id": late_requested_event_id,
+                "execution_owner_token": "postgres-late-release-owner",
+                "execution_generation": execution_claim[
+                    "execution_generation"
+                ],
+            },
+        )
+    )
+    assert late_terminal_event_id is not None
+    assert created is True
+    assert postgres_state.release_historical_operation_preflight(
+        operation_id=late_release_id,
+        request_hash=late_release_hash,
+        operation="replay",
+        expected_claim_updated_at=preflight_claim["updated_at"],
+        expected_execution_owner_token=preflight_claim[
+            "execution_owner_token"
+        ],
+        expected_execution_generation=preflight_claim[
+            "execution_generation"
+        ],
+        expected_execution_heartbeat_at=preflight_claim[
+            "execution_heartbeat_at"
+        ],
+        payload={
+            "operation_id": late_release_id,
+            "request_hash": late_release_hash,
+            "operation": "replay",
+            "error_type": "HistoricalEvidenceError",
+            "error": "stale verifier",
+        },
+    ) is None
+    assert [
+        event["kind"]
+        for event in postgres_state.read_events_since(
+            late_release_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
 
     for retry_state in ("stale", "preflight_released"):
         retry_operation_id = (
@@ -1594,16 +1866,37 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
                 ).fetchone()
             )
         else:
-            postgres_state.write_historical_operation_event(
-                run_id=retry_operation_id,
-                kind="historical_operation.preflight_released",
-                payload={
-                    "operation_id": retry_operation_id,
-                    "request_hash": retry_request_hash,
-                    "operation": "replay",
-                    "error_type": "HistoricalEvidenceError",
-                    "error": "retryable preflight failure",
-                },
+            released_event_id = (
+                postgres_state.release_historical_operation_preflight(
+                    operation_id=retry_operation_id,
+                    request_hash=retry_request_hash,
+                    operation="replay",
+                    expected_claim_updated_at=claim["updated_at"],
+                    expected_execution_owner_token=claim[
+                        "execution_owner_token"
+                    ],
+                    expected_execution_generation=claim[
+                        "execution_generation"
+                    ],
+                    expected_execution_heartbeat_at=claim[
+                        "execution_heartbeat_at"
+                    ],
+                    payload={
+                        "operation_id": retry_operation_id,
+                        "request_hash": retry_request_hash,
+                        "operation": "replay",
+                        "error_type": "HistoricalEvidenceError",
+                        "error": "retryable preflight failure",
+                    },
+                )
+            )
+            assert released_event_id is not None
+            claim = dict(
+                postgres_state._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s""",
+                    (retry_operation_id,),
+                ).fetchone()
             )
 
         second_state = PostgresState(
@@ -1620,7 +1913,22 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
                 request_hash=retry_request_hash,
                 operation="replay",
                 request={"operation": "replay"},
+                owner_token=(
+                    f"postgres-owner-{retry_state}-{id(state)}"
+                ),
                 expected_claim_updated_at=claim["updated_at"],
+                expected_execution_owner_token=claim[
+                    "execution_owner_token"
+                ],
+                expected_execution_generation=claim[
+                    "execution_generation"
+                ],
+                expected_execution_heartbeat_at=claim[
+                    "execution_heartbeat_at"
+                ],
+                lease_duration_s=(
+                    1.0 if retry_state == "stale" else None
+                ),
             )
 
         try:
@@ -1660,6 +1968,236 @@ def test_postgres_historical_claim_requires_authorized_linked_terminal(
                 limit=10,
             )
         ] == expected_kinds
+
+    owned_operation_id = "historical-postgres-owned-stale"
+    owned_request_hash = "e" * 64
+    reserved_claim, reserved = postgres_state.reserve_historical_operation(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    original_owner = "postgres-historical-owner-a"
+    owned_claim, requested_event_id, acquired = (
+        postgres_state.claim_historical_operation_execution(
+            operation_id=owned_operation_id,
+            request_hash=owned_request_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token=original_owner,
+            expected_claim_updated_at=reserved_claim["updated_at"],
+            expected_execution_owner_token=reserved_claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=reserved_claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=reserved_claim[
+                "execution_heartbeat_at"
+            ],
+        )
+    )
+    assert acquired is True
+    assert requested_event_id is not None
+    original_generation = owned_claim["execution_generation"]
+    assert postgres_state.heartbeat_historical_operation_execution(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        owner_token=original_owner,
+        execution_generation=original_generation,
+    ) is True
+    assert postgres_state.heartbeat_historical_operation_execution(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        owner_token="wrong-owner",
+        execution_generation=original_generation,
+    ) is False
+    observed_stale = dict(
+        postgres_state._conn.execute(
+            """UPDATE historical_operation_claims
+                  SET execution_heartbeat_at=0, updated_at=0
+                WHERE operation_id=%s
+            RETURNING *""",
+            (owned_operation_id,),
+        ).fetchone()
+    )
+    assert postgres_state.heartbeat_historical_operation_execution(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        owner_token=original_owner,
+        execution_generation=original_generation,
+    ) is True
+    heartbeat_won_claim, heartbeat_won = (
+        postgres_state.take_over_stale_historical_operation_execution(
+            operation_id=owned_operation_id,
+            request_hash=owned_request_hash,
+            operation="replay",
+            new_owner_token="postgres-stale-observation-must-lose",
+            expected_requested_event_id=requested_event_id,
+            expected_claim_updated_at=observed_stale["updated_at"],
+            expected_execution_owner_token=observed_stale[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=observed_stale[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=observed_stale[
+                "execution_heartbeat_at"
+            ],
+            lease_duration_s=1.0,
+        )
+    )
+    assert heartbeat_won is False
+    assert heartbeat_won_claim["execution_owner_token"] == original_owner
+    assert heartbeat_won_claim["execution_generation"] == original_generation
+    observed_stale = dict(
+        postgres_state._conn.execute(
+            """UPDATE historical_operation_claims
+                  SET execution_heartbeat_at=0, updated_at=0
+                WHERE operation_id=%s
+            RETURNING *""",
+            (owned_operation_id,),
+        ).fetchone()
+    )
+    takeover_owner = "postgres-historical-owner-b"
+    takeover_claim, took_over = (
+        postgres_state.take_over_stale_historical_operation_execution(
+            operation_id=owned_operation_id,
+            request_hash=owned_request_hash,
+            operation="replay",
+            new_owner_token=takeover_owner,
+            expected_requested_event_id=requested_event_id,
+            expected_claim_updated_at=observed_stale["updated_at"],
+            expected_execution_owner_token=observed_stale[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=observed_stale[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=observed_stale[
+                "execution_heartbeat_at"
+            ],
+            lease_duration_s=1.0,
+        )
+    )
+    assert took_over is True
+    assert takeover_claim["execution_owner_token"] == takeover_owner
+    assert (
+        takeover_claim["execution_generation"]
+        == original_generation + 1
+    )
+    terminal_payload = {
+        "operation_id": owned_operation_id,
+        "operation": "replay",
+        "request_hash": owned_request_hash,
+        "requested_event_id": requested_event_id,
+        "execution_owner_token": takeover_owner,
+        "execution_generation": takeover_claim["execution_generation"],
+        "error_type": "HistoricalOperationIndeterminate",
+        "error": "stale owner recovered",
+    }
+    assert postgres_state.terminalize_historical_operation_execution(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        operation="replay",
+        owner_token=original_owner,
+        execution_generation=original_generation,
+        status="completed",
+        payload={
+            "operation_id": owned_operation_id,
+            "operation": "replay",
+            "request_hash": owned_request_hash,
+            "requested_event_id": requested_event_id,
+        },
+    ) == (None, False)
+    terminal_event_id, terminal_created = (
+        postgres_state.terminalize_historical_operation_execution(
+            operation_id=owned_operation_id,
+            request_hash=owned_request_hash,
+            operation="replay",
+            owner_token=takeover_owner,
+            execution_generation=takeover_claim[
+                "execution_generation"
+            ],
+            status="failed",
+            payload=terminal_payload,
+        )
+    )
+    assert terminal_event_id is not None
+    assert terminal_created is True
+    assert postgres_state.terminalize_historical_operation_execution(
+        operation_id=owned_operation_id,
+        request_hash=owned_request_hash,
+        operation="replay",
+        owner_token=takeover_owner,
+        execution_generation=takeover_claim["execution_generation"],
+        status="failed",
+        payload=terminal_payload,
+    ) == (terminal_event_id, False)
+    assert [
+        event["kind"]
+        for event in postgres_state.read_events_since(
+            owned_operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
+        "historical_operation.requested",
+        "historical_operation.failed",
+    ]
+
+    fresh_operation_id = "historical-postgres-fresh-state-clock"
+    fresh_request_hash = "3" * 64
+    fresh_claim, reserved = postgres_state.reserve_historical_operation(
+        operation_id=fresh_operation_id,
+        request_hash=fresh_request_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    with monkeypatch.context() as clock_skew:
+        clock_skew.setattr(
+            "supervisor.postgres_state.time.time",
+            lambda: 10**15,
+        )
+        assert postgres_state.historical_operation_preflight_claim_is_stale(
+            operation_id=fresh_operation_id,
+            request_hash=fresh_request_hash,
+            operation="replay",
+            expected_claim_updated_at=fresh_claim["updated_at"],
+            expected_execution_owner_token=fresh_claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=fresh_claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=fresh_claim[
+                "execution_heartbeat_at"
+            ],
+            lease_duration_s=3600,
+        ) is False
+        current, fresh_requested_event_id, acquired = (
+            postgres_state.claim_historical_operation_execution(
+                operation_id=fresh_operation_id,
+                request_hash=fresh_request_hash,
+                operation="replay",
+                request={"operation": "replay"},
+                owner_token="skewed-caller-must-not-steal",
+                expected_claim_updated_at=fresh_claim["updated_at"],
+                expected_execution_owner_token=fresh_claim[
+                    "execution_owner_token"
+                ],
+                expected_execution_generation=fresh_claim[
+                    "execution_generation"
+                ],
+                expected_execution_heartbeat_at=fresh_claim[
+                    "execution_heartbeat_at"
+                ],
+                lease_duration_s=3600,
+            )
+        )
+    assert acquired is False
+    assert fresh_requested_event_id is None
+    assert current["execution_owner_token"] is None
 
 
 def test_postgres_reapplying_schema_preserves_native_event_hashes(postgres_state):

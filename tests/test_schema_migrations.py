@@ -46,6 +46,10 @@ EXPECTED_MIGRATIONS = [
     {"version": 15, "name": "historical_operation_claims"},
     {"version": 16, "name": "event_idempotency_claims"},
     {"version": 17, "name": "dual_agent_workflow_jobs.spawn_ownership"},
+    {
+        "version": 18,
+        "name": "historical_operation_claims.execution_ownership",
+    },
 ]
 
 
@@ -849,6 +853,144 @@ def test_forward_migration_adds_workflow_job_spawn_ownership(tmp_path):
     assert "terminal_outcome_json IS NULL" in normalized
     assert "(pid IS NULL OR worker_reaped_at IS NOT NULL)" in normalized
     assert applied_migrations(conn) == EXPECTED_MIGRATIONS
+
+
+def test_forward_migration_adds_historical_execution_ownership(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE historical_operation_claims (
+             operation_id TEXT PRIMARY KEY,
+             request_hash TEXT NOT NULL,
+             operation TEXT NOT NULL,
+             status TEXT NOT NULL,
+             terminal_event_id INTEGER,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO historical_operation_claims(
+             operation_id, request_hash, operation, status,
+             terminal_event_id, created_at, updated_at)
+           VALUES('historical-old', ?, 'replay', 'failed', 1, 1, 1)""",
+        ("a" * 64,),
+    )
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA table_info(historical_operation_claims)"
+        ).fetchall()
+    }
+    assert {
+        "execution_owner_token",
+        "execution_generation",
+        "execution_heartbeat_at",
+    } <= columns
+    row = conn.execute(
+        """SELECT execution_owner_token, execution_generation,
+                  execution_heartbeat_at
+             FROM historical_operation_claims
+            WHERE operation_id='historical-old'"""
+    ).fetchone()
+    assert dict(row) == {
+        "execution_owner_token": None,
+        "execution_generation": 0,
+        "execution_heartbeat_at": None,
+    }
+    index = conn.execute(
+        """SELECT sql
+             FROM sqlite_master
+            WHERE type='index'
+              AND name='idx_historical_operation_claims_execution_owner'"""
+    ).fetchone()
+    assert index is not None
+    normalized = " ".join(str(index["sql"]).split())
+    assert "CREATE UNIQUE INDEX" in normalized
+    assert "execution_owner_token IS NOT NULL" in normalized
+    conn.execute(
+        """UPDATE historical_operation_claims
+              SET execution_owner_token='unique-owner'
+            WHERE operation_id='historical-old'"""
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """INSERT INTO historical_operation_claims(
+                 operation_id, request_hash, operation, status,
+                 terminal_event_id, execution_owner_token,
+                 created_at, updated_at)
+               VALUES(
+                 'historical-conflict', ?, 'replay', 'running', NULL,
+                 'unique-owner', 2, 2
+               )""",
+            ("b" * 64,),
+        )
+    assert applied_migrations(conn) == EXPECTED_MIGRATIONS
+
+
+def test_historical_execution_ownership_migration_requires_quiescence(
+    tmp_path,
+):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE historical_operation_claims (
+             operation_id TEXT PRIMARY KEY,
+             request_hash TEXT NOT NULL,
+             operation TEXT NOT NULL,
+             status TEXT NOT NULL,
+             terminal_event_id INTEGER,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO historical_operation_claims(
+             operation_id, request_hash, operation, status,
+             terminal_event_id, created_at, updated_at)
+           VALUES('historical-live', ?, 'replay', 'running', NULL, 1, 1)""",
+        ("c" * 64,),
+    )
+    conn.commit()
+    original_columns = [
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA table_info(historical_operation_claims)"
+        ).fetchall()
+    ]
+
+    with pytest.raises(
+        RuntimeError,
+        match="execution-ownership migration requires quiescence",
+    ):
+        run_forward_migrations(conn)
+
+    assert [
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA table_info(historical_operation_claims)"
+        ).fetchall()
+    ] == original_columns
+    migration_table = conn.execute(
+        """SELECT 1
+             FROM sqlite_master
+            WHERE type='table' AND name='schema_migrations'"""
+    ).fetchone()
+    if migration_table is not None:
+        assert conn.execute(
+            """SELECT 1
+                 FROM schema_migrations
+                WHERE version=18"""
+        ).fetchone() is None
+    claim = conn.execute(
+        """SELECT status
+             FROM historical_operation_claims
+            WHERE operation_id='historical-live'"""
+    ).fetchone()
+    assert claim["status"] == "running"
 
 
 def test_process_identity_migration_requires_quiescent_pre_identity_jobs(
@@ -2020,6 +2162,10 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     spawn_ownership_migration = Path(
         "migrations/versions/20260715_0001_workflow_spawn_ownership.py"
     ).read_text(encoding="utf-8")
+    historical_ownership_migration = Path(
+        "migrations/versions/"
+        "20260715_0002_historical_execution_ownership.py"
+    ).read_text(encoding="utf-8")
     normalized_spawn_ownership_migration = " ".join(
         spawn_ownership_migration.split()
     )
@@ -2079,3 +2225,35 @@ def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     assert "NEW.cleanup_attempts" in spawn_ownership_migration
     assert "reject_worker_reaped_at_rewrite" in spawn_ownership_migration
     assert "forward-only migration" in spawn_ownership_migration
+    assert (
+        "LOCK TABLE historical_operation_claims "
+        "IN SHARE ROW EXCLUSIVE MODE"
+        in historical_ownership_migration
+    )
+    assert (
+        "historical execution-ownership migration requires quiescence"
+        in historical_ownership_migration
+    )
+    assert historical_ownership_migration.index(
+        "LOCK TABLE historical_operation_claims"
+    ) < historical_ownership_migration.index(
+        "SELECT operation_id"
+    ) < historical_ownership_migration.index(
+        "ADD COLUMN IF NOT EXISTS execution_owner_token"
+    )
+    assert "execution_owner_token TEXT" in historical_ownership_migration
+    assert "execution_generation" in historical_ownership_migration
+    assert "INTEGER NOT NULL DEFAULT 0" in historical_ownership_migration
+    assert (
+        "execution_heartbeat_at DOUBLE PRECISION"
+        in historical_ownership_migration
+    )
+    assert (
+        "idx_historical_operation_claims_execution_owner"
+        in historical_ownership_migration
+    )
+    assert (
+        "WHERE execution_owner_token IS NOT NULL"
+        in historical_ownership_migration
+    )
+    assert "forward-only migration" in historical_ownership_migration

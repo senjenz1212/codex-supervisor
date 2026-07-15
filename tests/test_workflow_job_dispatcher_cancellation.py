@@ -15,6 +15,7 @@ import psutil
 import pytest
 
 import supervisor.process_containment as process_containment_module
+import supervisor.workflow_job_dispatcher as workflow_job_dispatcher_module
 from supervisor.process_containment import (
     containment_environment,
     new_containment_id,
@@ -34,6 +35,9 @@ class _TaggedProcessCleanup:
     def __init__(self, request: pytest.FixtureRequest) -> None:
         self._containment_ids: set[str] = set()
         self._processes: list[tuple[subprocess.Popen[bytes], int | None]] = []
+        self._known_identities: dict[int, float] = {}
+        self._known_groups: set[int] = set()
+        self._inspection_failures: set[str] = set()
         request.addfinalizer(self._finalize)
 
     def register(self, containment_id: str) -> None:
@@ -48,6 +52,31 @@ class _TaggedProcessCleanup:
         pgid: int | None = None,
     ) -> None:
         self._processes.append((process, pgid))
+        self.watch_pid(process.pid, pgid=pgid)
+
+    def watch_pid(
+        self,
+        pid: int,
+        *,
+        pgid: int | None = None,
+    ) -> None:
+        pid = int(pid)
+        if pgid is not None:
+            self._known_groups.add(int(pgid))
+        try:
+            self._known_identities[pid] = float(
+                _REAL_PSUTIL_PROCESS(pid).create_time()
+            )
+        except psutil.AccessDenied:
+            self._inspection_failures.add(f"access_denied:{pid}")
+        except (
+            OSError,
+            ValueError,
+            psutil.NoSuchProcess,
+            psutil.ZombieProcess,
+            ProcessLookupError,
+        ):
+            pass
 
     def snapshot(
         self,
@@ -58,7 +87,10 @@ class _TaggedProcessCleanup:
             if containment_id is not None
             else self._containment_ids
         )
-        found: list[process_containment_module.ProcessIdentity] = []
+        found: dict[
+            tuple[int, float],
+            process_containment_module.ProcessIdentity,
+        ] = {}
         for pid in _REAL_PSUTIL_PIDS():
             if pid == os.getpid():
                 continue
@@ -76,25 +108,94 @@ class _TaggedProcessCleanup:
                         "",
                     )
                 )
+            except psutil.AccessDenied:
+                if pid in self._known_identities:
+                    self._inspection_failures.add(
+                        f"access_denied:{pid}"
+                    )
+                    started_at = self._known_identities[pid]
+                    found[(pid, started_at)] = (
+                        process_containment_module.ProcessIdentity(
+                            pid=pid,
+                            started_at=started_at,
+                        )
+                    )
+                continue
             except (
                 OSError,
                 ValueError,
-                psutil.AccessDenied,
                 psutil.NoSuchProcess,
                 psutil.ZombieProcess,
                 ProcessLookupError,
             ):
                 continue
             if marker in ids:
-                found.append(
+                identity = process_containment_module.ProcessIdentity(
+                    pid=pid,
+                    started_at=started_at,
+                )
+                found[(identity.pid, identity.started_at)] = identity
+        for pid, expected_started_at in self._known_identities.items():
+            if (pid, expected_started_at) in found:
+                continue
+            try:
+                process = _REAL_PSUTIL_PROCESS(pid)
+                observed_started_at = float(process.create_time())
+                if abs(observed_started_at - expected_started_at) > 0.001:
+                    continue
+                if (
+                    process.is_running()
+                    and process.status() != psutil.STATUS_ZOMBIE
+                ):
+                    found[(pid, expected_started_at)] = (
+                        process_containment_module.ProcessIdentity(
+                            pid=pid,
+                            started_at=expected_started_at,
+                        )
+                    )
+            except psutil.AccessDenied:
+                self._inspection_failures.add(f"access_denied:{pid}")
+                found[(pid, expected_started_at)] = (
                     process_containment_module.ProcessIdentity(
                         pid=pid,
-                        started_at=started_at,
+                        started_at=expected_started_at,
                     )
                 )
-        return tuple(sorted(found))
+            except (
+                OSError,
+                ValueError,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+        return tuple(sorted(found.values()))
 
     def cleanup(self) -> tuple[process_containment_module.ProcessIdentity, ...]:
+        for pgid in sorted(self._known_groups):
+            if pgid <= 0 or pgid == os.getpgrp():
+                continue
+            try:
+                _REAL_OS_KILLPG(pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        for pid, expected_started_at in self._known_identities.items():
+            try:
+                process = _REAL_PSUTIL_PROCESS(pid)
+                if abs(
+                    float(process.create_time()) - expected_started_at
+                ) <= 0.001:
+                    _REAL_OS_KILL(pid, signal.SIGKILL)
+            except psutil.AccessDenied:
+                self._inspection_failures.add(f"access_denied:{pid}")
+            except (
+                OSError,
+                ValueError,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                pass
         for process, pgid in self._processes:
             if process.poll() is not None:
                 continue
@@ -127,9 +228,12 @@ class _TaggedProcessCleanup:
                             - identity.started_at
                         ) <= 0.001:
                             _REAL_OS_KILL(identity.pid, signal.SIGKILL)
+                    except psutil.AccessDenied:
+                        self._inspection_failures.add(
+                            f"access_denied:{identity.pid}"
+                        )
                     except (
                         OSError,
-                        psutil.AccessDenied,
                         psutil.NoSuchProcess,
                         psutil.ZombieProcess,
                         ProcessLookupError,
@@ -145,6 +249,10 @@ class _TaggedProcessCleanup:
 
     def _finalize(self) -> None:
         survivors = self.cleanup()
+        assert self._inspection_failures == set(), (
+            "access denied while inspecting known descendants: "
+            f"{sorted(self._inspection_failures)!r}"
+        )
         assert survivors == (), (
             "tagged process survivors after fallback cleanup: "
             f"{survivors!r}"
@@ -158,10 +266,52 @@ def tagged_process_cleanup(
     return _TaggedProcessCleanup(request)
 
 
+def test_leak_helper_retains_access_denied_known_descendant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRequest:
+        @staticmethod
+        def addfinalizer(_finalizer: object) -> None:
+            return None
+
+    cleanup = _TaggedProcessCleanup(FakeRequest())  # type: ignore[arg-type]
+    cleanup._known_identities[50017] = 200.0
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_REAL_PSUTIL_PIDS",
+        lambda: [50017],
+    )
+
+    def denied_process(pid: int) -> object:
+        raise psutil.AccessDenied(pid=pid)
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_REAL_PSUTIL_PROCESS",
+        denied_process,
+    )
+
+    survivors = cleanup.snapshot()
+
+    assert survivors == (
+        process_containment_module.ProcessIdentity(
+            pid=50017,
+            started_at=200.0,
+        ),
+    )
+    assert cleanup._inspection_failures == {"access_denied:50017"}
+
+
 pytestmark = pytest.mark.skipif(
     not hasattr(os, "killpg"),
     reason="process-group cancellation requires POSIX process groups",
 )
+
+
+def _pidfd_signalling_available() -> bool:
+    return callable(getattr(os, "pidfd_open", None)) and callable(
+        getattr(signal, "pidfd_send_signal", None)
+    )
 
 
 def _spawn_stubborn_worker_with_child(
@@ -233,6 +383,10 @@ while True:
                         ready_path.read_text(encoding="utf-8")
                     )
                     tree["containment_id"] = containment_id
+                    cleanup.watch_pid(
+                        int(tree["child_pid"]),
+                        pgid=int(tree["pgid"]),
+                    )
                     return process, tree
                 except json.JSONDecodeError:
                     pass
@@ -275,22 +429,36 @@ def _cleanup_pid(pid: int) -> None:
         pass
 
 
-def _hermetic_containment_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+def _hermetic_containment_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> set[int]:
     """Drop unrelated environ-unreadable processes from containment scans.
 
     Root-identity-less scans fail closed on any same-user process that denies
     environment reads (common on macOS). These tests assert termination
     outcomes for the launched tree itself, so they emulate a host without
-    unrelated unreadable processes.
+    unrelated unreadable processes. Known descendants are always retained so
+    access denial remains an explicit containment failure.
     """
     real_process_iter = process_containment_module.psutil.process_iter
+    known_descendant_pids: set[int] = set()
 
     def readable_process_iter(attrs: list[str]) -> list[Any]:
         readable: list[Any] = []
         for proc in real_process_iter(attrs):
             try:
                 proc.environ()
-            except Exception:
+            except psutil.AccessDenied:
+                if int(proc.pid) in known_descendant_pids:
+                    readable.append(proc)
+                continue
+            except (
+                OSError,
+                ValueError,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
                 continue
             readable.append(proc)
         return readable
@@ -300,6 +468,7 @@ def _hermetic_containment_scan(monkeypatch: pytest.MonkeyPatch) -> None:
         "process_iter",
         readable_process_iter,
     )
+    return known_descendant_pids
 
 
 def _spawn_orphaned_tagged_child(
@@ -361,6 +530,10 @@ time.sleep(0.2)
         if not ready_path.exists():
             raise AssertionError("orphaned tagged child did not become ready")
         child = json.loads(ready_path.read_text(encoding="utf-8"))
+        cleanup.watch_pid(
+            int(child["pid"]),
+            pgid=int(child["pgid"]),
+        )
         return {
             "root_pid": root_pid,
             "root_started_at": root_started_at,
@@ -406,13 +579,14 @@ def test_cancel_kills_descendant_that_escaped_with_setsid(
     monkeypatch: pytest.MonkeyPatch,
     tagged_process_cleanup: _TaggedProcessCleanup,
 ) -> None:
-    _hermetic_containment_scan(monkeypatch)
+    known_descendants = _hermetic_containment_scan(monkeypatch)
     process, tree = _spawn_stubborn_worker_with_child(
         tmp_path,
         tagged_process_cleanup,
         child_starts_new_session=True,
     )
     child_pid = tree["child_pid"]
+    known_descendants.update({process.pid, child_pid})
 
     try:
         assert tree["pgid"] == child_pid
@@ -423,11 +597,19 @@ def test_cancel_kills_descendant_that_escaped_with_setsid(
         product_survivors = tagged_process_cleanup.snapshot(
             tree["containment_id"]
         )
-        assert result["safe_to_finalize"] is True
         assert child_pid in result["descendant_pids"]
-        with pytest.raises(ProcessLookupError):
-            os.getpgid(child_pid)
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert result["safe_to_finalize"] is True
+            with pytest.raises(ProcessLookupError):
+                os.getpgid(child_pid)
+            assert product_survivors == ()
+        else:
+            assert result["safe_to_finalize"] is False
+            assert child_pid in result["surviving_pids"]
+            assert psutil.pid_exists(child_pid)
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_process_group(process, process.pid)
@@ -515,12 +697,24 @@ while True:
             child_pid = int(
                 json.loads(child_path.read_text(encoding="utf-8"))["pid"]
             )
+            tagged_process_cleanup.watch_pid(
+                child_pid,
+                pgid=child_pid,
+            )
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
-        assert result["safe_to_finalize"] is True
         assert child_pid > 0
         assert child_pid in result["descendant_pids"]
-        assert not psutil.pid_exists(child_pid)
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert result["safe_to_finalize"] is True
+            assert not psutil.pid_exists(child_pid)
+            assert product_survivors == ()
+        else:
+            assert result["safe_to_finalize"] is False
+            assert child_pid in result["surviving_pids"]
+            assert psutil.pid_exists(child_pid)
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_process_group(process, process.pid)
@@ -583,6 +777,10 @@ subprocess.Popen(
         child_pid = int(
             json.loads(child_path.read_text(encoding="utf-8"))["pid"]
         )
+        tagged_process_cleanup.watch_pid(
+            child_pid,
+            pgid=child_pid,
+        )
         assert psutil.pid_exists(child_pid)
 
         result = WorkflowJobDispatcher(
@@ -596,10 +794,18 @@ subprocess.Popen(
         )
 
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
-        assert result["safe_to_finalize"] is True
         assert child_pid in result["descendant_pids"]
-        assert not psutil.pid_exists(child_pid)
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert result["safe_to_finalize"] is True
+            assert not psutil.pid_exists(child_pid)
+            assert product_survivors == ()
+        else:
+            assert result["safe_to_finalize"] is False
+            assert child_pid in result["surviving_pids"]
+            assert psutil.pid_exists(child_pid)
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         if child_pid:
@@ -930,7 +1136,7 @@ def test_spawn_identity_failure_uses_known_containment_to_kill_detached_child(
     monkeypatch: pytest.MonkeyPatch,
     tagged_process_cleanup: _TaggedProcessCleanup,
 ) -> None:
-    _hermetic_containment_scan(monkeypatch)
+    known_descendants = _hermetic_containment_scan(monkeypatch)
     child_path = tmp_path / "spawn-identity-child.json"
     child_code = """
 import json
@@ -1010,6 +1216,14 @@ subprocess.Popen(
             spawned_child.update(
                 json.loads(child_path.read_text(encoding="utf-8"))
             )
+            known_descendants.update({
+                process.pid,
+                int(spawned_child["pid"]),
+            })
+            tagged_process_cleanup.watch_pid(
+                int(spawned_child["pid"]),
+                pgid=int(spawned_child["pgid"]),
+            )
         return process
 
     try:
@@ -1023,17 +1237,203 @@ subprocess.Popen(
         child_pid = int(spawned_child["pid"])
         product_survivors = tagged_process_cleanup.snapshot()
 
-        assert retried["status"] == "submitted"
-        assert retried["recovery_point"] == "request_written"
-        assert retried["dispatch_attempts"] == 1
-        assert retried["next_dispatch_at"] is not None
-        assert retried["error"] == "spawned_worker_identity_unavailable"
-        assert not psutil.pid_exists(child_pid)
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert retried["status"] == "submitted"
+            assert retried["recovery_point"] == "request_written"
+            assert retried["dispatch_attempts"] == 1
+            assert retried["next_dispatch_at"] is not None
+            assert retried["error"] == "spawned_worker_identity_untrusted"
+            assert not psutil.pid_exists(child_pid)
+            assert product_survivors == ()
+        else:
+            assert retried["status"] == "running"
+            assert retried["recovery_point"] == "spawn_prepared"
+            assert retried["pid"] is None
+            assert retried["worker_pgid"] is None
+            assert retried["worker_started_at"] is None
+            assert retried["worker_containment_id"]
+            assert str(retried["leased_by"]).startswith("cleanup:")
+            assert retried["error"] in {
+                "generation_bound_signal_unavailable",
+                "worker_tree_survived_sigkill",
+                "worker_containment_scan_incomplete",
+            }
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         if child_pid:
             _cleanup_pid(child_pid)
+
+
+def test_spawn_fast_pid_reuse_falls_back_to_containment_only_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = State(str(tmp_path / "state.db"))
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "fast-pid-reuse"
+    state.upsert_dual_agent_workflow_job(
+        job_id="fast-pid-reuse",
+        run_id="workflow-run",
+        task_id="workflow-task",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(job_dir / "request.json"),
+        result_path=str(job_dir / "result.json"),
+        log_path=str(job_dir / "worker.log"),
+        recovery_point="request_written",
+    )
+    dispatcher_id = "dispatcher-fast-pid-reuse"
+    state.update_dual_agent_workflow_job(
+        job_id="fast-pid-reuse",
+        leased_by=dispatcher_id,
+    )
+    row = state.get_dual_agent_workflow_job(job_id="fast-pid-reuse")
+    assert row is not None
+
+    class ReusedPopen:
+        pid = 43210
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    containment: dict[str, str] = {}
+
+    def fake_popen(_command: list[str], **kwargs: Any) -> ReusedPopen:
+        containment["id"] = str(
+            kwargs["env"][
+                process_containment_module.CONTAINMENT_ENV_VAR
+            ]
+        )
+        return ReusedPopen()
+
+    probes = iter([
+        (ReusedPopen.pid, 100.0),
+        (ReusedPopen.pid, 200.0),
+    ])
+
+    def identity_probe(_pid: int) -> tuple[int, float]:
+        return next(probes, (ReusedPopen.pid, 200.0))
+
+    recorded: list[dict[str, object]] = []
+    real_record_spawned = state.record_dual_agent_workflow_job_spawned
+
+    def record_spawned(**kwargs: object) -> Any:
+        recorded.append(dict(kwargs))
+        return real_record_spawned(**kwargs)
+
+    monkeypatch.setattr(
+        state,
+        "record_dual_agent_workflow_job_spawned",
+        record_spawned,
+    )
+    terminations: list[dict[str, object]] = []
+
+    def fake_terminate_containment(**kwargs: object) -> dict[str, object]:
+        terminations.append(dict(kwargs))
+        return {
+            "status": "worker_tree_terminated",
+            "safe_to_finalize": True,
+            "pid": 0,
+            "pgid": None,
+            "containment_id": containment["id"],
+            "descendant_pids": [],
+        }
+
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "terminate_containment",
+        fake_terminate_containment,
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id=dispatcher_id,
+        popen=fake_popen,
+        process_identity_probe=identity_probe,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "_process_containment_id",
+        lambda _pid: containment["id"],
+    )
+
+    retried = dispatcher._spawn(row)
+
+    assert recorded == []
+    assert len(terminations) == 1
+    assert terminations[0]["root_pid"] is None
+    assert terminations[0]["expected_root_started_at"] is None
+    assert terminations[0]["expected_process_group_id"] is None
+    assert terminations[0]["scan_started_at"] == 1000.0
+    assert retried["status"] == "submitted"
+    assert retried["recovery_point"] == "request_written"
+    assert retried["pid"] is None
+    assert retried["worker_pgid"] is None
+    assert retried["worker_started_at"] is None
+    assert retried["worker_containment_id"] is None
+    assert retried["error"] == "spawned_worker_identity_untrusted"
+
+
+@pytest.mark.parametrize("mismatch", ("containment_tag", "process_group"))
+def test_popen_identity_mismatch_uses_containment_only_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch: str,
+) -> None:
+    class LivePopen:
+        pid = 43211
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    expected_containment_id = "containment-popen-verification"
+    observed_pgid = LivePopen.pid if mismatch != "process_group" else 99999
+    calls: list[dict[str, object]] = []
+
+    def fake_terminate_containment(**kwargs: object) -> dict[str, object]:
+        calls.append(dict(kwargs))
+        return {
+            "status": "worker_tree_survived_sigkill",
+            "safe_to_finalize": False,
+        }
+
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "terminate_containment",
+        fake_terminate_containment,
+    )
+    dispatcher = WorkflowJobDispatcher(
+        object(),
+        process_identity_probe=lambda _pid: (observed_pgid, 100.0),
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "_process_containment_id",
+        lambda _pid: (
+            "different-containment"
+            if mismatch == "containment_tag"
+            else expected_containment_id
+        ),
+    )
+
+    dispatcher._terminate_process(
+        LivePopen(),
+        expected_pgid=LivePopen.pid,
+        expected_started_at=100.0,
+        expected_containment_started_at=50.0,
+        expected_containment_id=expected_containment_id,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["root_pid"] is None
+    assert calls[0]["expected_root_started_at"] is None
+    assert calls[0]["expected_process_group_id"] is None
+    assert calls[0]["containment_id"] == expected_containment_id
+    assert calls[0]["scan_started_at"] == 50.0
 
 
 def test_stale_pid_reuse_is_not_signalled(
@@ -1066,7 +1466,7 @@ def test_pid_reuse_still_terminates_surviving_tagged_descendant(
     tmp_path: Path,
     tagged_process_cleanup: _TaggedProcessCleanup,
 ) -> None:
-    _hermetic_containment_scan(monkeypatch)
+    known_descendants = _hermetic_containment_scan(monkeypatch)
     tree = _spawn_orphaned_tagged_child(
         tmp_path,
         tagged_process_cleanup,
@@ -1074,6 +1474,7 @@ def test_pid_reuse_still_terminates_surviving_tagged_descendant(
     )
     root_pid = int(tree["root_pid"])
     child_pid = int(tree["child_pid"])
+    known_descendants.update({root_pid, child_pid})
     reused_started_at = float(tree["root_started_at"]) + 1000.0
     real_process_identity = process_containment_module.process_identity
     real_kill = os.kill
@@ -1124,13 +1525,21 @@ def test_pid_reuse_still_terminates_surviving_tagged_descendant(
         product_survivors = tagged_process_cleanup.snapshot(
             tree["containment_id"]
         )
-        assert result["safe_to_finalize"] is True
         assert result["root_pid_reused"] is True
         assert child_pid in result["descendant_pids"]
-        assert not psutil.pid_exists(child_pid)
         assert root_signals == []
         assert root_group_signals == []
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert result["safe_to_finalize"] is True
+            assert not psutil.pid_exists(child_pid)
+            assert product_survivors == ()
+        else:
+            assert result["safe_to_finalize"] is False
+            assert child_pid in result["surviving_pids"]
+            assert psutil.pid_exists(child_pid)
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_pid(child_pid)
@@ -1141,7 +1550,7 @@ def test_pid_reuse_reaps_tagged_descendant_before_dispatcher_finalizes(
     tmp_path: Path,
     tagged_process_cleanup: _TaggedProcessCleanup,
 ) -> None:
-    _hermetic_containment_scan(monkeypatch)
+    known_descendants = _hermetic_containment_scan(monkeypatch)
     tree = _spawn_orphaned_tagged_child(
         tmp_path,
         tagged_process_cleanup,
@@ -1149,6 +1558,7 @@ def test_pid_reuse_reaps_tagged_descendant_before_dispatcher_finalizes(
     )
     root_pid = int(tree["root_pid"])
     child_pid = int(tree["child_pid"])
+    known_descendants.update({root_pid, child_pid})
     reused_started_at = float(tree["root_started_at"]) + 1000.0
     real_process_identity = process_containment_module.process_identity
     real_kill = os.kill
@@ -1237,15 +1647,27 @@ def test_pid_reuse_reaps_tagged_descendant_before_dispatcher_finalizes(
             tree["containment_id"]
         )
         assert row is not None
-        assert result["failed"] == ["pid-reuse"]
-        assert result["cleanup_retry_pending"] == []
-        assert completion_observations == [True]
-        assert row["status"] == "failed"
-        assert row["recovery_point"] == "terminal"
-        assert row["worker_reaped_at"] == 1000
         assert root_signals == []
         assert root_group_signals == []
-        assert product_survivors == ()
+        if _pidfd_signalling_available():
+            assert result["failed"] == ["pid-reuse"]
+            assert result["cleanup_retry_pending"] == []
+            assert completion_observations == [True]
+            assert row["status"] == "failed"
+            assert row["recovery_point"] == "terminal"
+            assert row["worker_reaped_at"] == 1000
+            assert product_survivors == ()
+        else:
+            assert result["failed"] == []
+            assert result["cleanup_retry_pending"] == ["pid-reuse"]
+            assert completion_observations == []
+            assert row["status"] == "running"
+            assert row["recovery_point"] == "spawned"
+            assert row["worker_reaped_at"] is None
+            assert str(row["leased_by"]).startswith("cleanup:")
+            assert child_pid in {
+                identity.pid for identity in product_survivors
+            }
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_pid(child_pid)
@@ -1309,22 +1731,38 @@ def test_result_recovery_kills_live_worker_before_terminal_completion(
         complete_after_group_exit,
     )
 
+    clock = {"now": 1000}
     try:
         dispatcher = WorkflowJobDispatcher(
             state,
             dispatcher_id="dispatcher-test",
-            now=lambda: 1000,
+            now=lambda: clock["now"],
+            max_cleanup_retry_attempts=10,
         )
         result = dispatcher.reap_stale_leases()
+        for _attempt in range(4):
+            if result["completed"] == ["job-result"]:
+                break
+            assert result["cleanup_retry_pending"] == ["job-result"]
+            pending = state.get_dual_agent_workflow_job(
+                job_id="job-result"
+            )
+            assert pending is not None
+            clock["now"] = int(pending["lease_expires_at"])
+            result = dispatcher.reap_stale_leases()
 
         product_survivors = tagged_process_cleanup.snapshot(
             tree["containment_id"]
         )
-        assert result["completed"] == ["job-result"]
+        final_row = state.get_dual_agent_workflow_job(job_id="job-result")
+        assert result["completed"] == ["job-result"], {
+            "result": result,
+            "row": dict(final_row) if final_row is not None else None,
+        }
         assert completion_observations == [True]
         job = state.get_dual_agent_workflow_job(job_id="job-result")
         assert job is not None
-        assert job["worker_reaped_at"] == 1000
+        assert job["worker_reaped_at"] == clock["now"]
         assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
@@ -1538,6 +1976,39 @@ def test_process_identity_access_denied_fails_closed_without_signalling(
     assert result["status"] == "worker_identity_probe_failed"
     assert result["safe_to_finalize"] is False
     assert signalled == []
+
+
+def test_prepared_containment_recovery_uses_persisted_scan_lower_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_terminate_containment(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "status": "worker_containment_scan_incomplete",
+            "safe_to_finalize": False,
+        }
+
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "terminate_containment",
+        fake_terminate_containment,
+    )
+
+    WorkflowJobDispatcher(object())._terminate_row_worker(
+        {
+            "pid": None,
+            "worker_pgid": None,
+            "worker_started_at": None,
+            "worker_prepared_at": 123.5,
+            "worker_containment_id": "containment-prepared-at",
+        }
+    )
+
+    assert captured["root_pid"] is None
+    assert captured["expected_process_group_id"] is None
+    assert captured["scan_started_at"] == 123.5
 
 
 def test_scan_fails_closed_for_unreadable_reparented_child_outside_root_group(
@@ -1919,7 +2390,7 @@ def test_terminate_retains_unreadable_identity_across_reparenting(
     )
 
     assert result["safe_to_finalize"] is False
-    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["status"] == "generation_bound_signal_unavailable"
     assert result["unresolved_process_identities"] == [
         {
             "pid": 50007,
@@ -2102,7 +2573,7 @@ def test_scan_resolves_unreadable_only_after_exact_classification(
     assert snapshot.errors == ()
 
 
-def test_terminate_signals_generation_matched_unreadable_identity(
+def test_terminate_uses_pidfd_for_generation_matched_unreadable_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     unresolved = process_containment_module.UnreadableProcessIdentity(
@@ -2142,12 +2613,31 @@ def test_terminate_signals_generation_matched_unreadable_identity(
         fake_identity,
     )
     monkeypatch.setattr(
+        process_containment_module,
+        "_pid_principal_matches_current",
+        lambda _pid: True,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        lambda pid, _flags: 90009 if int(pid) == unresolved.pid else -1,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        lambda pidfd, sig, _info, _flags: (
+            signals.append(sig)
+            if int(pidfd) == 90009
+            else None
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
         process_containment_module.os,
         "kill",
-        lambda pid, sig: (
-            signals.append(sig)
-            if int(pid) == unresolved.pid
-            else None
+        lambda _pid, _sig: pytest.fail(
+            "individual signalling must use pidfd"
         ),
     )
     monkeypatch.setattr(
@@ -2161,8 +2651,8 @@ def test_terminate_signals_generation_matched_unreadable_identity(
         expected_root_started_at=100.0,
         expected_process_group_id=70009,
         containment_id="containment-unreadable-signal",
-        term_timeout_s=0.005,
-        kill_timeout_s=0.005,
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
         quiescence_s=0,
         poll_s=0.001,
         unreadable_scope="containment_tree",
@@ -2172,6 +2662,155 @@ def test_terminate_signals_generation_matched_unreadable_identity(
     assert signal.SIGKILL in signals
     assert result["safe_to_finalize"] is False
     assert result["unresolved_process_identities"][0]["pid"] == 50009
+
+
+@pytest.mark.parametrize(
+    ("relation", "error"),
+    (
+        ("same_user_after_root", "access_denied:50010"),
+        ("unknown_principal", "unknown_principal:50010"),
+    ),
+)
+def test_terminate_never_signals_proof_only_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+    relation: str,
+    error: str,
+) -> None:
+    unresolved = process_containment_module.UnreadableProcessIdentity(
+        pid=50010,
+        started_at=200.0,
+        relation=relation,
+        error=error,
+    )
+    signals: list[tuple[int, signal.Signals]] = []
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=(unresolved.error,),
+                unreadable_identities=(unresolved,),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda pid: (
+            unresolved.identity
+            if int(pid) == unresolved.pid
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "kill",
+        lambda pid, sig: signals.append((int(pid), sig)),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        lambda _pid, _flags: pytest.fail(
+            "proof-only blockers must not open a signal handle"
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+
+    result = terminate_containment(
+        root_pid=41010,
+        expected_root_started_at=100.0,
+        expected_process_group_id=70010,
+        containment_id="containment-same-user-proof-only",
+        term_timeout_s=0.005,
+        kill_timeout_s=0.005,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert signals == []
+    assert result["safe_to_finalize"] is False
+    assert result["unresolved_process_identities"][0]["relation"] == relation
+
+
+def test_terminate_fails_closed_without_generation_bound_individual_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unresolved = process_containment_module.UnreadableProcessIdentity(
+        pid=50011,
+        started_at=200.0,
+        relation="structural_descendant",
+        error="access_denied:50011",
+    )
+    signals: list[tuple[int, signal.Signals]] = []
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=(unresolved.error,),
+                unreadable_identities=(unresolved,),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda pid: (
+            unresolved.identity
+            if int(pid) == unresolved.pid
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "kill",
+        lambda pid, sig: signals.append((int(pid), sig)),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+
+    result = terminate_containment(
+        root_pid=41011,
+        expected_root_started_at=100.0,
+        expected_process_group_id=70011,
+        containment_id="containment-no-pidfd",
+        term_timeout_s=0.005,
+        kill_timeout_s=0.005,
+        quiescence_s=0,
+        poll_s=0.001,
+        unreadable_scope="containment_tree",
+    )
+
+    assert signals == []
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "generation_bound_signal_unavailable"
+    assert result["surviving_pids"] == [50011]
 
 
 def test_terminate_never_signals_reused_unreadable_pid(
@@ -2225,8 +2864,8 @@ def test_terminate_never_signals_reused_unreadable_pid(
         expected_root_started_at=100.0,
         expected_process_group_id=70010,
         containment_id="containment-unreadable-reused",
-        term_timeout_s=0,
-        kill_timeout_s=0,
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
         quiescence_s=0,
         poll_s=0.001,
         unreadable_scope="containment_tree",
@@ -2256,9 +2895,14 @@ def test_terminate_supports_containment_id_only_recovery(
             scan_complete=True,
         )
 
-    def fake_kill(pid: int, sig: signal.Signals) -> None:
+    def fake_pidfd_signal(
+        pidfd: int,
+        sig: signal.Signals,
+        _info: object,
+        _flags: int,
+    ) -> None:
         nonlocal alive
-        assert int(pid) == identity.pid
+        assert int(pidfd) == 90011
         signals.append(sig)
         alive = False
 
@@ -2269,13 +2913,32 @@ def test_terminate_supports_containment_id_only_recovery(
     )
     monkeypatch.setattr(
         process_containment_module,
-        "same_process",
-        lambda observed: alive and observed == identity,
+        "process_identity",
+        lambda pid: identity if int(pid) == identity.pid and alive else None,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        lambda pid, _flags: 90011 if int(pid) == identity.pid else -1,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        fake_pidfd_signal,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "_pid_principal_matches_current",
+        lambda _pid: True,
     )
     monkeypatch.setattr(
         process_containment_module.os,
         "kill",
-        fake_kill,
+        lambda _pid, _sig: pytest.fail(
+            "containment-only signalling must use pidfd"
+        ),
     )
     monkeypatch.setattr(
         process_containment_module.os,
@@ -2288,8 +2951,8 @@ def test_terminate_supports_containment_id_only_recovery(
         expected_root_started_at=None,
         expected_process_group_id=None,
         containment_id="containment-id-only",
-        term_timeout_s=0.02,
-        kill_timeout_s=0.02,
+        term_timeout_s=0.2,
+        kill_timeout_s=0.2,
         quiescence_s=0,
         poll_s=0.001,
     )
@@ -2328,9 +2991,730 @@ def test_containment_id_only_recovery_reaps_real_tagged_process(
 
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
         product_returncode = process.poll()
-        assert result["safe_to_finalize"] is True
         assert process.pid in result["descendant_pids"]
-        assert product_survivors == ()
-        assert product_returncode is not None
+        if _pidfd_signalling_available():
+            assert result["safe_to_finalize"] is True
+            assert product_survivors == ()
+            assert product_returncode is not None
+        else:
+            assert result["safe_to_finalize"] is False
+            assert process.pid in result["surviving_pids"]
+            assert process.pid in {
+                identity.pid for identity in product_survivors
+            }
+            assert product_returncode is None
     finally:
         tagged_process_cleanup.cleanup()
+
+
+def test_containment_id_only_recovery_keeps_unidentifiable_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    class UnidentifiableCandidate:
+        pid = 50013
+        info = {
+            "pid": 50013,
+            "ppid": 1,
+            "username": "test-user",
+            "create_time": None,
+        }
+
+        def create_time(self) -> float:
+            raise psutil.AccessDenied(pid=self.pid)
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda *_args, **_kwargs: CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnidentifiableCandidate()],
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpid",
+        lambda: 99999,
+    )
+
+    result = terminate_containment(
+        root_pid=None,
+        expected_root_started_at=None,
+        expected_process_group_id=None,
+        containment_id="containment-unidentifiable",
+        scan_started_at=150.0,
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+        unreadable_scope="containment_tree",
+    )
+
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["unresolved_process_identities"] == [
+        {
+            "pid": 50013,
+            "started_at": None,
+            "relation": "non_identifiable",
+            "error": "access_denied:50013",
+        }
+    ]
+
+
+def test_containment_only_cleanup_keeps_live_unverified_popen_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LiveUnverifiedPopen:
+        pid = 50018
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(),
+                scan_complete=True,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "kill",
+        lambda _pid, _sig: pytest.fail(
+            "an unverified Popen PID must never be signalled"
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        lambda _pgid, _sig: pytest.fail(
+            "an unverified Popen PGID must never be signalled"
+        ),
+    )
+
+    result = terminate_containment(
+        root_pid=None,
+        expected_root_started_at=None,
+        expected_process_group_id=None,
+        containment_id="containment-live-unverified-popen",
+        process=LiveUnverifiedPopen(),
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["surviving_pids"] == [LiveUnverifiedPopen.pid]
+    assert result["unresolved_process_identities"] == [
+        {
+            "pid": LiveUnverifiedPopen.pid,
+            "started_at": None,
+            "relation": "unverified_popen",
+            "error": f"unverified_popen_live:{LiveUnverifiedPopen.pid}",
+        }
+    ]
+
+
+def test_containment_id_only_lower_bound_keeps_unreadable_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    class UnreadableCandidate:
+        pid = 50016
+        info = {
+            "pid": 50016,
+            "ppid": 1,
+            "username": "test-user",
+            "create_time": 200.0,
+        }
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda *_args, **_kwargs: CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableCandidate()],
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpid",
+        lambda: 99999,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        lambda _pid, _flags: pytest.fail(
+            "lower-bound-only candidates must not be signal targets"
+        ),
+        raising=False,
+    )
+
+    result = terminate_containment(
+        root_pid=None,
+        expected_root_started_at=None,
+        expected_process_group_id=None,
+        containment_id="containment-lower-bound-unreadable",
+        scan_started_at=150.0,
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+        unreadable_scope="containment_tree",
+    )
+
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["unresolved_process_identities"] == [
+        {
+            "pid": 50016,
+            "started_at": 200.0,
+            "relation": "same_user_after_root",
+            "error": "access_denied:50016",
+        }
+    ]
+
+
+def test_termination_scan_timeout_is_bounded_and_does_not_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = process_containment_module.ProcessIdentity(
+        pid=50014,
+        started_at=200.0,
+    )
+    individual_signals: list[tuple[int, signal.Signals]] = []
+    group_signals: list[tuple[int, signal.Signals]] = []
+
+    def blocked_scan(
+        _containment_id: str,
+        **_kwargs: object,
+    ) -> process_containment_module.ContainmentSnapshot:
+        time.sleep(0.2)
+        return process_containment_module.ContainmentSnapshot(
+            processes=(identity,),
+            scan_complete=True,
+        )
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        blocked_scan,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "kill",
+        lambda pid, sig: individual_signals.append((int(pid), sig)),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        lambda pgid, sig: group_signals.append((int(pgid), sig)),
+    )
+
+    started = time.monotonic()
+    result = terminate_containment(
+        root_pid=None,
+        expected_root_started_at=None,
+        expected_process_group_id=None,
+        containment_id="containment-scan-timeout",
+        term_timeout_s=0.03,
+        kill_timeout_s=0.03,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.15
+    assert result["status"] == "worker_containment_scan_incomplete"
+    assert result["safe_to_finalize"] is False
+    assert result["scan_errors"] == ["scan_timeout"]
+    assert individual_signals == []
+    assert group_signals == []
+
+
+def test_post_term_scan_timeout_still_enters_fresh_kill_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = process_containment_module.ProcessIdentity(
+        pid=50019,
+        started_at=200.0,
+    )
+    alive = True
+    scan_calls = 0
+    group_signals: list[signal.Signals] = []
+
+    def fake_bounded_scan(
+        _deadline: float,
+        **_kwargs: object,
+    ) -> tuple[
+        process_containment_module._TerminationScan,
+        bool,
+    ]:
+        nonlocal scan_calls
+        scan_calls += 1
+        if scan_calls == 2:
+            return (
+                process_containment_module._TerminationScan(
+                    snapshot=(
+                        process_containment_module.ContainmentSnapshot(
+                            processes=(),
+                            scan_complete=False,
+                            errors=("scan_timeout",),
+                        )
+                    ),
+                    pidfds={},
+                ),
+                True,
+            )
+        processes = (identity,) if alive else ()
+        return (
+            process_containment_module._TerminationScan(
+                snapshot=process_containment_module.ContainmentSnapshot(
+                    processes=processes,
+                    scan_complete=True,
+                    root_process_group_verified=alive,
+                ),
+                pidfds={},
+            ),
+            False,
+        )
+
+    def signal_group(_pgid: int, sig: signal.Signals) -> None:
+        nonlocal alive
+        group_signals.append(sig)
+        if sig == signal.SIGKILL:
+            alive = False
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "_scan_before_deadline",
+        fake_bounded_scan,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda _pid: identity if alive else None,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "_pid_principal_matches_current",
+        lambda _pid: True,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "_pid_has_containment_id",
+        lambda _pid, _containment_id: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda _pid: 70019,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        signal_group,
+    )
+
+    result = terminate_containment(
+        root_pid=identity.pid,
+        expected_root_started_at=identity.started_at,
+        expected_process_group_id=70019,
+        containment_id="containment-post-term-timeout",
+        term_timeout_s=0.2,
+        kill_timeout_s=0.2,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert group_signals == [signal.SIGTERM, signal.SIGKILL]
+    assert result["safe_to_finalize"] is True
+    assert result["status"] == "worker_tree_killed"
+
+
+def test_group_signal_revalidates_root_generation_immediately_before_killpg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = process_containment_module.ProcessIdentity(
+        pid=50020,
+        started_at=200.0,
+    )
+    reused = process_containment_module.ProcessIdentity(
+        pid=root.pid,
+        started_at=201.0,
+    )
+    identity_probes = 0
+    group_signals: list[signal.Signals] = []
+
+    def probe_identity(_pid: int):
+        nonlocal identity_probes
+        identity_probes += 1
+        return root if identity_probes == 1 else reused
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        probe_identity,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(root,),
+                scan_complete=True,
+                root_process_group_verified=True,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "_pid_principal_matches_current",
+        lambda _pid: True,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "_pid_has_containment_id",
+        lambda _pid, _containment_id: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda _pid: 70020,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        lambda _pgid, sig: group_signals.append(sig),
+    )
+
+    result = terminate_containment(
+        root_pid=root.pid,
+        expected_root_started_at=root.started_at,
+        expected_process_group_id=70020,
+        containment_id="containment-generation-race",
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert group_signals == []
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "generation_bound_signal_unavailable"
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), -float("inf")])
+def test_scan_rejects_nonfinite_lower_bound(nonfinite: float) -> None:
+    snapshot = process_containment_module.scan_containment(
+        "containment-nonfinite-scan-start",
+        started_at_lower_bound=nonfinite,
+    )
+
+    assert snapshot.scan_complete is False
+    assert snapshot.processes == ()
+    assert snapshot.errors == ("invalid_containment_scan_start",)
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), -float("inf")])
+def test_termination_rejects_nonfinite_root_identity(
+    nonfinite: float,
+) -> None:
+    result = terminate_containment(
+        root_pid=50021,
+        expected_root_started_at=nonfinite,
+        expected_process_group_id=70021,
+        containment_id="containment-nonfinite-root",
+    )
+
+    assert result["safe_to_finalize"] is False
+    assert result["status"] == "invalid_worker_start_identity"
+
+
+def test_principal_relation_uses_uid_as_authority() -> None:
+    principal = process_containment_module._ProcessPrincipal
+
+    assert (
+        process_containment_module._principal_relation(
+            principal(uid=501, username="short-name"),
+            principal(uid=501, username="DOMAIN\\different-name"),
+        )
+        == "same"
+    )
+    assert (
+        process_containment_module._principal_relation(
+            principal(uid=501, username="same-name"),
+            principal(uid=502, username="same-name"),
+        )
+        == "different"
+    )
+    assert (
+        process_containment_module._principal_relation(
+            principal(uid=None, username="same-name"),
+            principal(uid=None, username="same-name"),
+        )
+        == "same"
+    )
+
+
+def test_root_exit_never_uses_surviving_member_as_process_group_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = process_containment_module.ProcessIdentity(
+        pid=50015,
+        started_at=200.0,
+    )
+    group_signals: list[tuple[int, signal.Signals]] = []
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(child,),
+                scan_complete=True,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda _pid: None,
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "same_process",
+        lambda identity: identity == child,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda pid: 70015 if int(pid) == child.pid else None,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        lambda pgid, sig: group_signals.append((int(pgid), sig)),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+
+    result = terminate_containment(
+        root_pid=41015,
+        expected_root_started_at=100.0,
+        expected_process_group_id=70015,
+        containment_id="containment-root-exited-no-group",
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert group_signals == []
+    assert result["safe_to_finalize"] is False
+    assert result["surviving_pids"] == [50015]
+
+
+def test_unreadable_root_tag_never_authorizes_process_group_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = process_containment_module.ProcessIdentity(
+        pid=41016,
+        started_at=100.0,
+    )
+    unreadable_root = (
+        process_containment_module.UnreadableProcessIdentity(
+            pid=root.pid,
+            started_at=root.started_at,
+            relation="known_identity",
+            error="access_denied:41016",
+        )
+    )
+    group_signals: list[tuple[int, signal.Signals]] = []
+
+    monkeypatch.setattr(
+        process_containment_module,
+        "scan_containment",
+        lambda _containment_id, **_kwargs: (
+            process_containment_module.ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=(unreadable_root.error,),
+                unreadable_identities=(unreadable_root,),
+                root_process_group_verified=False,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "process_identity",
+        lambda pid: root if int(pid) == root.pid else None,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda pid: 70016 if int(pid) == root.pid else None,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "killpg",
+        lambda pgid, sig: group_signals.append((int(pgid), sig)),
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "pidfd_open",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.signal,
+        "pidfd_send_signal",
+        None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgrp",
+        lambda: 99998,
+    )
+
+    result = terminate_containment(
+        root_pid=root.pid,
+        expected_root_started_at=root.started_at,
+        expected_process_group_id=70016,
+        containment_id="containment-unreadable-root-tag",
+        term_timeout_s=0.02,
+        kill_timeout_s=0.02,
+        quiescence_s=0,
+        poll_s=0.001,
+    )
+
+    assert group_signals == []
+    assert result["safe_to_finalize"] is False
+    assert result["unresolved_process_identities"][0]["pid"] == root.pid
+
+
+def test_scan_directly_revalidates_known_root_omitted_from_iterator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = process_containment_module.ProcessIdentity(
+        pid=41017,
+        started_at=100.0,
+    )
+
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    class OmittedRoot:
+        pid = root.pid
+
+        def create_time(self) -> float:
+            return root.started_at
+
+        def username(self) -> str:
+            return "test-user"
+
+        def environ(self) -> dict[str, str]:
+            return {
+                process_containment_module.CONTAINMENT_ENV_VAR: (
+                    "containment-omitted-root"
+                )
+            }
+
+        @staticmethod
+        def is_running() -> bool:
+            return True
+
+        @staticmethod
+        def status() -> str:
+            return psutil.STATUS_RUNNING
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda pid=None: OmittedRoot() if pid == root.pid else CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [],
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpgid",
+        lambda pid: 70017 if int(pid) == root.pid else None,
+    )
+
+    snapshot = process_containment_module.scan_containment(
+        "containment-omitted-root",
+        root_identity=root,
+        expected_process_group_id=70017,
+        unreadable_scope="containment_tree",
+    )
+
+    assert snapshot.processes == (root,)
+    assert snapshot.scan_complete is True
+    assert snapshot.root_process_group_verified is True

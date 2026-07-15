@@ -12,8 +12,10 @@ must keep stronger OS sandbox/container boundaries for hostile workloads.
 """
 from __future__ import annotations
 
+import math
 import os
 import signal
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -31,15 +33,17 @@ class ProcessIdentity:
     started_at: float
 
 
-@dataclass(frozen=True, order=True)
+@dataclass(frozen=True)
 class UnreadableProcessIdentity:
     pid: int
-    started_at: float
+    started_at: float | None
     relation: str
     error: str
 
     @property
-    def identity(self) -> ProcessIdentity:
+    def identity(self) -> ProcessIdentity | None:
+        if self.started_at is None:
+            return None
         return ProcessIdentity(pid=self.pid, started_at=self.started_at)
 
 
@@ -49,6 +53,19 @@ class ContainmentSnapshot:
     scan_complete: bool
     errors: tuple[str, ...] = ()
     unreadable_identities: tuple[UnreadableProcessIdentity, ...] = ()
+    root_process_group_verified: bool = False
+
+
+@dataclass(frozen=True)
+class _ProcessPrincipal:
+    uid: int | None
+    username: str
+
+
+@dataclass
+class _TerminationScan:
+    snapshot: ContainmentSnapshot
+    pidfds: dict[tuple[int, float], int]
 
 
 def new_containment_id() -> str:
@@ -92,10 +109,124 @@ def same_process(identity: ProcessIdentity) -> bool:
     )
 
 
+def _current_principal() -> _ProcessPrincipal:
+    uid: int | None = None
+    getuid = getattr(os, "geteuid", None) or getattr(os, "getuid", None)
+    if callable(getuid):
+        try:
+            uid = int(getuid())
+        except (OSError, TypeError, ValueError):
+            uid = None
+    try:
+        username = str(psutil.Process().username() or "")
+    except (
+        psutil.AccessDenied,
+        psutil.NoSuchProcess,
+        psutil.ZombieProcess,
+        ProcessLookupError,
+        OSError,
+    ):
+        username = ""
+    return _ProcessPrincipal(uid=uid, username=username)
+
+
+def _process_principal(process: Any) -> _ProcessPrincipal:
+    try:
+        username = str(process.info.get("username") or "")
+    except (AttributeError, KeyError, TypeError, ValueError):
+        username = ""
+    if not username:
+        username_method = getattr(process, "username", None)
+        if callable(username_method):
+            try:
+                username = str(username_method() or "")
+            except (
+                psutil.AccessDenied,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+                OSError,
+            ):
+                username = ""
+    uid: int | None = None
+    try:
+        uids = process.info.get("uids")
+    except (AttributeError, KeyError, TypeError):
+        uids = None
+    if uids is None:
+        uids_method = getattr(process, "uids", None)
+        if callable(uids_method):
+            try:
+                uids = uids_method()
+            except (
+                psutil.AccessDenied,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+                OSError,
+            ):
+                uids = None
+    if uids is not None:
+        try:
+            if hasattr(uids, "effective"):
+                uid = int(uids.effective)
+            elif hasattr(uids, "real"):
+                uid = int(uids.real)
+            else:
+                uid = int(uids[0])
+        except (
+            AttributeError,
+            IndexError,
+            TypeError,
+            ValueError,
+            OverflowError,
+        ):
+            uid = None
+    return _ProcessPrincipal(uid=uid, username=username)
+
+
+def _principal_relation(
+    current: _ProcessPrincipal,
+    candidate: _ProcessPrincipal,
+) -> str:
+    if current.uid is not None and candidate.uid is not None:
+        return "same" if current.uid == candidate.uid else "different"
+    if current.username and candidate.username:
+        return (
+            "same"
+            if current.username == candidate.username
+            else "different"
+        )
+    return "unknown"
+
+
+def _pid_principal_matches_current(pid: int) -> bool:
+    try:
+        process = psutil.Process(int(pid))
+    except (
+        psutil.AccessDenied,
+        psutil.NoSuchProcess,
+        psutil.ZombieProcess,
+        ProcessLookupError,
+        OSError,
+    ):
+        return False
+    return (
+        _principal_relation(
+            _current_principal(),
+            _process_principal(process),
+        )
+        == "same"
+    )
+
+
 def scan_containment(
     containment_id: str,
     *,
     root_identity: ProcessIdentity | None = None,
+    started_at_lower_bound: float | None = None,
+    containment_only_recovery: bool = False,
+    expected_process_group_id: int | None = None,
     known_identities: tuple[ProcessIdentity, ...] = (),
     known_unreadable_identities: tuple[
         UnreadableProcessIdentity,
@@ -134,14 +265,64 @@ def scan_containment(
             errors=("missing_containment_id",),
         )
     try:
-        current_username = psutil.Process().username()
-    except (psutil.AccessDenied, psutil.NoSuchProcess):
-        current_username = ""
-    earliest = (
-        root_identity.started_at - 0.001
-        if root_identity is not None
-        else None
+        if started_at_lower_bound is not None:
+            started_at_lower_bound = float(started_at_lower_bound)
+            if not math.isfinite(started_at_lower_bound):
+                raise ValueError("scan start must be finite")
+    except (TypeError, ValueError, OverflowError):
+        return ContainmentSnapshot(
+            processes=(),
+            scan_complete=False,
+            errors=("invalid_containment_scan_start",),
+        )
+    supplied_identities = (
+        *((root_identity,) if root_identity is not None else ()),
+        *known_identities,
     )
+    for identity in supplied_identities:
+        try:
+            if (
+                int(identity.pid) <= 0
+                or not math.isfinite(float(identity.started_at))
+            ):
+                raise ValueError("invalid process identity")
+        except (TypeError, ValueError, OverflowError):
+            return ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=(f"invalid_process_identity:{identity.pid}",),
+            )
+    for identity in known_unreadable_identities:
+        if identity.started_at is None:
+            continue
+        try:
+            if (
+                int(identity.pid) <= 0
+                or not math.isfinite(float(identity.started_at))
+            ):
+                raise ValueError("invalid unreadable identity")
+        except (TypeError, ValueError, OverflowError):
+            return ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=(
+                    f"invalid_unreadable_process_identity:{identity.pid}",
+                ),
+            )
+    current_principal = _current_principal()
+    lower_bounds = [
+        value
+        for value in (
+            (
+                root_identity.started_at - 0.001
+                if root_identity is not None
+                else None
+            ),
+            started_at_lower_bound,
+        )
+        if value is not None
+    ]
+    earliest = min(lower_bounds) if lower_bounds else None
     known_by_pid = {
         identity.pid: identity
         for identity in (
@@ -150,19 +331,20 @@ def scan_containment(
         )
     }
     found: dict[tuple[int, float], ProcessIdentity] = {}
+    root_process_group_verified = False
     errors: list[str] = []
     unreadable: dict[
-        tuple[int, float],
+        tuple[int, float | None],
         UnreadableProcessIdentity,
     ] = {}
     previous_unreadable_by_pid = {
         unreadable_identity.pid: unreadable_identity
         for unreadable_identity in known_unreadable_identities
     }
-    resolved_unreadable: set[tuple[int, float]] = set()
+    resolved_unreadable: set[tuple[int, float | None]] = set()
     processes = list(
         psutil.process_iter(
-            ["pid", "ppid", "username", "create_time"],
+            ["pid", "ppid", "username", "uids", "create_time"],
         )
     )
     parent_by_pid: dict[int, int] = {}
@@ -197,8 +379,12 @@ def scan_containment(
             pid = int(process.info["pid"])
             if pid == os.getpid():
                 continue
-            username = str(process.info.get("username") or "")
-            if current_username and username and username != current_username:
+            candidate_principal = _process_principal(process)
+            candidate_principal_relation = _principal_relation(
+                current_principal,
+                candidate_principal,
+            )
+            if candidate_principal_relation == "different":
                 continue
             started_at = float(
                 process.info.get("create_time")
@@ -207,6 +393,11 @@ def scan_containment(
             if earliest is not None and started_at < earliest:
                 continue
             identity = ProcessIdentity(pid=pid, started_at=started_at)
+            known = known_by_pid.get(pid)
+            exact_known_identity = (
+                known is not None
+                and _same_start(identity.started_at, known.started_at)
+            )
             environment = process.environ()
             previous_unreadable = _matching_unreadable_identity(
                 identity,
@@ -219,10 +410,40 @@ def scan_containment(
                         previous_unreadable.started_at,
                     )
                 )
-            if environment.get(CONTAINMENT_ENV_VAR) != normalized:
+            if (
+                environment.get(CONTAINMENT_ENV_VAR) != normalized
+                and not exact_known_identity
+            ):
                 continue
-            if same_process(identity):
-                found[(identity.pid, identity.started_at)] = identity
+            if candidate_principal_relation != "same":
+                error = f"unknown_principal:{pid}"
+                unreadable_identity = UnreadableProcessIdentity(
+                    pid=identity.pid,
+                    started_at=identity.started_at,
+                    relation="unknown_principal",
+                    error=error,
+                )
+                unreadable[
+                    (identity.pid, identity.started_at)
+                ] = unreadable_identity
+                errors.append(error)
+                continue
+            if not _observed_process_alive(process, identity):
+                continue
+            found[(identity.pid, identity.started_at)] = identity
+            if (
+                root_identity is not None
+                and expected_process_group_id is not None
+                and identity == root_identity
+                and same_process(identity)
+            ):
+                try:
+                    root_process_group_verified = (
+                        int(os.getpgid(identity.pid))
+                        == int(expected_process_group_id)
+                    )
+                except (OSError, ProcessLookupError):
+                    root_process_group_verified = False
         except (psutil.NoSuchProcess, psutil.ZombieProcess, ProcessLookupError):
             identity = identity_by_pid.get(int(process.pid))
             previous_unreadable = _matching_unreadable_identity(
@@ -246,6 +467,30 @@ def scan_containment(
                 known_by_pid=known_by_pid,
             )
             error = f"access_denied:{pid}"
+            candidate_principal_relation = _principal_relation(
+                current_principal,
+                _process_principal(process),
+            )
+            if candidate_principal_relation == "different":
+                continue
+            if identity is None and (
+                containment_only_recovery or earliest is not None
+            ):
+                relation = (
+                    "unknown_principal"
+                    if candidate_principal_relation != "same"
+                    else "non_identifiable"
+                )
+                if relation:
+                    unreadable_identity = UnreadableProcessIdentity(
+                        pid=pid,
+                        started_at=None,
+                        relation=relation,
+                        error=error,
+                    )
+                    unreadable[(pid, None)] = unreadable_identity
+                    errors.append(error)
+                continue
             relation = _retained_or_observed_unreadable_relation(
                 identity,
                 previous_unreadable_by_pid=previous_unreadable_by_pid,
@@ -255,6 +500,18 @@ def scan_containment(
                 identity_by_pid=identity_by_pid,
                 known_by_pid=known_by_pid,
             )
+            if (
+                relation is None
+                and containment_only_recovery
+                and earliest is not None
+                and identity is not None
+            ):
+                relation = "same_user_after_root"
+            if (
+                relation is not None
+                and candidate_principal_relation != "same"
+            ):
+                relation = "unknown_principal"
             if identity is not None and relation is not None:
                 unreadable_identity = UnreadableProcessIdentity(
                     pid=identity.pid,
@@ -275,6 +532,30 @@ def scan_containment(
                 known_by_pid=known_by_pid,
             )
             error = f"scan_error:{pid}:{type(exc).__name__}"
+            candidate_principal_relation = _principal_relation(
+                current_principal,
+                _process_principal(process),
+            )
+            if candidate_principal_relation == "different":
+                continue
+            if identity is None and (
+                containment_only_recovery or earliest is not None
+            ):
+                relation = (
+                    "unknown_principal"
+                    if candidate_principal_relation != "same"
+                    else "non_identifiable"
+                )
+                if relation:
+                    unreadable_identity = UnreadableProcessIdentity(
+                        pid=pid,
+                        started_at=None,
+                        relation=relation,
+                        error=error,
+                    )
+                    unreadable[(pid, None)] = unreadable_identity
+                    errors.append(error)
+                continue
             relation = _retained_or_observed_unreadable_relation(
                 identity,
                 previous_unreadable_by_pid=previous_unreadable_by_pid,
@@ -284,6 +565,18 @@ def scan_containment(
                 identity_by_pid=identity_by_pid,
                 known_by_pid=known_by_pid,
             )
+            if (
+                relation is None
+                and containment_only_recovery
+                and earliest is not None
+                and identity is not None
+            ):
+                relation = "same_user_after_root"
+            if (
+                relation is not None
+                and candidate_principal_relation != "same"
+            ):
+                relation = "unknown_principal"
             if identity is not None and relation is not None:
                 unreadable_identity = UnreadableProcessIdentity(
                     pid=identity.pid,
@@ -295,6 +588,86 @@ def scan_containment(
                     (identity.pid, identity.started_at)
                 ] = unreadable_identity
                 errors.append(error)
+    for known in known_by_pid.values():
+        key = (known.pid, known.started_at)
+        if key in found or key in unreadable:
+            continue
+        iterated = identity_by_pid.get(known.pid)
+        if iterated is not None:
+            continue
+        process: Any = None
+        try:
+            process = psutil.Process(known.pid)
+            observed_started_at = float(process.create_time())
+            if not _same_start(observed_started_at, known.started_at):
+                continue
+            candidate_principal_relation = _principal_relation(
+                current_principal,
+                _process_principal(process),
+            )
+            if candidate_principal_relation == "different":
+                continue
+            # Once observed inside the containment, this exact PID generation
+            # remains owned even if a later execve removes the cooperative tag.
+            # The create-time and principal checks above fence PID reuse.
+            process.environ()
+            if candidate_principal_relation != "same":
+                error = f"unknown_principal:{known.pid}"
+                unreadable[key] = UnreadableProcessIdentity(
+                    pid=known.pid,
+                    started_at=known.started_at,
+                    relation="unknown_principal",
+                    error=error,
+                )
+                errors.append(error)
+                continue
+            if not _observed_process_alive(process, known):
+                continue
+            found[key] = known
+            if (
+                root_identity is not None
+                and expected_process_group_id is not None
+                and known == root_identity
+                and same_process(known)
+            ):
+                try:
+                    root_process_group_verified = (
+                        int(os.getpgid(known.pid))
+                        == int(expected_process_group_id)
+                    )
+                except (OSError, ProcessLookupError):
+                    root_process_group_verified = False
+        except (psutil.NoSuchProcess, psutil.ZombieProcess, ProcessLookupError):
+            continue
+        except AttributeError:
+            continue
+        except psutil.AccessDenied:
+            error = f"access_denied:{known.pid}"
+            candidate_principal_relation = _principal_relation(
+                current_principal,
+                _process_principal(process),
+            )
+            relation = (
+                "known_identity"
+                if candidate_principal_relation == "same"
+                else "unknown_principal"
+            )
+            unreadable[key] = UnreadableProcessIdentity(
+                pid=known.pid,
+                started_at=known.started_at,
+                relation=relation,
+                error=error,
+            )
+            errors.append(error)
+        except (OSError, TypeError, ValueError, OverflowError) as exc:
+            error = f"scan_error:{known.pid}:{type(exc).__name__}"
+            unreadable[key] = UnreadableProcessIdentity(
+                pid=known.pid,
+                started_at=known.started_at,
+                relation="known_identity",
+                error=error,
+            )
+            errors.append(error)
     for previous in known_unreadable_identities:
         key = (previous.pid, previous.started_at)
         if key in unreadable or key in resolved_unreadable:
@@ -302,22 +675,26 @@ def scan_containment(
         observed = identity_by_pid.get(previous.pid)
         if (
             observed is not None
+            and previous.started_at is not None
             and not _same_start(observed.started_at, previous.started_at)
         ):
             continue
-        if observed is None and _exact_identity_resolution(
-            previous.identity
-        ) in {"exited", "reused"}:
+        previous_identity = previous.identity
+        if (
+            observed is None
+            and previous_identity is not None
+            and _exact_identity_resolution(previous_identity)
+            in {"exited", "reused"}
+        ):
             continue
         unreadable[key] = previous
         errors.append(previous.error)
-    if root_identity is not None and same_process(root_identity):
-        found[(root_identity.pid, root_identity.started_at)] = root_identity
     return ContainmentSnapshot(
         processes=tuple(sorted(found.values())),
         scan_complete=not errors and not unreadable,
         errors=tuple(sorted(set(errors))),
-        unreadable_identities=tuple(sorted(unreadable.values())),
+        unreadable_identities=_sorted_unreadable(unreadable.values()),
+        root_process_group_verified=root_process_group_verified,
     )
 
 
@@ -329,6 +706,7 @@ def terminate_containment(
     containment_id: str,
     process: Any = None,
     root_pid_reused: bool = False,
+    scan_started_at: float | None = None,
     term_timeout_s: float = 2.0,
     kill_timeout_s: float = 2.0,
     quiescence_s: float = 0.25,
@@ -378,6 +756,19 @@ def terminate_containment(
                     pgid=expected_process_group_id,
                     containment_id=containment_id,
                 )
+    if scan_started_at is not None:
+        try:
+            scan_started_at = float(scan_started_at)
+            if not math.isfinite(scan_started_at):
+                raise ValueError("scan start must be finite")
+        except (TypeError, ValueError, OverflowError):
+            return _result(
+                status="invalid_containment_scan_start",
+                safe=False,
+                root_pid=root_pid,
+                pgid=expected_process_group_id,
+                containment_id=containment_id,
+            )
     if containment_only and expected_root_started_at is not None:
         return _result(
             status="invalid_worker_start_identity",
@@ -389,6 +780,8 @@ def terminate_containment(
     if expected_root_started_at is not None:
         try:
             expected_root_started_at = float(expected_root_started_at)
+            if not math.isfinite(expected_root_started_at):
+                raise ValueError("worker start identity must be finite")
         except (TypeError, ValueError, OverflowError):
             return _result(
                 status="invalid_worker_start_identity",
@@ -506,8 +899,9 @@ def terminate_containment(
             )
 
     tracked: dict[tuple[int, float], ProcessIdentity] = {}
+    live: dict[tuple[int, float], ProcessIdentity] = {}
     unresolved: dict[
-        tuple[int, float],
+        tuple[int, float | None],
         UnreadableProcessIdentity,
     ] = {}
     all_seen: set[int] = set()
@@ -516,12 +910,13 @@ def terminate_containment(
     protected_pids = frozenset({root_pid}) if root_pid_reused else frozenset()
     root_pids = {root_pid} if root_pid > 0 else set()
     term_deadline = time.monotonic() + max(0.0, term_timeout_s)
-    if _terminate_phase(
+    term_outcome = _terminate_phase(
         sig=signal.SIGTERM,
         root_identity=scan_root_identity,
         expected_pgid=expected_pgid,
         containment_id=containment_id,
         tracked=tracked,
+        live=live,
         unresolved=unresolved,
         all_seen=all_seen,
         scan_errors=scan_errors,
@@ -534,7 +929,10 @@ def terminate_containment(
         poll_s=poll_s,
         process=process,
         unreadable_scope=unreadable_scope,
-    ):
+        scan_started_at=scan_started_at,
+        containment_only_recovery=containment_only,
+    )
+    if term_outcome is True:
         return _result(
             status="worker_tree_terminated",
             safe=True,
@@ -545,14 +943,35 @@ def terminate_containment(
             unresolved=unresolved,
             root_pid_reused=root_pid_reused,
         )
+    if term_outcome is None:
+        survivors = sorted({
+            *(
+                identity.pid
+                for identity in live.values()
+            ),
+            *(identity.pid for identity in unresolved.values()),
+        })
+        return _result(
+            status="worker_containment_scan_incomplete",
+            safe=False,
+            root_pid=root_pid,
+            pgid=expected_pgid,
+            containment_id=containment_id,
+            descendants=all_seen - root_pids,
+            survivors=survivors,
+            scan_errors=scan_errors,
+            unresolved=unresolved,
+            root_pid_reused=root_pid_reused,
+        )
 
     kill_deadline = time.monotonic() + max(0.0, kill_timeout_s)
-    if _terminate_phase(
+    kill_outcome = _terminate_phase(
         sig=signal.SIGKILL,
         root_identity=scan_root_identity,
         expected_pgid=expected_pgid,
         containment_id=containment_id,
         tracked=tracked,
+        live=live,
         unresolved=unresolved,
         all_seen=all_seen,
         scan_errors=scan_errors,
@@ -565,7 +984,10 @@ def terminate_containment(
         poll_s=poll_s,
         process=process,
         unreadable_scope=unreadable_scope,
-    ):
+        scan_started_at=scan_started_at,
+        containment_only_recovery=containment_only,
+    )
+    if kill_outcome is True:
         return _result(
             status="worker_tree_killed",
             safe=True,
@@ -576,20 +998,40 @@ def terminate_containment(
             unresolved=unresolved,
             root_pid_reused=root_pid_reused,
         )
+    if kill_outcome is None:
+        survivors = sorted({
+            *(
+                identity.pid
+                for identity in live.values()
+            ),
+            *(identity.pid for identity in unresolved.values()),
+        })
+        return _result(
+            status="worker_containment_scan_incomplete",
+            safe=False,
+            root_pid=root_pid,
+            pgid=expected_pgid,
+            containment_id=containment_id,
+            descendants=all_seen - root_pids,
+            survivors=survivors,
+            scan_errors=scan_errors,
+            unresolved=unresolved,
+            root_pid_reused=root_pid_reused,
+        )
 
     survivors = sorted({
         *(
             identity.pid
-            for identity in tracked.values()
-            if same_process(identity)
+            for identity in live.values()
         ),
         *(identity.pid for identity in unresolved.values()),
     })
-    status = (
-        "worker_containment_scan_incomplete"
-        if scan_errors or unresolved
-        else "worker_tree_survived_sigkill"
-    )
+    if "generation_bound_signal_unavailable" in scan_errors:
+        status = "generation_bound_signal_unavailable"
+    elif scan_errors or unresolved:
+        status = "worker_containment_scan_incomplete"
+    else:
+        status = "worker_tree_survived_sigkill"
     return _result(
         status=status,
         safe=False,
@@ -611,8 +1053,9 @@ def _terminate_phase(
     expected_pgid: int | None,
     containment_id: str,
     tracked: dict[tuple[int, float], ProcessIdentity],
+    live: dict[tuple[int, float], ProcessIdentity],
     unresolved: dict[
-        tuple[int, float],
+        tuple[int, float | None],
         UnreadableProcessIdentity,
     ],
     all_seen: set[int],
@@ -624,101 +1067,292 @@ def _terminate_phase(
     poll_s: float,
     process: Any,
     unreadable_scope: str = "same_user",
-) -> bool:
+    scan_started_at: float | None = None,
+    containment_only_recovery: bool = False,
+) -> bool | None:
     quiet_since: float | None = None
+    scan_attempted = False
+    phase_signal_sent = False
     while True:
-        snapshot = scan_containment(
-            containment_id,
+        if scan_attempted:
+            remaining = deadline - time.monotonic()
+            if remaining <= max(0.05, poll_s):
+                return False
+        termination_scan, scan_timed_out = _scan_before_deadline(
+            deadline,
+            containment_id=containment_id,
             root_identity=root_identity,
+            started_at_lower_bound=scan_started_at,
+            containment_only_recovery=containment_only_recovery,
+            expected_process_group_id=expected_pgid,
             known_identities=tuple(tracked.values()),
-            known_unreadable_identities=tuple(unresolved.values()),
+            known_unreadable_identities=tuple(
+                identity
+                for identity in unresolved.values()
+                if identity.relation != "unverified_popen"
+            ),
             unreadable_scope=unreadable_scope,
         )
+        snapshot = termination_scan.snapshot
         scan_errors.update(snapshot.errors)
+        scan_attempted = True
+        if scan_timed_out:
+            _close_pidfds(termination_scan.pidfds)
+            return (
+                False
+                if sig == signal.SIGTERM and phase_signal_sent
+                else None
+            )
         unresolved.clear()
         unresolved.update({
             (identity.pid, identity.started_at): identity
             for identity in snapshot.unreadable_identities
         })
+        popen_blocker = _unverified_popen_blocker(
+            process,
+            root_identity=root_identity,
+        )
+        if popen_blocker is not None:
+            unresolved[
+                (popen_blocker.pid, popen_blocker.started_at)
+            ] = popen_blocker
+            scan_errors.add(popen_blocker.error)
         for identity in snapshot.processes:
             if identity.pid in protected_pids:
                 continue
             tracked[(identity.pid, identity.started_at)] = identity
             all_seen.add(identity.pid)
-
-        live = [
-            identity
-            for identity in tracked.values()
-            if same_process(identity)
-        ]
+        live.clear()
+        live.update({
+            (identity.pid, identity.started_at): identity
+            for identity in snapshot.processes
+            if identity.pid not in protected_pids
+        })
+        original_child_live = True
+        if process is not None and root_identity is not None:
+            try:
+                process_pid = getattr(process, "pid", None)
+                original_child_live = (
+                    (
+                        process_pid is None
+                        or int(process_pid) == root_identity.pid
+                    )
+                    and process.poll() is None
+                )
+            except Exception:
+                original_child_live = False
         group_owned = (
             signal_process_group
             and expected_pgid is not None
-            and any(
-                _process_group(identity.pid) == expected_pgid
-                for identity in live
+            and snapshot.root_process_group_verified
+            and original_child_live
+            and _root_process_group_still_owned(
+                root_identity=root_identity,
+                expected_pgid=expected_pgid,
+                containment_id=containment_id,
+                process=process,
             )
         )
+        signal_sent = False
         if group_owned:
             try:
                 os.killpg(expected_pgid, sig)
+                signal_sent = True
             except (ProcessLookupError, PermissionError):
                 pass
-        for identity in reversed(live):
-            try:
-                if (
-                    group_owned
-                    and _process_group(identity.pid) == expected_pgid
-                ):
-                    continue
-                os.kill(identity.pid, sig)
-            except (ProcessLookupError, PermissionError, OSError):
+        for (pid, _started_at), pidfd in termination_scan.pidfds.items():
+            if pid in protected_pids:
                 continue
-        for unreadable_identity in reversed(
-            tuple(unresolved.values())
-        ):
-            if unreadable_identity.pid in protected_pids:
-                continue
-            _signal_exact_identity(unreadable_identity.identity, sig)
+            signal_sent = _send_pidfd_signal(pidfd, sig) or signal_sent
+        _close_pidfds(termination_scan.pidfds)
+        phase_signal_sent = phase_signal_sent or signal_sent
 
         _reap_process(process, root_identity.pid if root_identity else 0)
-        live_after = [
-            identity
-            for identity in tracked.values()
-            if same_process(identity)
-        ]
+        if (live or unresolved) and not signal_sent:
+            has_generation_bound_target = bool(live) or any(
+                identity.relation
+                in {"known_identity", "structural_descendant"}
+                for identity in unresolved.values()
+            )
+            if has_generation_bound_target:
+                scan_errors.add("generation_bound_signal_unavailable")
+            return False
         now = time.monotonic()
-        if not live_after and snapshot.scan_complete and not unresolved:
+        if not live and snapshot.scan_complete and not unresolved:
             if quiet_since is None:
                 quiet_since = now
-            elif now - quiet_since >= max(0.0, quiescence_s):
-                final = scan_containment(
-                    containment_id,
+            if now - quiet_since >= max(0.0, quiescence_s):
+                final_scan, final_scan_timed_out = _scan_before_deadline(
+                    deadline,
+                    containment_id=containment_id,
                     root_identity=root_identity,
+                    started_at_lower_bound=scan_started_at,
+                    containment_only_recovery=containment_only_recovery,
+                    expected_process_group_id=expected_pgid,
                     known_identities=tuple(tracked.values()),
                     known_unreadable_identities=tuple(
-                        unresolved.values()
+                        identity
+                        for identity in unresolved.values()
+                        if identity.relation != "unverified_popen"
                     ),
                     unreadable_scope=unreadable_scope,
                 )
+                final = final_scan.snapshot
                 scan_errors.update(final.errors)
+                if final_scan_timed_out:
+                    _close_pidfds(final_scan.pidfds)
+                    return (
+                        False
+                        if sig == signal.SIGTERM and phase_signal_sent
+                        else None
+                    )
                 unresolved.clear()
                 unresolved.update({
                     (identity.pid, identity.started_at): identity
                     for identity in final.unreadable_identities
                 })
+                popen_blocker = _unverified_popen_blocker(
+                    process,
+                    root_identity=root_identity,
+                )
+                if popen_blocker is not None:
+                    unresolved[
+                        (popen_blocker.pid, popen_blocker.started_at)
+                    ] = popen_blocker
+                    scan_errors.add(popen_blocker.error)
                 if (
                     final.scan_complete
                     and not final.processes
                     and not unresolved
                 ):
+                    live.clear()
+                    _close_pidfds(final_scan.pidfds)
                     return True
+                live.clear()
+                live.update({
+                    (identity.pid, identity.started_at): identity
+                    for identity in final.processes
+                    if identity.pid not in protected_pids
+                })
+                _close_pidfds(final_scan.pidfds)
                 quiet_since = None
         else:
             quiet_since = None
         if now >= deadline:
             return False
         time.sleep(min(max(0.001, poll_s), max(0.001, deadline - now)))
+
+
+def _scan_before_deadline(
+    deadline: float,
+    *,
+    containment_id: str,
+    **scan_kwargs: Any,
+) -> tuple[_TerminationScan, bool]:
+    """Run one potentially blocking process scan in a bounded daemon."""
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining <= 0:
+        return (
+            _TerminationScan(
+                snapshot=ContainmentSnapshot(
+                    processes=(),
+                    scan_complete=False,
+                    errors=("scan_timeout",),
+                ),
+                pidfds={},
+            ),
+            True,
+        )
+
+    done = threading.Event()
+    lock = threading.Lock()
+    cancelled = False
+    result: list[_TerminationScan] = []
+
+    def scan_worker() -> None:
+        nonlocal cancelled
+        pidfds: dict[tuple[int, float], int] = {}
+        try:
+            snapshot = scan_containment(
+                containment_id,
+                **scan_kwargs,
+            )
+            exact_targets = {
+                (identity.pid, identity.started_at): identity
+                for identity in snapshot.processes
+            }
+            for unreadable_identity in snapshot.unreadable_identities:
+                if unreadable_identity.relation not in {
+                    "known_identity",
+                    "structural_descendant",
+                }:
+                    continue
+                exact_identity = unreadable_identity.identity
+                if exact_identity is not None:
+                    exact_targets[
+                        (exact_identity.pid, exact_identity.started_at)
+                    ] = exact_identity
+            for key, identity in exact_targets.items():
+                pidfd = _open_verified_pidfd(identity)
+                if pidfd is not None:
+                    pidfds[key] = pidfd
+            termination_scan = _TerminationScan(
+                snapshot=snapshot,
+                pidfds=pidfds,
+            )
+        except Exception as exc:
+            _close_pidfds(pidfds)
+            termination_scan = _TerminationScan(
+                snapshot=ContainmentSnapshot(
+                    processes=(),
+                    scan_complete=False,
+                    errors=(f"scan_error:{type(exc).__name__}",),
+                ),
+                pidfds={},
+            )
+        with lock:
+            if cancelled:
+                _close_pidfds(termination_scan.pidfds)
+            else:
+                result.append(termination_scan)
+        done.set()
+
+    worker = threading.Thread(
+        target=scan_worker,
+        name="containment-scan",
+        daemon=True,
+    )
+    worker.start()
+    if not done.wait(remaining):
+        with lock:
+            if result:
+                return result[0], False
+            cancelled = True
+        return (
+            _TerminationScan(
+                snapshot=ContainmentSnapshot(
+                    processes=(),
+                    scan_complete=False,
+                    errors=("scan_timeout",),
+                ),
+                pidfds={},
+            ),
+            True,
+        )
+    with lock:
+        if result:
+            return result[0], False
+    return (
+        _TerminationScan(
+            snapshot=ContainmentSnapshot(
+                processes=(),
+                scan_complete=False,
+                errors=("scan_error:worker_no_result",),
+            ),
+            pidfds={},
+        ),
+        False,
+    )
 
 
 def _result(
@@ -732,13 +1366,13 @@ def _result(
     survivors: list[int] | None = None,
     scan_errors: set[str] | None = None,
     unresolved: Mapping[
-        tuple[int, float],
+        tuple[int, float | None],
         UnreadableProcessIdentity,
     ] | None = None,
     root_pid_reused: bool = False,
 ) -> dict[str, Any]:
-    unresolved_identities = tuple(
-        sorted((unresolved or {}).values())
+    unresolved_identities = _sorted_unreadable(
+        (unresolved or {}).values()
     )
     return {
         "status": status,
@@ -767,6 +1401,51 @@ def _same_start(observed: float, expected: float) -> bool:
     return abs(float(observed) - float(expected)) <= 0.001
 
 
+def _sorted_unreadable(
+    identities: Any,
+) -> tuple[UnreadableProcessIdentity, ...]:
+    return tuple(
+        sorted(
+            identities,
+            key=lambda identity: (
+                identity.pid,
+                (
+                    float("-inf")
+                    if identity.started_at is None
+                    else identity.started_at
+                ),
+                identity.relation,
+                identity.error,
+            ),
+        )
+    )
+
+
+def _unverified_popen_blocker(
+    process: Any,
+    *,
+    root_identity: ProcessIdentity | None,
+) -> UnreadableProcessIdentity | None:
+    if process is None or root_identity is not None:
+        return None
+    try:
+        pid = int(getattr(process, "pid", 0) or 0)
+    except (TypeError, ValueError, OverflowError):
+        pid = 0
+    try:
+        if process.poll() is not None:
+            return None
+    except Exception:
+        pass
+    error = f"unverified_popen_live:{pid}"
+    return UnreadableProcessIdentity(
+        pid=pid,
+        started_at=None,
+        relation="unverified_popen",
+        error=error,
+    )
+
+
 def _matching_unreadable_identity(
     identity: ProcessIdentity | None,
     previous_unreadable_by_pid: Mapping[int, UnreadableProcessIdentity],
@@ -776,6 +1455,7 @@ def _matching_unreadable_identity(
     previous = previous_unreadable_by_pid.get(identity.pid)
     if (
         previous is not None
+        and previous.started_at is not None
         and _same_start(identity.started_at, previous.started_at)
     ):
         return previous
@@ -830,22 +1510,134 @@ def _exact_identity_resolution(identity: ProcessIdentity) -> str:
     return "same"
 
 
-def _signal_exact_identity(
-    identity: ProcessIdentity,
-    sig: signal.Signals,
+def _open_verified_pidfd(identity: ProcessIdentity) -> int | None:
+    """Open a pidfd and verify that it binds the scanned generation/principal."""
+    pidfd_open = getattr(os, "pidfd_open", None)
+    if not callable(pidfd_open):
+        return None
+    pidfd: int | None = None
+    try:
+        pidfd = int(pidfd_open(identity.pid, 0))
+        observed = process_identity(identity.pid)
+        if (
+            observed is None
+            or not _same_start(observed.started_at, identity.started_at)
+            or not _pid_principal_matches_current(identity.pid)
+        ):
+            try:
+                os.close(pidfd)
+            except OSError:
+                pass
+            return None
+    except (
+        ProcessLookupError,
+        PermissionError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        if pidfd is not None:
+            try:
+                os.close(pidfd)
+            except OSError:
+                pass
+        return None
+    return pidfd
+
+
+def _send_pidfd_signal(pidfd: int, sig: signal.Signals) -> bool:
+    pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
+    if not callable(pidfd_send_signal):
+        return False
+    try:
+        pidfd_send_signal(int(pidfd), sig, None, 0)
+    except (
+        ProcessLookupError,
+        PermissionError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+    return True
+
+
+def _pid_has_containment_id(pid: int, containment_id: str) -> bool:
+    normalized = str(containment_id).strip()
+    if not normalized:
+        return False
+    try:
+        return (
+            str(
+                psutil.Process(int(pid)).environ().get(
+                    CONTAINMENT_ENV_VAR,
+                    "",
+                )
+            )
+            == normalized
+        )
+    except (
+        OSError,
+        psutil.AccessDenied,
+        psutil.NoSuchProcess,
+        psutil.ZombieProcess,
+        ProcessLookupError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+
+def _root_process_group_still_owned(
+    *,
+    root_identity: ProcessIdentity | None,
+    expected_pgid: int,
+    containment_id: str,
+    process: Any,
 ) -> bool:
-    """Signal only when an immediate probe matches the scanned generation."""
-    observed = process_identity(identity.pid)
+    """Revalidate group ownership immediately before a group signal."""
+    if root_identity is None or int(expected_pgid) == os.getpgrp():
+        return False
+    observed = process_identity(root_identity.pid)
     if (
         observed is None
-        or not _same_start(observed.started_at, identity.started_at)
+        or not _same_start(observed.started_at, root_identity.started_at)
+        or not _pid_principal_matches_current(root_identity.pid)
+        or not _pid_has_containment_id(
+            root_identity.pid,
+            containment_id,
+        )
     ):
         return False
     try:
-        os.kill(identity.pid, sig)
-    except (ProcessLookupError, PermissionError, OSError):
+        if int(os.getpgid(root_identity.pid)) != int(expected_pgid):
+            return False
+        if process is not None:
+            process_pid = getattr(process, "pid", None)
+            if (
+                process_pid is not None
+                and int(process_pid) != root_identity.pid
+            ):
+                return False
+            if process.poll() is not None:
+                return False
+    except (
+        OSError,
+        ProcessLookupError,
+        TypeError,
+        ValueError,
+        OverflowError,
+    ):
         return False
     return True
+
+
+def _close_pidfds(pidfds: Mapping[tuple[int, float], int]) -> None:
+    for pidfd in pidfds.values():
+        try:
+            os.close(int(pidfd))
+        except OSError:
+            pass
 
 
 def _retained_or_observed_unreadable_relation(
@@ -946,11 +1738,25 @@ def _process_alive(pid: int) -> bool:
         return True
 
 
-def _process_group(pid: int) -> int | None:
+def _observed_process_alive(
+    process: Any,
+    identity: ProcessIdentity,
+) -> bool:
     try:
-        return int(os.getpgid(int(pid)))
-    except (OSError, ProcessLookupError):
-        return None
+        return (
+            process.is_running()
+            and process.status() != psutil.STATUS_ZOMBIE
+        )
+    except AttributeError:
+        return same_process(identity)
+    except (
+        psutil.NoSuchProcess,
+        psutil.ZombieProcess,
+        ProcessLookupError,
+    ):
+        return False
+    except (psutil.AccessDenied, PermissionError, OSError):
+        return True
 
 
 def _process_group_exists(pgid: int) -> bool:

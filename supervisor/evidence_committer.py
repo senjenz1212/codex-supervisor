@@ -98,6 +98,10 @@ from .trace_graph import (
 EVIDENCE_COMMIT_SCHEMA_VERSION = "harness-evidence-commit/v2"
 TRACER_PROJECTION_SCHEMA_VERSION = "harness-tracer-projection/v1"
 SQLITE_EXPORT_SCHEMA_VERSION = "harness-sqlite-export/v1"
+_RECOVERY_CHECKPOINT_SELECTION_SCHEMA_VERSION = (
+    "harness-evidence-recovery-checkpoint-selection/v1"
+)
+_MAX_RECOVERY_CHECKPOINT_REPLANS = 8
 TRACE_LIFECYCLE_PERSISTENCE_SEMANTICS = (
     "post_execution_stage_projection"
 )
@@ -448,6 +452,15 @@ class EvidenceCommitResult:
     artifact_manifest_attestation_identity: Mapping[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class _RecoveryCheckpointPlan:
+    run_id: str
+    recovery_events: tuple[dict[str, Any], ...]
+    current_events: tuple[dict[str, Any], ...]
+    local_latest: PersistedLedgerCheckpoint | None
+    selected_existing: PersistedLedgerCheckpoint | None
+
+
 class HmacCheckpointAuthority:
     """Small signer/verifier used by explicitly hermetic evidence commits."""
 
@@ -792,6 +805,7 @@ class EvidenceCommitter:
                 graph=graph,
                 closure=closure,
                 manifest_event=manifest_event,
+                precommit_heads=precommit_heads,
                 event_streams=checkpoint_streams,
                 trusted_checkpoint_pins=trusted_checkpoint_pins,
             )
@@ -872,11 +886,12 @@ class EvidenceCommitter:
             (
                 checkpoint_refs,
                 trusted_checkpoint_pins,
-            ) = self._persist_checkpoint_phase(
+                checkpoint_streams,
+            ) = self._persist_recovery_checkpoint_phase(
                 request,
                 checkpoint_streams,
             )
-            require_local_latest = True
+            require_local_latest = False
         else:
             (
                 checkpoint_refs,
@@ -894,6 +909,7 @@ class EvidenceCommitter:
             graph=graph,
             closure=closure,
             manifest_event=manifest_event,
+            precommit_heads=precommit_heads,
             event_streams=checkpoint_streams,
             trusted_checkpoint_pins=trusted_checkpoint_pins,
             require_local_latest=require_local_latest,
@@ -1059,6 +1075,7 @@ class EvidenceCommitter:
             graph=graph,
             closure=closure,
             manifest_event=manifest_event,
+            precommit_heads=precommit_heads,
             event_streams=event_streams,
             trusted_checkpoint_pins=trusted_checkpoint_pins,
             require_local_latest=False,
@@ -3147,6 +3164,559 @@ class EvidenceCommitter:
         self._observe_phase("checkpoints_persisted")
         return refs, trusted
 
+    def _persist_recovery_checkpoint_phase(
+        self,
+        request: EvidenceCommitRequest,
+        recovery_streams: Mapping[
+            str,
+            Sequence[Mapping[str, Any]],
+        ],
+    ) -> tuple[
+        dict[str, str],
+        dict[str, dict[str, Any]],
+        dict[str, list[dict[str, Any]]],
+    ]:
+        """Adopt or advance checkpoints without publishing a historical cut."""
+        ordered_run_ids = sorted(
+            run_id
+            for run_id in request.registered_run_ids
+            if run_id != request.aggregate_run_id
+        ) + [request.aggregate_run_id]
+        with self._lock, self._outbox_connection() as conn:
+            _begin_outbox_transaction(conn)
+            try:
+                for _ in range(_MAX_RECOVERY_CHECKPOINT_REPLANS):
+                    plans = {
+                        run_id: self._plan_recovery_checkpoint(
+                            run_id=run_id,
+                            recovery_events=recovery_streams[run_id],
+                        )
+                        for run_id in ordered_run_ids
+                    }
+                    selected: dict[str, PersistedLedgerCheckpoint] = {}
+                    for index, run_id in enumerate(ordered_run_ids):
+                        plan = plans[run_id]
+                        if plan.selected_existing is not None:
+                            selected[run_id] = plan.selected_existing
+                            continue
+                        # The immutable projection may intentionally stay on an
+                        # older cut, but the signed ledger checkpoint must cover
+                        # the stable live snapshot observed during recovery.
+                        head = plan.current_events[-1]
+                        created_at = request.checkpoint_created_at + index
+                        if plan.local_latest is not None:
+                            created_at = max(
+                                created_at,
+                                int(
+                                    plan.local_latest.checkpoint["predicate"][
+                                        "created_at"
+                                    ]
+                                )
+                                + 1,
+                            )
+                        selected[run_id] = (
+                            self.checkpoint_store.append_signed_head(
+                                run_id=run_id,
+                                head_event_id=head["event_id"],
+                                head_event_hash=str(head["event_hash"]),
+                                event_count=len(plan.current_events),
+                                signer=self.signer,
+                                verifier=self.verifier,
+                                created_at=created_at,
+                            )
+                        )
+
+                    expected = {
+                        run_id: checkpoint_identity(
+                            selected[run_id].checkpoint
+                        )
+                        for run_id in ordered_run_ids
+                    }
+                    selected_streams: dict[
+                        str,
+                        list[dict[str, Any]],
+                    ] = {}
+                    replan = False
+                    for run_id in ordered_run_ids:
+                        plan = plans[run_id]
+                        if self._recovery_live_snapshot_advanced(plan):
+                            replan = True
+                            break
+                        identity = expected[run_id]
+                        selected_streams[run_id] = (
+                            self._checkpointed_event_prefix(
+                                run_id=run_id,
+                                events=plan.current_events,
+                                identity=identity,
+                                label="selected recovery checkpoint",
+                            )
+                        )
+                        self._verify_recovery_checkpoint_identity(
+                            run_id=run_id,
+                            events=selected_streams[run_id],
+                            identity=identity,
+                            label="selected recovery checkpoint",
+                            require_local_latest=False,
+                        )
+                        try:
+                            local_latest = (
+                                self.checkpoint_store.load_latest(run_id)
+                            )
+                        except RuntimeError as exc:
+                            raise EvidenceCommitIntegrityError(
+                                "local checkpoint history is invalid for "
+                                f"{run_id}: {exc}"
+                            ) from exc
+                        local_identity = (
+                            None
+                            if local_latest is None
+                            else checkpoint_identity(
+                                local_latest.checkpoint
+                            )
+                        )
+                        if self._checkpoint_snapshot_advanced(
+                            earlier=identity,
+                            later=local_identity,
+                            run_id=run_id,
+                            label="local checkpoint",
+                        ):
+                            replan = True
+                            break
+                    if replan:
+                        continue
+
+                    pin_store = self.trusted_checkpoint_pins
+                    assert pin_store is not None
+                    for run_id in sorted(expected):
+                        try:
+                            pin_store.pin(expected[run_id])
+                        except Exception as exc:
+                            observed = (
+                                self._load_optional_trusted_latest_checkpoint(
+                                    run_id
+                                )
+                            )
+                            if self._checkpoint_snapshot_advanced(
+                                earlier=expected[run_id],
+                                later=observed,
+                                run_id=run_id,
+                                label="trusted checkpoint",
+                            ):
+                                replan = True
+                                break
+                            raise EvidenceCommitIntegrityError(
+                                "trusted checkpoint pin publication failed "
+                                f"for {run_id}: {exc}"
+                            ) from exc
+                    if replan:
+                        continue
+
+                    trusted: dict[str, dict[str, Any]] = {}
+                    for run_id in sorted(expected):
+                        latest = (
+                            self._load_optional_trusted_latest_checkpoint(
+                                run_id
+                            )
+                        )
+                        if self._checkpoint_snapshot_advanced(
+                            earlier=expected[run_id],
+                            later=latest,
+                            run_id=run_id,
+                            label="trusted checkpoint",
+                        ):
+                            replan = True
+                            break
+                        assert latest is not None
+                        trusted[run_id] = latest
+                        try:
+                            local_latest = (
+                                self.checkpoint_store.load_latest(run_id)
+                            )
+                        except RuntimeError as exc:
+                            raise EvidenceCommitIntegrityError(
+                                "local checkpoint history is invalid for "
+                                f"{run_id}: {exc}"
+                            ) from exc
+                        local_identity = (
+                            None
+                            if local_latest is None
+                            else checkpoint_identity(
+                                local_latest.checkpoint
+                            )
+                        )
+                        if self._checkpoint_snapshot_advanced(
+                            earlier=expected[run_id],
+                            later=local_identity,
+                            run_id=run_id,
+                            label="local checkpoint",
+                        ):
+                            replan = True
+                            break
+                        if self._recovery_live_snapshot_advanced(plans[run_id]):
+                            replan = True
+                            break
+                    if replan:
+                        continue
+
+                    refs = {
+                        run_id: checkpoint.external_anchor_ref
+                        for run_id, checkpoint in selected.items()
+                    }
+                    self._advance_in_transaction(
+                        conn,
+                        commit_id=request.commit_id,
+                        phase="checkpoints_persisted",
+                        detail={
+                            "recovery_checkpoint_selection_schema": (
+                                _RECOVERY_CHECKPOINT_SELECTION_SCHEMA_VERSION
+                            ),
+                            "checkpoint_refs": refs,
+                            "trusted_checkpoint_pins": trusted,
+                        },
+                        now=_now_ms(),
+                    )
+                    conn.commit()
+                    break
+                else:
+                    raise EvidenceCommitIntegrityError(
+                        "recovery checkpoint publication did not stabilize "
+                        "after monotonic advancement"
+                    )
+            except Exception:
+                conn.rollback()
+                raise
+        self._observe_phase("checkpoints_persisted")
+        return refs, trusted, selected_streams
+
+    def _plan_recovery_checkpoint(
+        self,
+        *,
+        run_id: str,
+        recovery_events: Sequence[Mapping[str, Any]],
+    ) -> _RecoveryCheckpointPlan:
+        recovery = tuple(dict(event) for event in recovery_events)
+        if not recovery:
+            raise EvidenceCommitIntegrityError(
+                f"cannot recover an empty checkpoint stream: {run_id}"
+            )
+        for _ in range(_MAX_RECOVERY_CHECKPOINT_REPLANS):
+            trusted_before = self._load_optional_trusted_latest_checkpoint(
+                run_id
+            )
+            try:
+                checkpoint_history = self.checkpoint_store.load_all(run_id)
+            except RuntimeError as exc:
+                raise EvidenceCommitIntegrityError(
+                    f"local checkpoint history is invalid for "
+                    f"{run_id}: {exc}"
+                ) from exc
+            current = tuple(self._read_all_events(run_id))
+            trusted_latest = (
+                self._load_optional_trusted_latest_checkpoint(run_id)
+            )
+            if self._checkpoint_snapshot_advanced(
+                earlier=trusted_before,
+                later=trusted_latest,
+                run_id=run_id,
+                label="trusted checkpoint planning snapshot",
+            ):
+                continue
+            if len(current) < len(recovery):
+                raise EvidenceCommitIntegrityError(
+                    "live evidence stream was rolled back below the "
+                    f"immutable recovery cut for {run_id}"
+                )
+            self._assert_recovery_checkpoint_prefix(
+                run_id=run_id,
+                recovery_events=recovery,
+                checkpoint_events=current,
+                label="live event stream",
+            )
+            local_latest = (
+                checkpoint_history[-1] if checkpoint_history else None
+            )
+            if trusted_latest is not None:
+                trusted_checkpoint = next(
+                    (
+                        checkpoint
+                        for checkpoint in checkpoint_history
+                        if checkpoint_identity(checkpoint.checkpoint)
+                        == trusted_latest
+                    ),
+                    None,
+                )
+                if trusted_checkpoint is None:
+                    raise EvidenceCommitIntegrityError(
+                        "trusted latest checkpoint is missing locally for "
+                        f"{run_id}"
+                    )
+                trusted_events = self._checkpointed_event_prefix(
+                    run_id=run_id,
+                    events=current,
+                    identity=trusted_latest,
+                    label="trusted latest checkpoint",
+                )
+                self._verify_recovery_checkpoint_identity(
+                    run_id=run_id,
+                    events=trusted_events,
+                    identity=trusted_latest,
+                    label="trusted latest checkpoint",
+                    require_local_latest=False,
+                )
+                self._assert_recovery_checkpoint_prefix(
+                    run_id=run_id,
+                    recovery_events=recovery,
+                    checkpoint_events=trusted_events,
+                    label="trusted latest checkpoint",
+                )
+
+            selected_existing: PersistedLedgerCheckpoint | None = None
+            if local_latest is not None:
+                local_identity = checkpoint_identity(
+                    local_latest.checkpoint
+                )
+                local_events = self._checkpointed_event_prefix(
+                    run_id=run_id,
+                    events=current,
+                    identity=local_identity,
+                    label="local latest checkpoint",
+                )
+                self._verify_recovery_checkpoint_identity(
+                    run_id=run_id,
+                    events=local_events,
+                    identity=local_identity,
+                    label="local latest checkpoint",
+                    require_local_latest=False,
+                )
+                self._assert_recovery_checkpoint_prefix(
+                    run_id=run_id,
+                    recovery_events=recovery,
+                    checkpoint_events=local_events,
+                    label="local latest checkpoint",
+                )
+                if trusted_latest is not None:
+                    trusted_count = int(trusted_latest["event_count"])
+                    local_count = int(local_identity["event_count"])
+                    if local_count < trusted_count or (
+                        local_count == trusted_count
+                        and local_identity != trusted_latest
+                    ):
+                        raise EvidenceCommitIntegrityError(
+                            "local latest checkpoint rolled back or forked "
+                            "before the trusted latest checkpoint for "
+                            f"{run_id}"
+                        )
+                if len(local_events) >= len(current):
+                    selected_existing = local_latest
+
+            return _RecoveryCheckpointPlan(
+                run_id=run_id,
+                recovery_events=recovery,
+                current_events=current,
+                local_latest=local_latest,
+                selected_existing=selected_existing,
+            )
+        raise EvidenceCommitIntegrityError(
+            "recovery checkpoint planning snapshot did not stabilize for "
+            f"{run_id}"
+        )
+
+    def _checkpoint_snapshot_advanced(
+        self,
+        *,
+        earlier: Mapping[str, Any] | None,
+        later: Mapping[str, Any] | None,
+        run_id: str,
+        label: str,
+    ) -> bool:
+        if earlier is None:
+            return later is not None
+        if later is None:
+            raise EvidenceCommitIntegrityError(
+                f"{label} rolled back or disappeared for {run_id}"
+            )
+        normalized_earlier = normalize_checkpoint_identity(earlier)
+        normalized_later = normalize_checkpoint_identity(later)
+        earlier_count = int(normalized_earlier["event_count"])
+        later_count = int(normalized_later["event_count"])
+        if later_count > earlier_count:
+            return True
+        if later_count < earlier_count:
+            raise EvidenceCommitIntegrityError(
+                f"{label} rolled back for {run_id}"
+            )
+        if normalized_later != normalized_earlier:
+            raise EvidenceCommitIntegrityError(
+                f"{label} forked at event_count={later_count} for {run_id}"
+            )
+        return False
+
+    def _recovery_live_snapshot_advanced(
+        self,
+        plan: _RecoveryCheckpointPlan,
+    ) -> bool:
+        observed = tuple(self._read_all_events(plan.run_id))
+        if len(observed) < len(plan.current_events):
+            raise EvidenceCommitIntegrityError(
+                "live evidence stream was rolled back below the stable "
+                f"recovery snapshot for {plan.run_id}"
+            )
+        self._assert_recovery_checkpoint_prefix(
+            run_id=plan.run_id,
+            recovery_events=plan.current_events,
+            checkpoint_events=observed,
+            label="live recovery snapshot",
+        )
+        return len(observed) > len(plan.current_events)
+
+    def _load_optional_trusted_latest_checkpoint(
+        self,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        pin_store = self.trusted_checkpoint_pins
+        assert pin_store is not None
+
+        def read_latest() -> dict[str, Any] | None:
+            try:
+                observed = pin_store.latest(run_id)
+            except Exception as exc:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint lookup failed for "
+                    f"{run_id}: {exc}"
+                ) from exc
+            if observed is None:
+                return None
+            try:
+                normalized = normalize_checkpoint_identity(observed)
+            except (TypeError, ValueError, RuntimeError) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint is invalid for "
+                    f"{run_id}: {exc}"
+                ) from exc
+            if normalized["run_id"] != run_id:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint run_id mismatch for "
+                    f"{run_id}"
+                )
+            return normalized
+
+        for _ in range(_MAX_RECOVERY_CHECKPOINT_REPLANS):
+            normalized = read_latest()
+            if normalized is None:
+                confirmed = read_latest()
+                if self._checkpoint_snapshot_advanced(
+                    earlier=None,
+                    later=confirmed,
+                    run_id=run_id,
+                    label="trusted checkpoint lookup",
+                ):
+                    continue
+                return None
+            try:
+                persisted = pin_store.get(normalized)
+            except Exception as exc:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint persistence lookup failed for "
+                    f"{run_id}: {exc}"
+                ) from exc
+            if persisted is None:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint pin is not durably retrievable "
+                    f"for {run_id}"
+                )
+            try:
+                normalized_persisted = normalize_checkpoint_identity(
+                    persisted
+                )
+            except (TypeError, ValueError, RuntimeError) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint pin is invalid for "
+                    f"{run_id}: {exc}"
+                ) from exc
+            if normalized_persisted != normalized:
+                raise EvidenceCommitIntegrityError(
+                    "trusted latest checkpoint pin differs from latest for "
+                    f"{run_id}"
+                )
+            confirmed = read_latest()
+            if self._checkpoint_snapshot_advanced(
+                earlier=normalized,
+                later=confirmed,
+                run_id=run_id,
+                label="trusted checkpoint lookup",
+            ):
+                continue
+            return normalized
+        raise EvidenceCommitIntegrityError(
+            "trusted latest checkpoint lookup did not stabilize for "
+            f"{run_id}"
+        )
+
+    def _checkpointed_event_prefix(
+        self,
+        *,
+        run_id: str,
+        events: Sequence[Mapping[str, Any]],
+        identity: Mapping[str, Any],
+        label: str,
+    ) -> list[dict[str, Any]]:
+        event_count = int(identity["event_count"])
+        if len(events) < event_count:
+            raise EvidenceCommitIntegrityError(
+                f"{label} advances beyond the local event stream for "
+                f"{run_id}"
+            )
+        return [dict(event) for event in events[:event_count]]
+
+    def _verify_recovery_checkpoint_identity(
+        self,
+        *,
+        run_id: str,
+        events: Sequence[Mapping[str, Any]],
+        identity: Mapping[str, Any],
+        label: str,
+        require_local_latest: bool,
+    ) -> None:
+        verification = verify_authoritative_event_chain(
+            events,
+            expected_run_id=run_id,
+            checkpoint_store=self.checkpoint_store,
+            verifier=self.verifier,
+            trusted_latest_checkpoint=identity,
+            require_local_latest=require_local_latest,
+        )
+        if (
+            not verification.valid
+            or not verification.truncation_checked
+            or not verification.authoritative_head_verified
+        ):
+            raise EvidenceCommitIntegrityError(
+                f"{label} verification failed for "
+                f"{run_id}: {verification.to_dict()}"
+            )
+
+    def _assert_recovery_checkpoint_prefix(
+        self,
+        *,
+        run_id: str,
+        recovery_events: Sequence[Mapping[str, Any]],
+        checkpoint_events: Sequence[Mapping[str, Any]],
+        label: str,
+    ) -> None:
+        shared_count = min(len(recovery_events), len(checkpoint_events))
+        if shared_count == 0:
+            raise EvidenceCommitIntegrityError(
+                f"{label} has no event prefix for {run_id}"
+            )
+        for index in range(shared_count):
+            if canonical_json_bytes(dict(recovery_events[index])) != (
+                canonical_json_bytes(dict(checkpoint_events[index]))
+            ):
+                raise EvidenceCommitIntegrityError(
+                    f"{label} prefix mismatch or fork for {run_id} at "
+                    f"event offset {index + 1}"
+                )
+
     def _pin_checkpoints(
         self,
         request: EvidenceCommitRequest,
@@ -3257,6 +3827,20 @@ class EvidenceCommitter:
         dict[str, list[dict[str, Any]]],
     ]:
         """Reload an already-published checkpoint cut without re-signing it."""
+        recovery_selection_schema = detail.get(
+            "recovery_checkpoint_selection_schema"
+        )
+        if recovery_selection_schema not in {
+            None,
+            _RECOVERY_CHECKPOINT_SELECTION_SCHEMA_VERSION,
+        }:
+            raise EvidenceCommitIntegrityError(
+                "checkpointed recovery selection schema is invalid"
+            )
+        allows_covering_checkpoint = (
+            recovery_selection_schema
+            == _RECOVERY_CHECKPOINT_SELECTION_SCHEMA_VERSION
+        )
         trusted_checkpoint_pins = self._checkpoint_pin_mapping(
             detail.get("trusted_checkpoint_pins"),
             run_ids=request.registered_run_ids,
@@ -3264,24 +3848,44 @@ class EvidenceCommitter:
         trusted_checkpoint_pins = self._load_trusted_checkpoint_pins(
             trusted_checkpoint_pins
         )
+        pinned_streams = self._read_pinned_event_streams(
+            trusted_checkpoint_pins
+        )
         for run_id in request.registered_run_ids:
-            events = list(expected_streams[run_id])
-            if not events:
+            expected_events = [
+                dict(event) for event in expected_streams[run_id]
+            ]
+            if not expected_events:
                 raise EvidenceCommitIntegrityError(
                     f"checkpointed evidence stream is empty for {run_id}"
                 )
-            head = events[-1]
+            events = pinned_streams[run_id]
             identity = trusted_checkpoint_pins[run_id]
-            if (
-                int(identity["event_count"]) != len(events)
-                or int(identity["head_event_id"]) != int(head["event_id"])
-                or str(identity["head_event_hash"])
-                != str(head["event_hash"])
-            ):
-                raise EvidenceCommitIntegrityError(
-                    "checkpointed evidence pin differs from the immutable "
-                    f"recovery cut for {run_id}"
+            if allows_covering_checkpoint:
+                if len(events) < len(expected_events):
+                    raise EvidenceCommitIntegrityError(
+                        "checkpointed evidence pin does not cover the "
+                        f"immutable recovery cut for {run_id}"
+                    )
+                self._assert_recovery_checkpoint_prefix(
+                    run_id=run_id,
+                    recovery_events=expected_events,
+                    checkpoint_events=events,
+                    label="checkpointed recovery selection",
                 )
+            else:
+                head = expected_events[-1]
+                if (
+                    int(identity["event_count"]) != len(expected_events)
+                    or int(identity["head_event_id"])
+                    != int(head["event_id"])
+                    or str(identity["head_event_hash"])
+                    != str(head["event_hash"])
+                ):
+                    raise EvidenceCommitIntegrityError(
+                        "checkpointed evidence pin differs from the immutable "
+                        f"recovery cut for {run_id}"
+                    )
         checkpoint_refs = self._checkpoint_ref_mapping(
             detail.get("checkpoint_refs"),
             run_ids=request.registered_run_ids,
@@ -3306,7 +3910,7 @@ class EvidenceCommitter:
         return (
             checkpoint_refs,
             trusted_checkpoint_pins,
-            self._read_pinned_event_streams(trusted_checkpoint_pins),
+            pinned_streams,
         )
 
     def _load_latest_trusted_checkpoint_pins(
@@ -3427,6 +4031,7 @@ class EvidenceCommitter:
         graph: TraceGraph,
         closure: ClosureResult,
         manifest_event: Mapping[str, Any],
+        precommit_heads: Mapping[str, Any],
         event_streams: Mapping[str, Sequence[Mapping[str, Any]]],
         trusted_checkpoint_pins: Mapping[str, Mapping[str, Any]],
         require_local_latest: bool = True,
@@ -3457,18 +4062,57 @@ class EvidenceCommitter:
             if run_id == request.aggregate_run_id:
                 aggregate_events = events
         assert aggregate_events is not None
-        if aggregate_events[-1]["event_id"] != manifest_event["event_id"]:
+        manifest_indexes = [
+            index
+            for index, event in enumerate(aggregate_events)
+            if int(event["event_id"]) == int(manifest_event["event_id"])
+        ]
+        if len(manifest_indexes) != 1:
             raise EvidenceCommitIntegrityError(
-                "authoritative aggregate head is not the manifest event"
+                "authoritative aggregate checkpoint does not contain the "
+                "exact manifest event"
+            )
+        manifest_index = manifest_indexes[0]
+        checkpointed_manifest = aggregate_events[manifest_index]
+        if canonical_json_bytes(checkpointed_manifest) != (
+            canonical_json_bytes(dict(manifest_event))
+        ):
+            raise EvidenceCommitIntegrityError(
+                "authoritative aggregate checkpoint manifest event differs "
+                "from the committed manifest"
+            )
+        aggregate_precommit = precommit_heads[request.aggregate_run_id]
+        projection_event_count = int(aggregate_precommit["event_count"])
+        if (
+            len(aggregate_events) < projection_event_count
+            or manifest_index < projection_event_count
+        ):
+            raise EvidenceCommitIntegrityError(
+                "authoritative aggregate checkpoint does not preserve the "
+                "frozen precommit projection cut"
+            )
+        projection_events = aggregate_events[:projection_event_count]
+        projection_head = projection_events[-1]
+        if (
+            int(projection_head["event_id"])
+            != int(aggregate_precommit["head_event_id"])
+            or str(projection_head["event_hash"])
+            != str(aggregate_precommit["head_event_hash"])
+        ):
+            raise EvidenceCommitIntegrityError(
+                "authoritative aggregate checkpoint differs from the frozen "
+                "precommit projection head"
             )
         aggregate_verification = verifications[request.aggregate_run_id]
         projection = rebuild_projection(
-            aggregate_events,
+            projection_events,
             initial=initial_tracer_evidence_projection(
                 request.aggregate_run_id
             ),
             reducer=reduce_tracer_evidence_projection,
-            expected_head_hash=aggregate_verification.head_event_hash,
+            expected_head_hash=str(
+                aggregate_precommit["head_event_hash"]
+            ),
             expected_run_id=request.aggregate_run_id,
         )
         self._validate_projection(projection, request)

@@ -329,6 +329,136 @@ async def test_cancellation_fails_closed_for_unreadable_new_marker_candidate(
 
 
 @pytest.mark.asyncio
+async def test_cancellation_fails_closed_for_unreadable_process_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_username = psutil.Process().username()
+
+    class UnreadableIdentityProcess:
+        pid = 3_999_992
+        info = {
+            "pid": pid,
+            "username": current_username,
+            "create_time": None,
+        }
+
+        def create_time(self) -> float:
+            raise psutil.AccessDenied(pid=self.pid)
+
+        def environ(self) -> dict[str, str]:
+            raise AssertionError(
+                "environment must not be read without a process identity"
+            )
+
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.05,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableIdentityProcess()],
+    )
+    runner = _BlockingCancellableRunner(
+        _accepted_stdout("gate-unreadable-identity"),
+    )
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-unreadable-identity"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.started.wait, 2)
+    gate_task.cancel()
+
+    with pytest.raises(
+        DualAgentCancellationCleanupError,
+        match="quiescent",
+    ) as exc_info:
+        await gate_task
+    assert exc_info.value.cleanup_quiescent is False
+    assert exc_info.value.gate_thread_terminated is True
+    assert runner.exited.is_set()
+    assert not (tmp_path / ".handoff" / ".dual-agent.lock").exists()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_ignores_process_that_disappears_during_identity_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_username = psutil.Process().username()
+
+    class DisappearedProcess:
+        pid = 3_999_993
+        info = {
+            "pid": pid,
+            "username": current_username,
+            "create_time": None,
+        }
+
+        def create_time(self) -> float:
+            raise psutil.NoSuchProcess(pid=self.pid)
+
+        def environ(self) -> dict[str, str]:
+            raise AssertionError(
+                "environment must not be read after process disappearance"
+            )
+
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.5,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [DisappearedProcess()],
+    )
+    runner = _BlockingCancellableRunner(
+        _accepted_stdout("gate-disappeared-identity"),
+    )
+    lock_path = tmp_path / ".handoff" / ".dual-agent.lock"
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-disappeared-identity"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.started.wait, 2)
+    gate_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await gate_task
+    assert runner.exited.is_set()
+    assert not lock_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_cancellation_surfaces_target_cleanup_exception(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -374,9 +504,117 @@ async def test_cancellation_surfaces_target_cleanup_exception(
     ) as exc_info:
         await gate_task
     assert exc_info.value.__cause__ is cleanup_error
-    assert exc_info.value.cleanup_quiescent is False
+    assert exc_info.value.cleanup_quiescent is True
     assert exc_info.value.gate_thread_terminated is True
     assert runner.exited.is_set()
+
+
+def test_target_cleanup_error_does_not_skip_containment_rescan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cancellation = dual_agent_runner_module._GateCancellation()
+    cleanup_error = RuntimeError("provider cancel failed")
+    invocation_id = ""
+
+    class FailingTarget:
+        def cancel(self) -> None:
+            cancellation._finish_invocation(invocation_id)
+            raise cleanup_error
+
+    invocation_id = cancellation._start_invocation(
+        containment_id="containment-after-hook-error",
+        cancel_target=FailingTarget(),
+    )
+    scans: list[set[str]] = []
+
+    def terminate_gate_processes(
+        containment_ids: set[str],
+    ) -> bool:
+        scans.append(set(containment_ids))
+        return len(scans) >= 2
+
+    monkeypatch.setattr(
+        cancellation,
+        "_terminate_gate_processes",
+        terminate_gate_processes,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="provider cancel failed",
+    ) as exc_info:
+        cancellation.cancel_active_invocations(timeout_s=0.5)
+
+    assert exc_info.value is cleanup_error
+    assert len(scans) >= 3
+    assert all(
+        "containment-after-hook-error" in containment_ids
+        for containment_ids in scans
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancellation_surfaces_handoff_lock_release_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _BlockingCancellableRunner(
+        _accepted_stdout("gate-lock-release-error"),
+    )
+    lock_path = tmp_path / ".handoff" / ".dual-agent.lock"
+    real_unlink = Path.unlink
+
+    def fail_lock_release(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path == lock_path:
+            raise PermissionError("handoff lock release denied")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.5,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [],
+    )
+    monkeypatch.setattr(Path, "unlink", fail_lock_release)
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-lock-release-error"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.started.wait, 2)
+    assert lock_path.exists()
+    gate_task.cancel()
+
+    try:
+        with pytest.raises(
+            DualAgentCancellationCleanupError,
+            match="gate_thread_terminated=True",
+        ) as exc_info:
+            await gate_task
+        assert isinstance(exc_info.value.__cause__, PermissionError)
+        assert "handoff lock release denied" in str(exc_info.value.__cause__)
+        assert exc_info.value.cleanup_quiescent is True
+        assert exc_info.value.gate_thread_terminated is True
+        assert exc_info.value.phase == "gate_thread_cleanup"
+        assert lock_path.exists()
+    finally:
+        os.unlink(lock_path)
 
 
 @pytest.mark.asyncio

@@ -3049,6 +3049,7 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
     server, state = _server(tmp_path)
     popen_calls: list[dict] = []
     ownership_at_spawn: list[dict[str, object]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43210
@@ -3062,12 +3063,23 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
                 dict(row) if row is not None else {"recovery_point": "missing"}
             )
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
 
     class ForbiddenDispatcher:
         def __init__(self, *args, **kwargs):
             raise AssertionError("poll must not construct a dispatcher")
 
     monkeypatch.setattr(stdio, "WorkflowJobDispatcher", ForbiddenDispatcher, raising=False)
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -3627,6 +3639,7 @@ def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path)
     state = State(str(tmp_path / "state.db"))
     _reserve_dispatcher_test_job(state, tmp_path)
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     def forbidden_non_atomic_upsert(**_kwargs):
         raise AssertionError("spawn identity must use the atomic transition")
@@ -3642,6 +3655,18 @@ def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path)
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
@@ -3680,12 +3705,25 @@ def test_dispatcher_restarts_from_request_written(monkeypatch, tmp_path):
         recovery_point="request_written",
     )
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43211
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
@@ -3770,7 +3808,10 @@ def test_workflow_job_lease_heartbeat_runs_until_worker_lease_rejected():
     assert not heartbeat._thread.is_alive()
 
 
-def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
+def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(
+    monkeypatch,
+    tmp_path,
+):
     from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
     _server(tmp_path)
@@ -3782,12 +3823,25 @@ def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
         lease_expires_at=900,
     )
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43212
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
@@ -4689,17 +4743,30 @@ async def test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_
 
 @pytest.mark.asyncio
 async def test_dispatcher_restart_completes_dead_worker_result_and_catch_up_reports_terminal(
+    monkeypatch,
     tmp_path,
 ):
     from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
     server, state = _server(tmp_path)
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
-            pass
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),

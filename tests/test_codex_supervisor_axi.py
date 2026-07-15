@@ -150,7 +150,11 @@ def test_axi_rejects_no_trace_closure_for_harness_v1_task(capsys, tmp_path):
     assert state.list_dual_agent_workflow_jobs(active_only=True) == []
 
 
-def test_axi_submit_then_detached_dispatcher_writes_request_and_spawns(capsys, tmp_path):
+def test_axi_submit_then_detached_dispatcher_writes_request_and_spawns(
+    capsys,
+    tmp_path,
+    monkeypatch,
+):
     config = _config_path(tmp_path)
 
     assert axi.main([
@@ -172,12 +176,26 @@ def test_axi_submit_then_detached_dispatcher_writes_request_and_spawns(capsys, t
     submit = json.loads(capsys.readouterr().out)
     state = State(str(tmp_path / "state.db"))
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 24680
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        @staticmethod
+        def poll():
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,

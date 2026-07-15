@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import pytest
 
@@ -45,6 +45,10 @@ from supervisor.grade_revisions import (
 )
 from supervisor.ledger_checkpoints import checkpoint_identity
 from supervisor.planning_validator import validate_planning_artifacts
+from supervisor.run_registry import (
+    RUN_REGISTRATION_SCHEMA,
+    SINGLE_TURN_COMPLETION_POLICY,
+)
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
 from supervisor.task_environment import FrozenTaskResult, Grade
@@ -82,6 +86,8 @@ class _IndependentCheckpointPins:
         encoded = canonical_json_bytes(value)
         run_id = str(value["run_id"])
         with self._lock:
+            if encoded in self._history:
+                return
             current = self._latest.get(run_id)
             if current is not None:
                 current_count = int(current["event_count"])
@@ -108,6 +114,25 @@ class _IndependentCheckpointPins:
         with self._lock:
             value = self._latest.get(str(run_id))
             return None if value is None else dict(value)
+
+
+class _RacingCheckpointPins(_IndependentCheckpointPins):
+    def __init__(self) -> None:
+        super().__init__()
+        self.before_latest: Callable[[str], None] | None = None
+        self.before_pin: Callable[[Mapping[str, Any]], None] | None = None
+
+    def pin(self, identity: Mapping[str, Any]) -> None:
+        callback = self.before_pin
+        if callback is not None:
+            callback(identity)
+        super().pin(identity)
+
+    def latest(self, run_id: str) -> Mapping[str, Any] | None:
+        callback = self.before_latest
+        if callback is not None:
+            callback(str(run_id))
+        return super().latest(run_id)
 
 
 def test_evidence_request_fingerprint_binds_expected_workflow_context(
@@ -159,6 +184,85 @@ def test_evidence_commit_rejects_sparse_registered_run(tmp_path: Path) -> None:
     with pytest.raises(
         EvidenceCommitIntegrityError,
         match="run registration session_id is missing",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
+def test_evidence_commit_rejects_forked_workflow_runtime_session(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    task_sha256 = hashlib.sha256(
+        b"hermetic evidence committer fixture"
+    ).hexdigest()
+    parent_config = {
+        "source": "workflow_submission",
+        "schema_version": RUN_REGISTRATION_SCHEMA,
+        "workflow_run_id": "aggregate-run",
+        "target_session_id": "aggregate-run-session",
+        "task_id": "fixture-task",
+        "target_kind": "hermetic",
+        "cwd": str(tmp_path.resolve()),
+        "session_id_source": "hermetic_fixture",
+        "completion_policy": "reusable_session",
+    }
+    runtime_config = {
+        "source": "workflow_runtime_session",
+        "schema_version": RUN_REGISTRATION_SCHEMA,
+        "workflow_run_id": "aggregate-run",
+        "target_run_id": "runtime-run",
+        "target_session_id": "runtime-run-session",
+        "task_id": "fixture-task",
+        "target_kind": "hermetic",
+        "cwd": str(tmp_path.resolve()),
+        "gate": "execution",
+        "runtime_run_id": "provider-runtime-run",
+        "runtime_result_hash": "c" * 64,
+        "task_sha256": task_sha256,
+        "session_id_source": "runtime_result",
+        "completion_policy": SINGLE_TURN_COMPLETION_POLICY,
+    }
+    fixture.state._conn.executemany(
+        "UPDATE run_snapshots SET config_json=? WHERE run_id=?",
+        (
+            (json.dumps(parent_config), "aggregate-run"),
+            (json.dumps(runtime_config), "runtime-run"),
+        ),
+    )
+    fixture.state._conn.commit()
+    fixture.state.write_event(
+        run_id="aggregate-run",
+        source="supervisor",
+        kind="workflow_target_session_bound",
+        payload={
+            "schema_version": RUN_REGISTRATION_SCHEMA,
+            "workflow_run_id": "aggregate-run",
+            "target_run_id": "runtime-run",
+            "target_session_id": "runtime-run-session",
+            "task_id": "fixture-task",
+            "target_kind": "hermetic",
+            "gate": "execution",
+            "runtime_run_id": "provider-runtime-run",
+            "runtime_result_hash": "c" * 64,
+            "task_sha256": task_sha256,
+            "session_id_source": "runtime_result",
+            "completion_policy": SINGLE_TURN_COMPLETION_POLICY,
+            "registry_path": str(
+                (tmp_path / "registry" / "runtime-run-session.json").resolve()
+            ),
+        },
+    )
+    fixture.state.bind_run_session(
+        run_id="runtime-run",
+        session_id="runtime-run-session-forked",
+        rollout_path=str(tmp_path / "runtime-run-session-forked.jsonl"),
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="target_session_id mismatch",
     ):
         EvidenceCommitter(**fixture.committer_arguments).commit(
             fixture.request
@@ -1009,6 +1113,509 @@ def test_materialized_commit_recovers_after_append_only_authority_suffixes(
     assert recovered.status == "complete"
     assert suffix_event["event_id"] < recovered.manifest_event_id
     assert authority.sign_calls == 3
+
+
+def test_materialized_recovery_reuses_newer_trusted_checkpoints_and_only_signs_forward(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    _append_grade_suffix(fixture, marker="newer-checkpoints")
+    _append_trace_suffix(fixture, marker="newer-checkpoints")
+    _append_event_suffixes(fixture, marker="newer-checkpoints")
+    newer = _checkpoint_and_pin_current_heads(
+        fixture,
+        crashed,
+        authority,
+        created_at=600,
+    )
+    sign_calls_before_recovery = authority.sign_calls
+
+    def crash_after_recovery_checkpoint_phase(phase: str) -> None:
+        if phase == "checkpoints_persisted":
+            raise SimulatedCrash("power loss after recovery checkpoint phase")
+
+    with pytest.raises(SimulatedCrash, match="recovery checkpoint phase"):
+        EvidenceCommitter(
+            **arguments,
+            phase_observer=crash_after_recovery_checkpoint_phase,
+        ).commit(fixture.request)
+    assert authority.sign_calls == sign_calls_before_recovery + 1
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    runtime_history = crashed.checkpoint_store.load_all("runtime-run")
+    aggregate_history = crashed.checkpoint_store.load_all("aggregate-run")
+    assert recovered.status == "complete"
+    assert authority.sign_calls == sign_calls_before_recovery + 1
+    assert [checkpoint_identity(item.checkpoint) for item in runtime_history] == [
+        checkpoint_identity(newer["runtime-run"].checkpoint)
+    ]
+    assert [
+        int(checkpoint_identity(item.checkpoint)["event_count"])
+        for item in aggregate_history
+    ] == [
+        int(
+            checkpoint_identity(
+                newer["aggregate-run"].checkpoint
+            )["event_count"]
+        ),
+        int(
+            checkpoint_identity(
+                newer["aggregate-run"].checkpoint
+            )["event_count"]
+        )
+        + 1,
+    ]
+    aggregate_latest = checkpoint_identity(
+        aggregate_history[-1].checkpoint
+    )
+    assert aggregate_latest["head_event_id"] == recovered.manifest_event_id
+    assert aggregate_latest["head_event_hash"] == (
+        recovered.manifest_event_hash
+    )
+    assert recovered.checkpoint_refs == {
+        "aggregate-run": aggregate_history[-1].external_anchor_ref,
+        "runtime-run": newer["runtime-run"].external_anchor_ref,
+    }
+    assert recovered.ledger_verifications[
+        "runtime-run"
+    ].event_count == int(
+        checkpoint_identity(
+            newer["runtime-run"].checkpoint
+        )["event_count"]
+    )
+
+
+def test_manifest_recovery_reuses_checkpointed_post_manifest_tail_without_resigning(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    staged = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        staged.commit(fixture.request)
+    with sqlite3.connect(staged.outbox_path) as connection:
+        [materialization_json] = connection.execute(
+            """
+            SELECT materialization_json
+              FROM evidence_commits
+             WHERE commit_id=?
+            """,
+            (fixture.request.commit_id,),
+        ).fetchone()
+    frozen_projection_hash = json.loads(materialization_json)[
+        "projection_sha256"
+    ]
+
+    def crash_after_manifest(phase: str) -> None:
+        if phase == "manifest_appended":
+            raise SimulatedCrash("power loss after manifest append")
+
+    with pytest.raises(SimulatedCrash, match="manifest append"):
+        EvidenceCommitter(
+            **arguments,
+            phase_observer=crash_after_manifest,
+        ).commit(fixture.request)
+
+    [manifest] = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+    ]
+    _append_grade_suffix(fixture, marker="post-manifest-checkpoint")
+    _append_trace_suffix(fixture, marker="post-manifest-checkpoint")
+    post_manifest_event_id = fixture.state.write_event(
+        run_id=fixture.request.aggregate_run_id,
+        source="test",
+        kind="tracer.execution.joined",
+        payload={"execution_id": "post-manifest-execution"},
+        ts=700,
+    )
+    fixture.state.write_event(
+        run_id="runtime-run",
+        source="test",
+        kind="post.manifest.runtime",
+        payload={"after": "manifest"},
+        ts=701,
+    )
+    newer = _checkpoint_and_pin_current_heads(
+        fixture,
+        staged,
+        authority,
+        created_at=800,
+    )
+    sign_calls_before_recovery = authority.sign_calls
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    aggregate_events = fixture.state.read_events_since(
+        fixture.request.aggregate_run_id,
+        limit=100,
+    )
+    post_manifest_event = next(
+        event
+        for event in aggregate_events
+        if event["event_id"] == post_manifest_event_id
+    )
+    aggregate_identity = checkpoint_identity(
+        newer["aggregate-run"].checkpoint
+    )
+    assert recovered.status == "complete"
+    assert authority.sign_calls == sign_calls_before_recovery
+    assert recovered.manifest_event_id == manifest["event_id"]
+    assert recovered.manifest_event_hash == manifest["event_hash"]
+    assert recovered.projection_sha256 == frozen_projection_hash
+    assert len(recovered.projection["executions"]) == 1
+    assert post_manifest_event["event_hash"] not in recovered.projection[
+        "recognized_event_hashes"
+    ]
+    assert recovered.ledger_verifications[
+        "aggregate-run"
+    ].event_count == len(aggregate_events)
+    assert recovered.ledger_verifications[
+        "aggregate-run"
+    ].head_event_hash == post_manifest_event["event_hash"]
+    assert int(aggregate_identity["event_count"]) == len(aggregate_events)
+    assert recovered.checkpoint_refs == {
+        run_id: persisted.external_anchor_ref
+        for run_id, persisted in newer.items()
+    }
+
+
+def test_materialized_recovery_rejects_trusted_latest_missing_locally(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    fixture.state.write_event(
+        run_id="runtime-run",
+        source="test",
+        kind="post.materialization.missing-local-checkpoint",
+        payload={"run_id": "runtime-run"},
+        ts=600,
+    )
+    [persisted] = _checkpoint_and_pin_current_heads(
+        fixture,
+        crashed,
+        authority,
+        created_at=700,
+        run_ids=("runtime-run",),
+    ).values()
+    persisted.path.unlink()
+    sign_calls_before_recovery = authority.sign_calls
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="trusted latest checkpoint.*missing locally",
+    ):
+        EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert authority.sign_calls == sign_calls_before_recovery
+
+
+def test_materialized_recovery_rejects_trusted_checkpoint_fork_after_prefix(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    forked_event_id = fixture.state.write_event(
+        run_id=fixture.request.aggregate_run_id,
+        source="test",
+        kind="post.materialization.forked-checkpoint",
+        payload={"branch": "discarded"},
+        ts=600,
+    )
+    _checkpoint_and_pin_current_heads(
+        fixture,
+        crashed,
+        authority,
+        created_at=700,
+    )
+    fixture.state._conn.execute("DROP TRIGGER events_no_delete")
+    fixture.state._conn.execute(
+        "DELETE FROM events WHERE event_id=?",
+        (forked_event_id,),
+    )
+    fixture.state._conn.commit()
+    sign_calls_before_recovery = authority.sign_calls
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="trusted latest checkpoint verification failed",
+    ):
+        EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert authority.sign_calls == sign_calls_before_recovery
+
+
+def test_materialized_recovery_replans_when_latest_advances_before_phase_commit(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    pins = _RacingCheckpointPins()
+    fixture.committer_arguments["trusted_checkpoint_pins"] = pins
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    _append_event_suffixes(fixture, marker="race-base")
+    original = _checkpoint_and_pin_current_heads(
+        fixture,
+        crashed,
+        authority,
+        created_at=600,
+    )
+    advanced: dict[str, Any] = {}
+
+    def advance_before_historical_repin(
+        identity: Mapping[str, Any],
+    ) -> None:
+        if identity["run_id"] != "runtime-run" or advanced:
+            return
+        pins.before_pin = None
+        fixture.state.write_event(
+            run_id="runtime-run",
+            source="test",
+            kind="post.materialization.race-advanced",
+            payload={"run_id": "runtime-run"},
+            ts=700,
+        )
+        advanced.update(
+            _checkpoint_and_pin_current_heads(
+                fixture,
+                crashed,
+                authority,
+                created_at=800,
+                run_ids=("runtime-run",),
+            )
+        )
+
+    pins.before_pin = advance_before_historical_repin
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert set(advanced) == {"runtime-run"}
+    original_identity = checkpoint_identity(
+        original["runtime-run"].checkpoint
+    )
+    advanced_identity = checkpoint_identity(
+        advanced["runtime-run"].checkpoint
+    )
+    pins.pin(original_identity)
+    assert pins.latest("runtime-run") == advanced_identity
+    assert recovered.checkpoint_refs["runtime-run"] == (
+        advanced["runtime-run"].external_anchor_ref
+    )
+    assert recovered.ledger_verifications[
+        "runtime-run"
+    ].event_count == int(advanced_identity["event_count"])
+
+
+def test_materialized_recovery_retries_fresh_history_when_pin_advances_during_plan(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    pins = _RacingCheckpointPins()
+    fixture.committer_arguments["trusted_checkpoint_pins"] = pins
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_staging,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    _append_event_suffixes(fixture, marker="planning-race-base")
+    _checkpoint_and_pin_current_heads(
+        fixture,
+        crashed,
+        authority,
+        created_at=600,
+    )
+    advanced: dict[str, Any] = {}
+
+    def advance_before_latest_read(run_id: str) -> None:
+        if run_id != "runtime-run" or advanced:
+            return
+        pins.before_latest = None
+        fixture.state.write_event(
+            run_id="runtime-run",
+            source="test",
+            kind="post.materialization.planning-race-advanced",
+            payload={"run_id": "runtime-run"},
+            ts=700,
+        )
+        advanced.update(
+            _checkpoint_and_pin_current_heads(
+                fixture,
+                crashed,
+                authority,
+                created_at=800,
+                run_ids=("runtime-run",),
+            )
+        )
+
+    pins.before_latest = advance_before_latest_read
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert set(advanced) == {"runtime-run"}
+    advanced_identity = checkpoint_identity(
+        advanced["runtime-run"].checkpoint
+    )
+    assert pins.latest("runtime-run") == advanced_identity
+    assert recovered.checkpoint_refs["runtime-run"] == (
+        advanced["runtime-run"].external_anchor_ref
+    )
+    assert recovered.ledger_verifications[
+        "runtime-run"
+    ].event_count == int(advanced_identity["event_count"])
+
+
+def test_materialized_recovery_freezes_projection_before_recognized_suffix(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        EvidenceCommitter(
+            **fixture.committer_arguments,
+            phase_observer=crash_after_staging,
+        ).commit(fixture.request)
+
+    suffix_event_id = fixture.state.write_event(
+        run_id=fixture.request.aggregate_run_id,
+        source="test",
+        kind="tracer.execution.joined",
+        payload={"execution_id": "recognized-recovery-suffix"},
+        ts=600,
+    )
+    fixture.state.write_event(
+        run_id="runtime-run",
+        source="test",
+        kind="post.materialization.recognized-suffix",
+        payload={"run_id": "runtime-run"},
+        ts=601,
+    )
+
+    recovered = EvidenceCommitter(
+        **fixture.committer_arguments
+    ).commit(fixture.request)
+
+    aggregate_events = fixture.state.read_events_since(
+        fixture.request.aggregate_run_id,
+        limit=100,
+    )
+    suffix_event = next(
+        event
+        for event in aggregate_events
+        if event["event_id"] == suffix_event_id
+    )
+    assert recovered.status == "complete"
+    assert suffix_event_id < recovered.manifest_event_id
+    assert len(recovered.projection["executions"]) == 1
+    assert suffix_event["event_hash"] not in recovered.projection[
+        "recognized_event_hashes"
+    ]
+    assert recovered.ledger_verifications[
+        fixture.request.aggregate_run_id
+    ].event_count == len(aggregate_events)
 
 
 @pytest.mark.parametrize(
@@ -3010,6 +3617,43 @@ def _append_event_suffixes(fixture: _Fixture, *, marker: str) -> None:
             payload={"marker": marker, "run_id": run_id},
             ts=400 + index,
         )
+
+
+def _checkpoint_and_pin_current_heads(
+    fixture: _Fixture,
+    committer: EvidenceCommitter,
+    authority: Any,
+    *,
+    created_at: int,
+    run_ids: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    selected_run_ids = (
+        fixture.request.registered_run_ids
+        if run_ids is None
+        else run_ids
+    )
+    pin_store = fixture.committer_arguments["trusted_checkpoint_pins"]
+    assert isinstance(pin_store, _IndependentCheckpointPins)
+    persisted: dict[str, Any] = {}
+    for index, run_id in enumerate(selected_run_ids):
+        events = fixture.state.read_events_since(
+            run_id,
+            after_event_id=0,
+            limit=100,
+        )
+        head = events[-1]
+        checkpoint = committer.checkpoint_store.append_signed_head(
+            run_id=run_id,
+            head_event_id=head["event_id"],
+            head_event_hash=head["event_hash"],
+            event_count=len(events),
+            signer=authority,
+            verifier=authority,
+            created_at=created_at + index,
+        )
+        pin_store.pin(checkpoint_identity(checkpoint.checkpoint))
+        persisted[run_id] = checkpoint
+    return persisted
 
 
 def _tamper_experiment_terminal_authority(

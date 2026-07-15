@@ -235,26 +235,62 @@ def test_historical_operation_terminal_event_forces_checkpoint(
         tmp_path,
         interval=100,
     )
-    state.write_historical_operation_event(
-        run_id="historical-operation",
-        kind="historical_operation.requested",
-        payload={"request_hash": "a" * 64},
-        ts=211,
+    operation_id = "historical-operation"
+    request_hash = "a" * 64
+    owner_token = "checkpoint-owner"
+    claim, reserved = state.reserve_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
     )
-
-    event_id = state.write_historical_operation_event(
-        run_id="historical-operation",
-        kind=terminal_kind,
-        payload={"request_hash": "a" * 64},
-        ts=212,
+    assert reserved is True
+    claimed, requested_event_id, acquired = (
+        state.claim_historical_operation_execution(
+            operation_id=operation_id,
+            request_hash=request_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token=owner_token,
+            expected_claim_updated_at=claim["updated_at"],
+            expected_execution_owner_token=claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=claim[
+                "execution_heartbeat_at"
+            ],
+        )
     )
+    assert acquired is True
+    assert requested_event_id is not None
+    terminal_status = terminal_kind.rsplit(".", 1)[-1]
+    event_id, created = state.terminalize_historical_operation_execution(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
+        owner_token=owner_token,
+        execution_generation=claimed["execution_generation"],
+        status=terminal_status,
+        payload={
+            "operation_id": operation_id,
+            "operation": "replay",
+            "request_hash": request_hash,
+            "requested_event_id": requested_event_id,
+            "execution_owner_token": owner_token,
+            "execution_generation": claimed["execution_generation"],
+        },
+    )
+    assert event_id is not None
+    assert created is True
 
-    latest = pins.latest("historical-operation")
+    latest = pins.latest(operation_id)
     assert latest is not None
     assert latest["head_event_id"] == event_id
     assert latest["event_count"] == 2
     assert key.sign_calls == 1
-    assert state.verify_event_ledger("historical-operation").valid is True
+    assert state.verify_event_ledger(operation_id).valid is True
 
 
 def test_terminal_workflow_completion_forces_and_retries_pin_publication(

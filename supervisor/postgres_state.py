@@ -28,9 +28,12 @@ from .quality_projection import (
     rebuild_quality_trend_projection,
 )
 from .state import (
+    HISTORICAL_OPERATION_OWNER_FENCED_EVENT_KINDS,
     HISTORICAL_OPERATION_EVENT_SOURCE,
     TERMINAL_WORKFLOW_JOB_STATUSES,
     _assert_evidence_committer_owner,
+    _historical_lease_duration_seconds,
+    _historical_lease_is_expired,
     assert_historical_operation_event_source,
     assert_public_event_kind_allowed,
     assert_terminal_workflow_job_mutation_allowed,
@@ -49,7 +52,7 @@ if TYPE_CHECKING:
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
-POSTGRES_ALEMBIC_HEAD = "20260715_0001"
+POSTGRES_ALEMBIC_HEAD = "20260715_0002"
 
 
 def _alembic_script_directory_head() -> str | None:
@@ -271,11 +274,18 @@ CREATE TABLE IF NOT EXISTS historical_operation_claims (
   status TEXT NOT NULL
     CHECK(status IN ('running', 'completed', 'failed')),
   terminal_event_id BIGINT,
+  execution_owner_token TEXT,
+  execution_generation INTEGER NOT NULL DEFAULT 0,
+  execution_heartbeat_at DOUBLE PRECISION,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_historical_operation_claims_status
   ON historical_operation_claims(status, updated_at);
+CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_historical_operation_claims_execution_owner
+  ON historical_operation_claims(execution_owner_token)
+  WHERE execution_owner_token IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   id BIGSERIAL UNIQUE,
@@ -443,6 +453,16 @@ ALTER TABLE dual_agent_workflow_jobs
   ADD COLUMN IF NOT EXISTS cleanup_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE dual_agent_workflow_jobs
   ADD COLUMN IF NOT EXISTS cleanup_escalated_at BIGINT;
+ALTER TABLE historical_operation_claims
+  ADD COLUMN IF NOT EXISTS execution_owner_token TEXT;
+ALTER TABLE historical_operation_claims
+  ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE historical_operation_claims
+  ADD COLUMN IF NOT EXISTS execution_heartbeat_at DOUBLE PRECISION;
+CREATE UNIQUE INDEX IF NOT EXISTS
+  idx_historical_operation_claims_execution_owner
+  ON historical_operation_claims(execution_owner_token)
+  WHERE execution_owner_token IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_hash ON events(event_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_sequence
   ON events(run_id, event_sequence);
@@ -1446,6 +1466,11 @@ class PostgresState:
         if not str(kind).startswith("historical_operation."):
             raise ValueError(
                 "dedicated historical writer only accepts historical events"
+            )
+        if str(kind) in HISTORICAL_OPERATION_OWNER_FENCED_EVENT_KINDS:
+            raise ValueError(
+                "historical requested and terminal events require "
+                "owner-fenced state methods"
             )
         return self._write_event_internal(
             run_id=run_id,
@@ -2797,6 +2822,15 @@ class PostgresState:
         ).fetchall())
 
     # --- historical evaluation operation coordination ---
+    def _historical_database_clock_epoch(self) -> float:
+        row = self._conn.execute(
+            """SELECT EXTRACT(EPOCH FROM clock_timestamp())
+                      AS state_now"""
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("PostgreSQL state clock was unavailable")
+        return float(row["state_now"])
+
     def reserve_historical_operation(
         self,
         *,
@@ -2804,9 +2838,9 @@ class PostgresState:
         request_hash: str,
         operation: str,
     ) -> tuple[dict[str, Any], bool]:
-        now = int(time.time())
         with self._write_lock:
             with self._conn.transaction():
+                now = int(self._historical_database_clock_epoch())
                 row = self._conn.execute(
                     """INSERT INTO historical_operation_claims(
                          operation_id, request_hash, operation, status,
@@ -2843,10 +2877,24 @@ class PostgresState:
         request_hash: str,
         operation: str,
         request: dict[str, Any],
+        owner_token: str,
         expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float | None = None,
     ) -> tuple[dict[str, Any], int | None, bool]:
         """Atomically append requested while claiming the side-effect boundary."""
-        now = int(time.time())
+        normalized_owner_token = str(owner_token).strip()
+        if not normalized_owner_token:
+            raise ValueError(
+                "historical operation execution owner token is required"
+            )
+        normalized_lease_duration = (
+            None
+            if lease_duration_s is None
+            else _historical_lease_duration_seconds(lease_duration_s)
+        )
         with self._write_lock:
             with self._conn.transaction():
                 claim = self._conn.execute(
@@ -2859,6 +2907,12 @@ class PostgresState:
                     raise KeyError(
                         f"historical operation not found: {operation_id}"
                     )
+                now = self._historical_database_clock_epoch()
+                lease_cutoff = (
+                    None
+                    if normalized_lease_duration is None
+                    else now - normalized_lease_duration
+                )
                 requested_events = self._conn.execute(
                     """SELECT event_id
                          FROM events
@@ -2880,26 +2934,84 @@ class PostgresState:
                     and str(claim["status"]) == "running"
                     and claim["terminal_event_id"] is None
                     and claim["updated_at"] == expected_claim_updated_at
+                    and (
+                        claim["execution_owner_token"]
+                        == expected_execution_owner_token
+                    )
+                    and (
+                        claim["execution_generation"]
+                        == expected_execution_generation
+                    )
+                    and (
+                        claim["execution_heartbeat_at"]
+                        == expected_execution_heartbeat_at
+                    )
                     and requested_event_id is None
+                    and (
+                        lease_cutoff is None
+                        or (
+                            claim["execution_owner_token"] is None
+                            and int(
+                                claim["execution_generation"] or 0
+                            )
+                            == 0
+                            and claim["execution_heartbeat_at"] is None
+                            and _historical_lease_is_expired(
+                                claim["updated_at"],
+                                state_now=now,
+                                lease_duration_s=(
+                                    normalized_lease_duration
+                                ),
+                            )
+                        )
+                    )
                 )
                 if not may_claim:
                     return claim_dict, requested_event_id, False
                 claimed = self._conn.execute(
                     """UPDATE historical_operation_claims
-                          SET updated_at=%s
+                          SET execution_owner_token=%s,
+                              execution_generation=execution_generation + 1,
+                              execution_heartbeat_at=%s,
+                              updated_at=%s
                         WHERE operation_id=%s
                           AND request_hash=%s
                           AND operation=%s
                           AND status='running'
                           AND terminal_event_id IS NULL
                           AND updated_at IS NOT DISTINCT FROM %s
+                          AND execution_owner_token
+                                IS NOT DISTINCT FROM %s
+                          AND execution_generation=%s
+                          AND execution_heartbeat_at
+                                IS NOT DISTINCT FROM %s
+                          AND (
+                            %s::boolean
+                            OR (
+                              execution_owner_token IS NULL
+                              AND execution_generation=0
+                              AND execution_heartbeat_at IS NULL
+                              AND updated_at<=%s
+                            )
+                          )
                     RETURNING *""",
                     (
+                        normalized_owner_token,
                         now,
+                        int(now),
                         operation_id,
                         request_hash,
                         operation,
                         expected_claim_updated_at,
+                        expected_execution_owner_token,
+                        expected_execution_generation,
+                        expected_execution_heartbeat_at,
+                        lease_cutoff is None,
+                        (
+                            lease_cutoff
+                            if lease_cutoff is not None
+                            else 0.0
+                        ),
                     ),
                 ).fetchone()
                 if claimed is None:
@@ -2921,6 +3033,10 @@ class PostgresState:
                         "operation_id": operation_id,
                         "request_hash": request_hash,
                         "request": request,
+                        "execution_owner_token": normalized_owner_token,
+                        "execution_generation": int(
+                            claimed["execution_generation"]
+                        ),
                     },
                 )
                 claimed_dict = dict(claimed)
@@ -2930,6 +3046,533 @@ class PostgresState:
                 event_kind="historical_operation.requested",
             )
             return claimed_dict, requested_event_id, True
+
+    def historical_operation_preflight_claim_is_stale(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float,
+    ) -> bool:
+        normalized_lease_duration = _historical_lease_duration_seconds(
+            lease_duration_s
+        )
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s
+                        FOR UPDATE""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                state_now = self._historical_database_clock_epoch()
+                side_effect_event = self._conn.execute(
+                    """SELECT event_id
+                         FROM events
+                        WHERE run_id=%s
+                          AND kind IN (
+                            'historical_operation.requested',
+                            'historical_operation.completed',
+                            'historical_operation.failed'
+                          )
+                        LIMIT 1""",
+                    (operation_id,),
+                ).fetchone()
+                return (
+                    str(claim["request_hash"]) == request_hash
+                    and str(claim["operation"]) == operation
+                    and str(claim["status"]) == "running"
+                    and claim["terminal_event_id"] is None
+                    and claim["updated_at"] == expected_claim_updated_at
+                    and claim["execution_owner_token"] is None
+                    and expected_execution_owner_token is None
+                    and (
+                        claim["execution_generation"]
+                        == expected_execution_generation
+                    )
+                    and int(claim["execution_generation"] or 0) == 0
+                    and claim["execution_heartbeat_at"] is None
+                    and expected_execution_heartbeat_at is None
+                    and side_effect_event is None
+                    and _historical_lease_is_expired(
+                        claim["updated_at"],
+                        state_now=state_now,
+                        lease_duration_s=normalized_lease_duration,
+                    )
+                )
+
+    def release_historical_operation_preflight(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        payload: dict[str, Any],
+    ) -> int | None:
+        if (
+            str(payload.get("operation_id") or "") != operation_id
+            or str(payload.get("request_hash") or "") != request_hash
+            or str(payload.get("operation") or "") != operation
+        ):
+            raise ValueError(
+                "historical preflight release payload does not match its claim"
+            )
+        committed_event_id: int | None = None
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s
+                        FOR UPDATE""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                state_now = self._historical_database_clock_epoch()
+                side_effect_event = self._conn.execute(
+                    """SELECT event_id
+                         FROM events
+                        WHERE run_id=%s
+                          AND kind IN (
+                            'historical_operation.requested',
+                            'historical_operation.completed',
+                            'historical_operation.failed'
+                          )
+                        LIMIT 1""",
+                    (operation_id,),
+                ).fetchone()
+                may_release = (
+                    str(claim["request_hash"]) == request_hash
+                    and str(claim["operation"]) == operation
+                    and str(claim["status"]) == "running"
+                    and claim["terminal_event_id"] is None
+                    and claim["updated_at"] == expected_claim_updated_at
+                    and claim["execution_owner_token"] is None
+                    and expected_execution_owner_token is None
+                    and (
+                        claim["execution_generation"]
+                        == expected_execution_generation
+                    )
+                    and int(claim["execution_generation"] or 0) == 0
+                    and claim["execution_heartbeat_at"] is None
+                    and expected_execution_heartbeat_at is None
+                    and side_effect_event is None
+                )
+                if not may_release:
+                    return None
+                next_updated_at = max(
+                    int(state_now),
+                    int(claim["updated_at"]) + 1,
+                )
+                released = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET updated_at=%s
+                        WHERE operation_id=%s
+                          AND request_hash=%s
+                          AND operation=%s
+                          AND status='running'
+                          AND terminal_event_id IS NULL
+                          AND updated_at IS NOT DISTINCT FROM %s
+                          AND execution_owner_token IS NULL
+                          AND execution_generation=0
+                          AND execution_heartbeat_at IS NULL
+                      RETURNING operation_id""",
+                    (
+                        next_updated_at,
+                        operation_id,
+                        request_hash,
+                        operation,
+                        expected_claim_updated_at,
+                    ),
+                ).fetchone()
+                if released is None:
+                    return None
+                committed_event_id = self._insert_event_unlocked(
+                    run_id=operation_id,
+                    source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                    kind="historical_operation.preflight_released",
+                    payload=payload,
+                )
+            if committed_event_id is not None:
+                self._coordinate_committed_event(
+                    run_id=operation_id,
+                    event_id=committed_event_id,
+                    event_kind="historical_operation.preflight_released",
+                )
+        return committed_event_id
+
+    def heartbeat_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        owner_token: str,
+        execution_generation: int,
+    ) -> bool:
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET execution_heartbeat_at=EXTRACT(
+                                EPOCH FROM clock_timestamp()
+                              ),
+                              updated_at=FLOOR(
+                                EXTRACT(EPOCH FROM clock_timestamp())
+                              )::BIGINT
+                        WHERE operation_id=%s
+                          AND request_hash=%s
+                          AND status='running'
+                          AND terminal_event_id IS NULL
+                          AND execution_owner_token=%s
+                          AND execution_generation=%s
+                      RETURNING operation_id""",
+                    (
+                        operation_id,
+                        request_hash,
+                        str(owner_token),
+                        int(execution_generation),
+                    ),
+                ).fetchone()
+                return row is not None
+
+    def take_over_stale_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        new_owner_token: str,
+        expected_requested_event_id: int,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float,
+    ) -> tuple[dict[str, Any], bool]:
+        normalized_owner_token = str(new_owner_token).strip()
+        if not normalized_owner_token:
+            raise ValueError(
+                "historical operation execution owner token is required"
+            )
+        normalized_lease_duration = _historical_lease_duration_seconds(
+            lease_duration_s
+        )
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s
+                        FOR UPDATE""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                now = self._historical_database_clock_epoch()
+                lease_cutoff = now - normalized_lease_duration
+                requested_events = self._conn.execute(
+                    """SELECT event_id, source, payload_json
+                         FROM events
+                        WHERE run_id=%s
+                          AND kind='historical_operation.requested'
+                        ORDER BY event_id ASC
+                        LIMIT 2""",
+                    (operation_id,),
+                ).fetchall()
+                requested_is_valid = False
+                if len(requested_events) == 1:
+                    requested_payload = _as_payload(
+                        requested_events[0]["payload_json"]
+                    )
+                    requested_is_valid = (
+                        int(requested_events[0]["event_id"])
+                        == int(expected_requested_event_id)
+                        and str(requested_events[0]["source"])
+                        == HISTORICAL_OPERATION_EVENT_SOURCE
+                        and str(
+                            requested_payload.get("operation_id") or ""
+                        )
+                        == operation_id
+                        and str(
+                            requested_payload.get("request_hash") or ""
+                        )
+                        == request_hash
+                    )
+                heartbeat_value = claim["execution_heartbeat_at"]
+                lease_value = (
+                    claim["updated_at"]
+                    if claim["execution_owner_token"] is None
+                    and heartbeat_value is None
+                    else heartbeat_value
+                )
+                lease_is_stale = False
+                if not isinstance(lease_value, bool):
+                    try:
+                        lease_is_stale = (
+                            float(lease_value) <= lease_cutoff
+                        )
+                    except (TypeError, ValueError):
+                        lease_is_stale = False
+                may_take_over = (
+                    str(claim["request_hash"]) == request_hash
+                    and str(claim["operation"]) == operation
+                    and str(claim["status"]) == "running"
+                    and claim["terminal_event_id"] is None
+                    and claim["updated_at"] == expected_claim_updated_at
+                    and (
+                        claim["execution_owner_token"]
+                        == expected_execution_owner_token
+                    )
+                    and (
+                        claim["execution_generation"]
+                        == expected_execution_generation
+                    )
+                    and (
+                        heartbeat_value
+                        == expected_execution_heartbeat_at
+                    )
+                    and requested_is_valid
+                    and lease_is_stale
+                )
+                if not may_take_over:
+                    return dict(claim), False
+                taken = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET execution_owner_token=%s,
+                              execution_generation=execution_generation + 1,
+                              execution_heartbeat_at=%s,
+                              updated_at=%s
+                        WHERE operation_id=%s
+                          AND request_hash=%s
+                          AND operation=%s
+                          AND status='running'
+                          AND terminal_event_id IS NULL
+                          AND updated_at IS NOT DISTINCT FROM %s
+                          AND execution_owner_token
+                                IS NOT DISTINCT FROM %s
+                          AND execution_generation=%s
+                          AND execution_heartbeat_at
+                                IS NOT DISTINCT FROM %s
+                          AND (
+                            (
+                              execution_owner_token IS NULL
+                              AND execution_heartbeat_at IS NULL
+                              AND updated_at<=%s
+                            )
+                            OR (
+                              execution_owner_token IS NOT NULL
+                              AND execution_heartbeat_at IS NOT NULL
+                              AND execution_heartbeat_at<=%s
+                            )
+                          )
+                      RETURNING *""",
+                    (
+                        normalized_owner_token,
+                        now,
+                        int(now),
+                        operation_id,
+                        request_hash,
+                        operation,
+                        expected_claim_updated_at,
+                        expected_execution_owner_token,
+                        expected_execution_generation,
+                        expected_execution_heartbeat_at,
+                        lease_cutoff,
+                        lease_cutoff,
+                    ),
+                ).fetchone()
+                if taken is not None:
+                    return dict(taken), True
+                current = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                       WHERE operation_id=%s""",
+                    (operation_id,),
+                ).fetchone()
+                if current is None:
+                    raise RuntimeError(
+                        "historical operation execution claim disappeared"
+                    )
+                return dict(current), False
+
+    def terminalize_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        owner_token: str,
+        execution_generation: int,
+        status: str,
+        payload: dict[str, Any],
+    ) -> tuple[int | None, bool]:
+        if status not in {"completed", "failed"}:
+            raise ValueError(
+                "historical operation terminal status must be completed or failed"
+            )
+        expected_kind = f"historical_operation.{status}"
+        prepared_payload = _event_payload(
+            run_id=operation_id,
+            source=HISTORICAL_OPERATION_EVENT_SOURCE,
+            kind=expected_kind,
+            payload=payload,
+        )
+        committed_event_id: int | None = None
+        created = False
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=%s
+                        FOR UPDATE""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                if (
+                    str(claim["request_hash"]) != request_hash
+                    or str(claim["operation"]) != operation
+                ):
+                    raise RuntimeError(
+                        "historical operation terminal identity does not "
+                        "match its claim"
+                    )
+                if str(claim["status"]) != "running":
+                    existing_event_id = int(
+                        claim["terminal_event_id"] or 0
+                    )
+                    existing = self._conn.execute(
+                        """SELECT source, kind, payload_json
+                             FROM events
+                            WHERE run_id=%s AND event_id=%s""",
+                        (operation_id, existing_event_id),
+                    ).fetchone()
+                    if (
+                        str(claim["status"]) == status
+                        and existing is not None
+                        and str(existing["source"])
+                        == HISTORICAL_OPERATION_EVENT_SOURCE
+                        and str(existing["kind"]) == expected_kind
+                        and _as_payload(existing["payload_json"])
+                        == prepared_payload
+                    ):
+                        committed_event_id = existing_event_id
+                    else:
+                        return None, False
+                elif (
+                    str(claim["execution_owner_token"] or "")
+                    != str(owner_token)
+                    or int(claim["execution_generation"] or 0)
+                    != int(execution_generation)
+                    or claim["terminal_event_id"] is not None
+                ):
+                    return None, False
+                else:
+                    try:
+                        requested_event_id = int(
+                            payload.get("requested_event_id")
+                        )
+                    except (TypeError, ValueError) as exc:
+                        raise RuntimeError(
+                            "historical operation terminal requested event "
+                            "linkage is invalid"
+                        ) from exc
+                    requested_events = self._conn.execute(
+                        """SELECT event_id, source, payload_json
+                             FROM events
+                            WHERE run_id=%s
+                              AND kind='historical_operation.requested'
+                            ORDER BY event_id ASC
+                            LIMIT 2""",
+                        (operation_id,),
+                    ).fetchall()
+                    if len(requested_events) != 1:
+                        raise RuntimeError(
+                            "historical operation terminal requested event "
+                            "linkage is invalid"
+                        )
+                    requested_payload = _as_payload(
+                        requested_events[0]["payload_json"]
+                    )
+                    if (
+                        int(requested_events[0]["event_id"])
+                        != requested_event_id
+                        or str(requested_events[0]["source"])
+                        != HISTORICAL_OPERATION_EVENT_SOURCE
+                        or str(
+                            requested_payload.get("operation_id") or ""
+                        )
+                        != operation_id
+                        or str(
+                            requested_payload.get("request_hash") or ""
+                        )
+                        != request_hash
+                    ):
+                        raise RuntimeError(
+                            "historical operation terminal requested event "
+                            "linkage is invalid"
+                        )
+                    committed_event_id = self._insert_event_unlocked(
+                        run_id=operation_id,
+                        source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                        kind=expected_kind,
+                        payload=payload,
+                        prepared_payload=prepared_payload,
+                    )
+                    terminalized = self._conn.execute(
+                        """UPDATE historical_operation_claims
+                              SET status=%s,
+                                  terminal_event_id=%s,
+                                  updated_at=FLOOR(
+                                    EXTRACT(EPOCH FROM clock_timestamp())
+                                  )::BIGINT
+                            WHERE operation_id=%s
+                              AND request_hash=%s
+                              AND operation=%s
+                              AND status='running'
+                              AND terminal_event_id IS NULL
+                              AND execution_owner_token=%s
+                              AND execution_generation=%s
+                          RETURNING operation_id""",
+                        (
+                            status,
+                            committed_event_id,
+                            operation_id,
+                            request_hash,
+                            operation,
+                            str(owner_token),
+                            int(execution_generation),
+                        ),
+                    ).fetchone()
+                    if terminalized is None:
+                        raise RuntimeError(
+                            "historical operation terminal owner fence was lost"
+                        )
+                    created = True
+            if committed_event_id is not None:
+                self._coordinate_committed_event(
+                    run_id=operation_id,
+                    event_id=committed_event_id,
+                    event_kind=expected_kind,
+                )
+        return committed_event_id, created
 
     def complete_historical_operation(
         self,
@@ -2943,7 +3586,6 @@ class PostgresState:
             raise ValueError(
                 "historical operation terminal status must be completed or failed"
             )
-        now = int(time.time())
         with self._write_lock:
             with self._conn.transaction():
                 claim = self._conn.execute(
@@ -3031,15 +3673,21 @@ class PostgresState:
                     )
                 row = self._conn.execute(
                     """UPDATE historical_operation_claims
-                          SET status=%s, terminal_event_id=%s, updated_at=%s
+                          SET status=%s,
+                              terminal_event_id=%s,
+                              updated_at=FLOOR(
+                                EXTRACT(EPOCH FROM clock_timestamp())
+                              )::BIGINT
                         WHERE operation_id=%s
                           AND request_hash=%s
                           AND status='running'
+                          AND execution_owner_token IS NULL
+                          AND execution_generation=0
+                          AND execution_heartbeat_at IS NULL
                       RETURNING *""",
                     (
                         status,
                         int(terminal_event_id),
-                        now,
                         operation_id,
                         request_hash,
                     ),

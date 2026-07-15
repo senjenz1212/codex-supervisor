@@ -16,7 +16,7 @@ import inspect
 import json
 import re
 import threading
-import time
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -416,8 +416,80 @@ class HistoricalState(Protocol):
         request_hash: str,
         operation: str,
         request: dict[str, Any],
+        owner_token: str,
         expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float | None = None,
     ) -> tuple[Mapping[str, Any], int | None, bool]:
+        ...
+
+    def historical_operation_preflight_claim_is_stale(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float,
+    ) -> bool:
+        ...
+
+    def release_historical_operation_preflight(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        payload: dict[str, Any],
+    ) -> int | None:
+        ...
+
+    def heartbeat_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        owner_token: str,
+        execution_generation: int,
+    ) -> bool:
+        ...
+
+    def take_over_stale_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        new_owner_token: str,
+        expected_requested_event_id: int,
+        expected_claim_updated_at: Any,
+        expected_execution_owner_token: Any,
+        expected_execution_generation: Any,
+        expected_execution_heartbeat_at: Any,
+        lease_duration_s: float,
+    ) -> tuple[Mapping[str, Any], bool]:
+        ...
+
+    def terminalize_historical_operation_execution(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+        owner_token: str,
+        execution_generation: int,
+        status: str,
+        payload: dict[str, Any],
+    ) -> tuple[int | None, bool]:
         ...
 
     def complete_historical_operation(
@@ -459,6 +531,60 @@ class HistoricalState(Protocol):
 
     def verify_event_ledger(self, run_id: str) -> Any:
         ...
+
+
+class _HistoricalExecutionHeartbeat:
+    """Refresh one persisted execution lease from a dedicated thread."""
+
+    def __init__(
+        self,
+        *,
+        state: HistoricalState,
+        operation_id: str,
+        request_hash: str,
+        owner_token: str,
+        execution_generation: int,
+        interval_s: float,
+    ) -> None:
+        self._state = state
+        self._operation_id = operation_id
+        self._request_hash = request_hash
+        self._owner_token = owner_token
+        self._execution_generation = execution_generation
+        self._interval_s = interval_s
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"historical-heartbeat-{operation_id[-12:]}",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> bool:
+        self._stop.set()
+        if self._thread.ident is None:
+            return True
+        self._thread.join(timeout=max(2.0, self._interval_s * 4))
+        return not self._thread.is_alive()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval_s):
+            try:
+                owned = self._state.heartbeat_historical_operation_execution(
+                    operation_id=self._operation_id,
+                    request_hash=self._request_hash,
+                    owner_token=self._owner_token,
+                    execution_generation=self._execution_generation,
+                )
+            except Exception:
+                # A final synchronous fenced heartbeat decides whether the
+                # caller may publish a terminal result. Transient failures here
+                # therefore remain fail closed without killing the executor.
+                continue
+            if not owned:
+                return
 
 
 class HistoricalEvaluationService:
@@ -535,6 +661,7 @@ class HistoricalEvaluationService:
         prior_requested_event_id, preflight_released, existing = (
             self._existing_terminal_receipt(request)
         )
+        stale_preflight_recovery = False
         if existing is not None:
             self._state.complete_historical_operation(
                 operation_id=request.operation_id,
@@ -561,50 +688,96 @@ class HistoricalEvaluationService:
                     "historical operation claim is completed but its "
                     "completion event is missing"
                 )
-            recoverable = (
-                request.operation_id in self._preflight_failed_operations
-                or self._claim_is_stale(claim)
-                or (
-                    preflight_released
-                    and prior_requested_event_id is None
-                )
-            )
-            if not recoverable:
-                raise HistoricalOperationInProgress(
-                    "historical operation is already running in another "
-                    "process"
-                )
             if prior_requested_event_id is not None:
                 self._resolve_stale_claim_as_failed(
                     request,
+                    claim=claim,
                     requested_event_id=prior_requested_event_id,
                 )
+            recoverable = (
+                request.operation_id in self._preflight_failed_operations
+                or preflight_released
+            )
+            if not recoverable:
+                stale_preflight_recovery = (
+                    self._state.historical_operation_preflight_claim_is_stale(
+                        operation_id=request.operation_id,
+                        request_hash=request.request_hash,
+                        operation=request.operation.value,
+                        expected_claim_updated_at=claim.get("updated_at"),
+                        expected_execution_owner_token=claim.get(
+                            "execution_owner_token"
+                        ),
+                        expected_execution_generation=claim.get(
+                            "execution_generation"
+                        ),
+                        expected_execution_heartbeat_at=claim.get(
+                            "execution_heartbeat_at"
+                        ),
+                        lease_duration_s=self._claim_stale_after_s,
+                    )
+                )
+                if not stale_preflight_recovery:
+                    raise HistoricalOperationInProgress(
+                        "historical operation is already running in another "
+                        "process"
+                    )
         self._preflight_failed_operations.discard(request.operation_id)
         try:
             self._verify_source(request.source)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._preflight_failed_operations.add(request.operation_id)
-            self._state.write_historical_operation_event(
-                run_id=request.operation_id,
-                kind=HISTORICAL_OPERATION_PREFLIGHT_RELEASED_EVENT_KIND,
-                payload={
-                    "operation_id": request.operation_id,
-                    "request_hash": request.request_hash,
-                    "operation": request.operation.value,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                },
+            released_event_id = (
+                self._state.release_historical_operation_preflight(
+                    operation_id=request.operation_id,
+                    request_hash=request.request_hash,
+                    operation=request.operation.value,
+                    expected_claim_updated_at=claim.get("updated_at"),
+                    expected_execution_owner_token=claim.get(
+                        "execution_owner_token"
+                    ),
+                    expected_execution_generation=claim.get(
+                        "execution_generation"
+                    ),
+                    expected_execution_heartbeat_at=claim.get(
+                        "execution_heartbeat_at"
+                    ),
+                    payload={
+                        "operation_id": request.operation_id,
+                        "request_hash": request.request_hash,
+                        "operation": request.operation.value,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
             )
+            if released_event_id is not None:
+                self._preflight_failed_operations.add(request.operation_id)
             raise
+        execution_owner_token = uuid.uuid4().hex
         execution_claim, requested_event_id, execution_claimed = (
             self._state.claim_historical_operation_execution(
                 operation_id=request.operation_id,
                 request_hash=request.request_hash,
                 operation=request.operation.value,
                 request=request.to_dict(),
+                owner_token=execution_owner_token,
                 expected_claim_updated_at=claim.get("updated_at"),
+                expected_execution_owner_token=claim.get(
+                    "execution_owner_token"
+                ),
+                expected_execution_generation=claim.get(
+                    "execution_generation"
+                ),
+                expected_execution_heartbeat_at=claim.get(
+                    "execution_heartbeat_at"
+                ),
+                lease_duration_s=(
+                    self._claim_stale_after_s
+                    if stale_preflight_recovery
+                    else None
+                ),
             )
         )
         self._validate_claim(request, execution_claim)
@@ -637,12 +810,10 @@ class HistoricalEvaluationService:
                     "historical operation claim is completed but its "
                     "completion event is missing"
                 )
-            if (
-                prior_requested_event_id is not None
-                and self._claim_is_stale(execution_claim)
-            ):
+            if prior_requested_event_id is not None:
                 self._resolve_stale_claim_as_failed(
                     request,
+                    claim=execution_claim,
                     requested_event_id=prior_requested_event_id,
                 )
             raise HistoricalOperationInProgress(
@@ -653,108 +824,163 @@ class HistoricalEvaluationService:
             raise HistoricalEvidenceError(
                 "historical operation execution claim has no requested event"
             )
+        if (
+            str(execution_claim.get("execution_owner_token") or "")
+            != execution_owner_token
+        ):
+            raise HistoricalEvidenceError(
+                "historical operation execution owner was not persisted"
+            )
+        execution_generation = self._execution_generation(execution_claim)
+        if not self._state.heartbeat_historical_operation_execution(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            owner_token=execution_owner_token,
+            execution_generation=execution_generation,
+        ):
+            raise HistoricalOperationInProgress(
+                "historical operation execution ownership changed before "
+                "the executor could start"
+            )
 
+        heartbeat = _HistoricalExecutionHeartbeat(
+            state=self._state,
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            owner_token=execution_owner_token,
+            execution_generation=execution_generation,
+            interval_s=self._heartbeat_interval_s(),
+        )
+        heartbeat.start()
         try:
-            raw_result = self._executors[request.operation](request)
-            if inspect.isawaitable(raw_result):
-                raw_result = await raw_result
-            result = _redact_result_mapping(raw_result)
-            self._validate_result(request, result)
-            result_ref = _required_text(
-                "result.artifact_ref",
-                result.get("artifact_ref"),
+            try:
+                raw_result = self._executors[request.operation](request)
+                if inspect.isawaitable(raw_result):
+                    raw_result = await raw_result
+                result = _redact_result_mapping(raw_result)
+                self._validate_result(request, result)
+                result_ref = _required_text(
+                    "result.artifact_ref",
+                    result.get("artifact_ref"),
+                )
+                result_sha256 = _required_sha256(
+                    "result.artifact_sha256",
+                    result.get("artifact_sha256"),
+                )
+                self._verify_evidence(
+                    ref=result_ref,
+                    expected_sha256=result_sha256,
+                    label="historical result artifact",
+                )
+                if request.operation is HistoricalOperation.RERUN:
+                    self._verify_rerun_manifest(request, result)
+                self._verify_source(request.source)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                try:
+                    self._stop_and_confirm_execution_ownership(
+                        request=request,
+                        owner_token=execution_owner_token,
+                        execution_generation=execution_generation,
+                        heartbeat=heartbeat,
+                    )
+                except Exception as ownership_exc:
+                    raise ownership_exc from exc
+                failed_event_id, _created = (
+                    self._state.terminalize_historical_operation_execution(
+                        operation_id=request.operation_id,
+                        request_hash=request.request_hash,
+                        operation=request.operation.value,
+                        owner_token=execution_owner_token,
+                        execution_generation=execution_generation,
+                        status="failed",
+                        payload={
+                            "operation_id": request.operation_id,
+                            "request_hash": request.request_hash,
+                            "operation": request.operation.value,
+                            "requested_event_id": requested_event_id,
+                            "execution_owner_token": execution_owner_token,
+                            "execution_generation": execution_generation,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    )
+                )
+                if failed_event_id is None:
+                    raise HistoricalOperationInProgress(
+                        "historical operation execution ownership changed "
+                        "before failure could be recorded"
+                    ) from exc
+                self._verify_terminal_checkpoint(
+                    operation_id=request.operation_id,
+                    event_id=failed_event_id,
+                    event_kind="historical_operation.failed",
+                )
+                raise
+
+            self._stop_and_confirm_execution_ownership(
+                request=request,
+                owner_token=execution_owner_token,
+                execution_generation=execution_generation,
+                heartbeat=heartbeat,
             )
-            result_sha256 = _required_sha256(
-                "result.artifact_sha256",
-                result.get("artifact_sha256"),
-            )
-            self._verify_evidence(
-                ref=result_ref,
-                expected_sha256=result_sha256,
-                label="historical result artifact",
-            )
-            if request.operation is HistoricalOperation.RERUN:
-                self._verify_rerun_manifest(request, result)
-            self._verify_source(request.source)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            failed_event_id = (
-                self._state.write_historical_operation_event(
-                run_id=request.operation_id,
-                kind="historical_operation.failed",
-                payload={
-                    "operation_id": request.operation_id,
-                    "request_hash": request.request_hash,
-                    "operation": request.operation.value,
-                    "requested_event_id": requested_event_id,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                },
+            receipt_body = {
+                "schema_version": HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION,
+                "operation_id": request.operation_id,
+                "operation": request.operation.value,
+                "request_hash": request.request_hash,
+                "source_run_id": request.source.source_run_id,
+                "task_id": request.source.task_id,
+                "result_ref": result_ref,
+                "result_sha256": result_sha256,
+                "result": result,
+                "requested_event_id": requested_event_id,
+                "redaction_rules_version": RECEIPT_REDACTION_RULES_VERSION,
+            }
+            receipt_hash = _sha256_json(receipt_body)
+            completed_event_id, _created = (
+                self._state.terminalize_historical_operation_execution(
+                    operation_id=request.operation_id,
+                    request_hash=request.request_hash,
+                    operation=request.operation.value,
+                    owner_token=execution_owner_token,
+                    execution_generation=execution_generation,
+                    status="completed",
+                    payload={
+                        **receipt_body,
+                        "receipt_hash": receipt_hash,
+                        "execution_owner_token": execution_owner_token,
+                        "execution_generation": execution_generation,
+                    },
                 )
             )
-            self._state.complete_historical_operation(
-                operation_id=request.operation_id,
-                request_hash=request.request_hash,
-                status="failed",
-                terminal_event_id=failed_event_id,
-            )
+            if completed_event_id is None:
+                raise HistoricalOperationInProgress(
+                    "historical operation execution ownership changed "
+                    "before completion could be recorded"
+                )
             self._verify_terminal_checkpoint(
                 operation_id=request.operation_id,
-                event_id=failed_event_id,
-                event_kind="historical_operation.failed",
+                event_id=completed_event_id,
+                event_kind="historical_operation.completed",
             )
-            raise
-
-        receipt_body = {
-            "schema_version": HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION,
-            "operation_id": request.operation_id,
-            "operation": request.operation.value,
-            "request_hash": request.request_hash,
-            "source_run_id": request.source.source_run_id,
-            "task_id": request.source.task_id,
-            "result_ref": result_ref,
-            "result_sha256": result_sha256,
-            "result": result,
-            "requested_event_id": requested_event_id,
-            "redaction_rules_version": RECEIPT_REDACTION_RULES_VERSION,
-        }
-        receipt_hash = _sha256_json(receipt_body)
-        completed_event_id = (
-            self._state.write_historical_operation_event(
-            run_id=request.operation_id,
-            kind="historical_operation.completed",
-            payload={
-                **receipt_body,
-                "receipt_hash": receipt_hash,
-            },
+            return HistoricalOperationReceipt(
+                operation_id=request.operation_id,
+                operation=request.operation,
+                request_hash=request.request_hash,
+                source_run_id=request.source.source_run_id,
+                task_id=request.source.task_id,
+                result_ref=result_ref,
+                result_sha256=result_sha256,
+                result=result,
+                requested_event_id=requested_event_id,
+                completed_event_id=completed_event_id,
+                receipt_hash=receipt_hash,
+                redaction_rules_version=RECEIPT_REDACTION_RULES_VERSION,
             )
-        )
-        self._state.complete_historical_operation(
-            operation_id=request.operation_id,
-            request_hash=request.request_hash,
-            status="completed",
-            terminal_event_id=completed_event_id,
-        )
-        self._verify_terminal_checkpoint(
-            operation_id=request.operation_id,
-            event_id=completed_event_id,
-            event_kind="historical_operation.completed",
-        )
-        return HistoricalOperationReceipt(
-            operation_id=request.operation_id,
-            operation=request.operation,
-            request_hash=request.request_hash,
-            source_run_id=request.source.source_run_id,
-            task_id=request.source.task_id,
-            result_ref=result_ref,
-            result_sha256=result_sha256,
-            result=result,
-            requested_event_id=requested_event_id,
-            completed_event_id=completed_event_id,
-            receipt_hash=receipt_hash,
-            redaction_rules_version=RECEIPT_REDACTION_RULES_VERSION,
-        )
+        finally:
+            heartbeat.stop()
 
     def _acquire_operation_lock(self, operation_id: str) -> asyncio.Lock:
         with self._locks_guard:
@@ -772,33 +998,120 @@ class HistoricalEvaluationService:
             else:
                 self._locks[operation_id] = (lock, holders - 1)
 
+    def _heartbeat_interval_s(self) -> float:
+        return min(5.0, max(0.1, self._claim_stale_after_s / 4.0))
+
+    @staticmethod
+    def _execution_generation(claim: Mapping[str, Any]) -> int:
+        value = claim.get("execution_generation")
+        if isinstance(value, bool):
+            raise HistoricalEvidenceError(
+                "historical operation execution generation is invalid"
+            )
+        try:
+            generation = int(value)
+        except (TypeError, ValueError) as exc:
+            raise HistoricalEvidenceError(
+                "historical operation execution generation is invalid"
+            ) from exc
+        if generation <= 0:
+            raise HistoricalEvidenceError(
+                "historical operation execution generation is invalid"
+            )
+        return generation
+
+    def _stop_and_confirm_execution_ownership(
+        self,
+        *,
+        request: HistoricalOperationRequest,
+        owner_token: str,
+        execution_generation: int,
+        heartbeat: _HistoricalExecutionHeartbeat,
+    ) -> None:
+        if not heartbeat.stop():
+            raise HistoricalEvidenceError(
+                "historical operation heartbeat worker did not stop"
+            )
+        if not self._state.heartbeat_historical_operation_execution(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            owner_token=owner_token,
+            execution_generation=execution_generation,
+        ):
+            raise HistoricalOperationInProgress(
+                "historical operation execution ownership changed while "
+                "the executor was running"
+            )
+
     def _resolve_stale_claim_as_failed(
         self,
         request: HistoricalOperationRequest,
         *,
+        claim: Mapping[str, Any],
         requested_event_id: int,
     ) -> None:
-        failed_event_id = self._state.write_historical_operation_event(
-            run_id=request.operation_id,
-            kind="historical_operation.failed",
-            payload={
-                "operation_id": request.operation_id,
-                "request_hash": request.request_hash,
-                "operation": request.operation.value,
-                "requested_event_id": requested_event_id,
-                "error_type": "HistoricalOperationIndeterminate",
-                "error": (
-                    "running claim lease expired after the side-effect "
-                    "boundary was crossed; resolved to terminal failure"
+        takeover_owner_token = uuid.uuid4().hex
+        takeover_claim, took_over = (
+            self._state.take_over_stale_historical_operation_execution(
+                operation_id=request.operation_id,
+                request_hash=request.request_hash,
+                operation=request.operation.value,
+                new_owner_token=takeover_owner_token,
+                expected_requested_event_id=requested_event_id,
+                expected_claim_updated_at=claim.get("updated_at"),
+                expected_execution_owner_token=claim.get(
+                    "execution_owner_token"
                 ),
-            },
+                expected_execution_generation=claim.get(
+                    "execution_generation"
+                ),
+                expected_execution_heartbeat_at=claim.get(
+                    "execution_heartbeat_at"
+                ),
+                lease_duration_s=self._claim_stale_after_s,
+            )
         )
-        self._state.complete_historical_operation(
-            operation_id=request.operation_id,
-            request_hash=request.request_hash,
-            status="failed",
-            terminal_event_id=failed_event_id,
+        self._validate_claim(request, takeover_claim)
+        if not took_over:
+            raise HistoricalOperationInProgress(
+                "historical operation stale-owner takeover lost its "
+                "compare-and-set race"
+            )
+        execution_generation = self._execution_generation(takeover_claim)
+        if (
+            str(takeover_claim.get("execution_owner_token") or "")
+            != takeover_owner_token
+        ):
+            raise HistoricalEvidenceError(
+                "historical operation stale takeover owner was not persisted"
+            )
+        failed_event_id, _created = (
+            self._state.terminalize_historical_operation_execution(
+                operation_id=request.operation_id,
+                request_hash=request.request_hash,
+                operation=request.operation.value,
+                owner_token=takeover_owner_token,
+                execution_generation=execution_generation,
+                status="failed",
+                payload={
+                    "operation_id": request.operation_id,
+                    "request_hash": request.request_hash,
+                    "operation": request.operation.value,
+                    "requested_event_id": requested_event_id,
+                    "execution_owner_token": takeover_owner_token,
+                    "execution_generation": execution_generation,
+                    "error_type": "HistoricalOperationIndeterminate",
+                    "error": (
+                        "running claim lease expired after the side-effect "
+                        "boundary was crossed; resolved to terminal failure"
+                    ),
+                },
+            )
         )
+        if failed_event_id is None:
+            raise HistoricalOperationInProgress(
+                "historical operation stale takeover lost terminal ownership"
+            )
         self._verify_terminal_checkpoint(
             operation_id=request.operation_id,
             event_id=failed_event_id,
@@ -809,16 +1122,6 @@ class HistoricalEvaluationService:
             "the side-effect boundary; it was resolved to a terminal "
             "failure, use a new idempotency key after correcting the cause"
         )
-
-    def _claim_is_stale(self, claim: Mapping[str, Any]) -> bool:
-        updated_at_value = claim.get("updated_at")
-        if isinstance(updated_at_value, bool):
-            return False
-        try:
-            updated_at = int(updated_at_value)
-        except (TypeError, ValueError):
-            return False
-        return int(time.time()) - updated_at >= self._claim_stale_after_s
 
     def _require_authoritative_state(self) -> None:
         if (

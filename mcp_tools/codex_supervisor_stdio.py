@@ -5039,13 +5039,24 @@ class CodexSupervisorMcpAPI:
         leads, agentic planners/workers, and runtime-backed reviewers, but it
         never invents a missing run, session, or result hash.
         """
+        parent_run = self.state.get_run(run_id)
         if (
-            self.state.get_run(run_id) is None
+            parent_run is None
             or self.state.get_run_snapshot(run_id) is None
         ):
             raise RuntimeError(
                 f"workflow run is not registered for runtime binding: {run_id}"
             )
+        workflow_task = str(parent_run["task"] or "").strip()
+        if not workflow_task:
+            raise RuntimeError(
+                f"workflow run task is missing for runtime binding: {run_id}"
+            )
+        # ``task`` is the gate/reviewer instruction that produced the runtime
+        # receipt. It remains bound by that receipt. The child run registration
+        # carries the immutable parent workflow task so a gate-specific prompt
+        # cannot redefine the workflow's authority identity.
+        _ = task
 
         registrations: list[dict[str, Any]] = []
         seen_sessions: dict[str, tuple[str, str, str]] = {}
@@ -5181,7 +5192,7 @@ class CodexSupervisorMcpAPI:
                 workflow_run_id=run_id,
                 target_session_id=session_id,
                 task_id=task_id,
-                task=task,
+                task=workflow_task,
                 target_kind=runtime_kind,
                 cwd=cwd,
                 gate=gate,

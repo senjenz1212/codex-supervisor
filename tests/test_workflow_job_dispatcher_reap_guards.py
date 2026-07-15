@@ -252,6 +252,13 @@ class _FastExitProcess:
         return 0
 
 
+class _LiveProcess:
+    pid = 54321
+
+    def poll(self) -> None:
+        return None
+
+
 def test_spawn_persistence_failure_retains_durable_cleanup_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -292,13 +299,24 @@ def test_spawn_persistence_failure_retains_durable_cleanup_owner(
         "terminate_containment",
         unsafe_termination,
     )
+    containment_id = "containment-persist-failure"
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     dispatcher = WorkflowJobDispatcher(
         state,
         dispatcher_id="dispatcher-test",
-        popen=lambda *_args, **_kwargs: _FastExitProcess(),
+        popen=lambda *_args, **_kwargs: _LiveProcess(),
         process_identity_probe=lambda _pid: (54321, 222.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "_process_containment_id",
+        lambda _pid: containment_id,
     )
 
     result = dispatcher.run_once(job_id="persist-failure")
@@ -340,13 +358,24 @@ def test_spawn_persistence_failure_uses_reap_proof_before_retry(
         "record_dual_agent_workflow_job_spawned",
         fail_spawned_identity,
     )
+    containment_id = "containment-persist-failure-reaped"
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "new_containment_id",
+        lambda: containment_id,
+    )
     dispatcher = WorkflowJobDispatcher(
         state,
         dispatcher_id="dispatcher-test",
-        popen=lambda *_args, **_kwargs: _FastExitProcess(),
+        popen=lambda *_args, **_kwargs: _LiveProcess(),
         process_identity_probe=lambda _pid: (54321, 222.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "_process_containment_id",
+        lambda _pid: containment_id,
     )
 
     result = dispatcher.run_once(job_id="persist-failure-reaped")
@@ -418,7 +447,60 @@ def test_termination_forwards_observed_start_when_persisted_start_missing(
     assert calls[0]["expected_root_started_at"] == 333.25
 
 
-def test_spawn_identity_unavailable_reaps_completed_result(
+def test_dispatcher_uses_same_user_scope_for_all_terminal_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = State(str(tmp_path / "state.db"))
+    calls: list[dict[str, object]] = []
+
+    def safe_termination(**kwargs: object) -> dict[str, object]:
+        calls.append(dict(kwargs))
+        return {
+            "status": "worker_already_reaped",
+            "safe_to_finalize": True,
+            "pid": kwargs["root_pid"],
+            "pgid": kwargs.get("expected_process_group_id"),
+            "containment_id": kwargs.get("containment_id"),
+            "descendant_pids": [],
+            "surviving_pids": [],
+            "scan_errors": [],
+            "containment_kind": "inherited_environment_same_user",
+            "root_pid_reused": False,
+        }
+
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "terminate_containment",
+        safe_termination,
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        process_identity_probe=lambda _pid: (41001, 333.25),
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "_process_containment_id",
+        lambda _pid: "containment-scope",
+    )
+
+    dispatcher._terminate_process_group(
+        41001,
+        expected_pgid=41001,
+        expected_started_at=333.25,
+        expected_containment_id="containment-scope",
+    )
+    dispatcher._terminate_process_group(
+        None,
+        expected_containment_started_at=300.0,
+        expected_containment_id="containment-scope",
+    )
+
+    assert calls[0]["unreadable_scope"] == "same_user"
+    assert calls[1]["unreadable_scope"] == "same_user"
+
+
+def test_spawn_identity_untrusted_rejects_preexisting_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -449,30 +531,119 @@ def test_spawn_identity_unavailable_reaps_completed_result(
         jitter=lambda _delay: 0,
     )
 
-    completed = dispatcher.run_once(job_id="fast-exit")
+    retried = dispatcher.run_once(job_id="fast-exit")
 
-    assert completed["status"] == "completed"
-    assert completed["recovery_point"] == "terminal"
-    assert completed["parked_reason"] is None
-    assert completed["pid"] == _FastExitProcess.pid
-    assert completed["worker_pgid"] == _FastExitProcess.pid
-    assert completed["worker_started_at"] is None
-    assert completed["worker_containment_id"]
-    assert completed["worker_reaped_at"] == 1000
-    event_kinds = [
-        event["kind"]
+    assert retried["status"] == "retry_scheduled"
+    assert retried["recovery_point"] == "request_written"
+    assert retried["parked_reason"] is None
+    assert retried["error"] == "spawned_worker_identity_untrusted"
+    assert retried["pid"] is None
+    assert retried["worker_pgid"] is None
+    assert retried["worker_started_at"] is None
+    assert retried["worker_containment_id"] is None
+    assert retried["worker_reaped_at"] is None
+    assert retried["dispatch_attempts"] == 1
+    assert retried["next_dispatch_at"] is not None
+    assert not result_path.exists()
+    quarantined = list((result_path.parent / ".quarantine").glob("*.stale"))
+    assert len(quarantined) == 1
+    assert json.loads(quarantined[0].read_text(encoding="utf-8")) == {
+        "status": "completed",
+        "run_id": "run-fast-exit",
+        "task_id": "task-fast-exit",
+    }
+    events = state.read_events_since(
+        "run-fast-exit",
+        after_event_id=0,
+        limit=20,
+    )
+    event_kinds = [event["kind"] for event in events]
+    quarantine_payloads = [
+        event["payload"]
+        for event in events
+        if event["payload"].get("status") == "result_quarantined"
+    ]
+    assert len(quarantine_payloads) == 1
+    assert quarantine_payloads[0]["error"] == "before_new_spawn_attempt"
+    assert (
+        quarantine_payloads[0]["result_quarantine"]["quarantine_path"]
+        == str(quarantined[0])
+    )
+    assert "dual_agent_workflow_worker_reaped" not in event_kinds
+    assert "dual_agent_workflow_terminal_outcome" not in event_kinds
+
+
+def test_spawn_cas_loss_does_not_quarantine_another_owners_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = State(str(tmp_path / "state.db"))
+    result_path = _insert_request_written_job(
+        state,
+        tmp_path,
+        job_id="spawn-cas-lost",
+    )
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    expected_result = {
+        "status": "completed",
+        "run_id": "run-spawn-cas-lost",
+        "task_id": "task-spawn-cas-lost",
+    }
+    result_path.write_text(
+        json.dumps(expected_result),
+        encoding="utf-8",
+    )
+    claimed = state.claim_next_dual_agent_workflow_job_for_dispatch(
+        dispatcher_id="dispatcher-loser",
+        lease_ttl_s=60,
+        now=1000,
+        job_id="spawn-cas-lost",
+    )
+    assert claimed is not None
+    state.update_dual_agent_workflow_job(
+        job_id="spawn-cas-lost",
+        leased_by="dispatcher-winner",
+        lease_expires_at=1060,
+        heartbeat_at=1000,
+    )
+    popen_called = False
+
+    def forbidden_popen(*_args: object, **_kwargs: object) -> object:
+        nonlocal popen_called
+        popen_called = True
+        raise AssertionError("losing dispatcher must not spawn")
+
+    monkeypatch.setattr(
+        workflow_job_dispatcher_module,
+        "new_containment_id",
+        lambda: "containment-losing-dispatcher",
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-loser",
+        popen=forbidden_popen,
+        now=lambda: 1000,
+    )
+
+    observed = dispatcher._spawn(claimed)
+
+    assert observed["leased_by"] == "dispatcher-winner"
+    assert observed["recovery_point"] == "request_written"
+    assert popen_called is False
+    assert result_path.exists()
+    assert json.loads(result_path.read_text(encoding="utf-8")) == expected_result
+    assert not (result_path.parent / ".quarantine").exists()
+    assert all(
+        event["payload"].get("status") != "result_quarantined"
         for event in state.read_events_since(
-            "run-fast-exit",
+            "run-spawn-cas-lost",
             after_event_id=0,
             limit=20,
         )
-    ]
-    assert event_kinds.index("dual_agent_workflow_worker_reaped") < (
-        event_kinds.index("dual_agent_workflow_terminal_outcome")
     )
 
 
-def test_spawn_identity_unavailable_without_result_schedules_retry_then_parks(
+def test_spawn_identity_untrusted_without_result_schedules_retry_then_parks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -498,16 +669,16 @@ def test_spawn_identity_unavailable_without_result_schedules_retry_then_parks(
     assert retried["status"] == "retry_scheduled"
     assert retried["dispatch_attempts"] == 1
     assert retried["next_dispatch_at"] is not None
-    assert retried["error"] == "spawned_worker_identity_unavailable"
-    assert retried["pid"] == _FastExitProcess.pid
-    assert retried["worker_pgid"] == _FastExitProcess.pid
-    assert retried["worker_reaped_at"] == 1000
+    assert retried["error"] == "spawned_worker_identity_untrusted"
+    assert retried["pid"] is None
+    assert retried["worker_pgid"] is None
+    assert retried["worker_reaped_at"] is None
 
     clock["now"] = int(retried["next_dispatch_at"])
     parked = dispatcher.run_once(job_id="no-result")
     assert parked["status"] == "parked"
     assert str(parked["parked_reason"]).startswith(
-        "max_dispatch_attempts_exceeded: spawned_worker_identity_unavailable"
+        "max_dispatch_attempts_exceeded: spawned_worker_identity_untrusted"
     )
     reap_events = [
         event
@@ -518,7 +689,7 @@ def test_spawn_identity_unavailable_without_result_schedules_retry_then_parks(
         )
         if event["kind"] == "dual_agent_workflow_worker_reaped"
     ]
-    assert len(reap_events) == 2
+    assert reap_events == []
 
 
 def test_cleanup_retries_do_not_consume_dispatch_attempts(
@@ -653,6 +824,7 @@ def test_spawn_prepared_pidless_recovery_uses_containment_only(
             "expected_process_group_id": None,
             "containment_id": "containment-only-recovery",
             "process": None,
+            "unreadable_scope": "same_user",
         }
     ]
 

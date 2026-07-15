@@ -97,6 +97,10 @@ class DualAgentCancellationCleanupError(RuntimeError):
         self.phase = phase
 
 
+class _GateInvocationCancelled(RuntimeError):
+    """Internal marker for a synchronous gate unwinding after cancellation."""
+
+
 @dataclass(frozen=True)
 class ReplayFixture:
     token_size: int
@@ -740,8 +744,17 @@ class _GateCancellation:
                 call_kwargs.setdefault("start_new_session", True)
             try:
                 if self.cancelled.is_set():
-                    raise RuntimeError("dual-agent gate invocation cancelled")
-                return runner(*args, **call_kwargs)
+                    raise _GateInvocationCancelled(
+                        "dual-agent gate invocation cancelled"
+                    )
+                try:
+                    return runner(*args, **call_kwargs)
+                except BaseException as exc:
+                    if self.cancelled.is_set():
+                        raise _GateInvocationCancelled(
+                            "dual-agent gate invocation cancelled"
+                        ) from exc
+                    raise
             finally:
                 self._finish_invocation(invocation_id)
 
@@ -771,8 +784,17 @@ class _GateCancellation:
             controlled_task = replace(task, env=environment)
             try:
                 if self.cancelled.is_set():
-                    raise RuntimeError("dual-agent gate invocation cancelled")
-                return runtime_runner(controlled_task)
+                    raise _GateInvocationCancelled(
+                        "dual-agent gate invocation cancelled"
+                    )
+                try:
+                    return runtime_runner(controlled_task)
+                except BaseException as exc:
+                    if self.cancelled.is_set():
+                        raise _GateInvocationCancelled(
+                            "dual-agent gate invocation cancelled"
+                        ) from exc
+                    raise
             finally:
                 self._finish_invocation(invocation_id)
 
@@ -811,6 +833,7 @@ class _GateCancellation:
             deadline = started_at + max(0.0, float(timeout_s))
         timeout_budget_s = max(0.0, deadline - started_at)
         cancelled_targets: set[int] = set()
+        target_cleanup_errors: list[BaseException] = []
         while True:
             active = self._active_snapshot()
             containment_ids = self._known_containments()
@@ -823,7 +846,13 @@ class _GateCancellation:
                 if target_id in cancelled_targets:
                     continue
                 cancelled_targets.add(target_id)
-                self._cancel_target(invocation.cancel_target)
+                try:
+                    self._cancel_target(invocation.cancel_target)
+                except BaseException as exc:
+                    # A provider-specific cancel hook is advisory. Preserve its
+                    # failure, but continue the provider-neutral containment
+                    # sweep so the hook cannot strand a live descendant.
+                    target_cleanup_errors.append(exc)
 
             with self._condition:
                 active_remaining = bool(self._active)
@@ -836,19 +865,39 @@ class _GateCancellation:
             ):
                 break
             if time.monotonic() >= deadline:
-                raise RuntimeError(
+                error = RuntimeError(
                     "dual-agent gate cancellation did not reach a quiescent "
                     f"containment state within {timeout_budget_s:g}s: "
                     f"active_invocations={len(active)}, "
                     f"processes_quiescent={processes_quiescent}; contained "
                     "gate processes may still be running and were not "
                     "reported safe to finalize"
+                    + (
+                        "; target_cleanup_errors="
+                        f"{len(target_cleanup_errors)}"
+                        if target_cleanup_errors
+                        else ""
+                    )
                 )
+                if target_cleanup_errors:
+                    raise error from target_cleanup_errors[0]
+                raise error
             with self._condition:
                 self._condition.wait(timeout=0.02)
 
         with self._state_write_lock:
             pass
+        if target_cleanup_errors:
+            primary_error = target_cleanup_errors[0]
+            try:
+                setattr(
+                    primary_error,
+                    "_dual_agent_containment_quiescent",
+                    True,
+                )
+            except (AttributeError, TypeError):
+                pass
+            raise primary_error
 
     def _start_invocation(
         self,
@@ -981,27 +1030,52 @@ class _GateCancellation:
         ]):
             try:
                 pid = int(process.info["pid"])
-                if pid == os.getpid():
-                    continue
+                username = str(process.info.get("username") or "")
+            except (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+            except (
+                OSError,
+                KeyError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                scans_complete = False
+                continue
+            if pid == os.getpid():
+                continue
+            plausible_same_user_process = (
+                not self._current_username
+                or not username
+                or username == self._current_username
+            )
+            if not plausible_same_user_process:
+                continue
+            try:
                 started_at = float(
                     process.info.get("create_time")
                     or process.create_time()
                 )
-                username = str(process.info.get("username") or "")
+            except (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
             except (
                 OSError,
                 TypeError,
                 ValueError,
                 psutil.Error,
             ):
+                scans_complete = False
                 continue
             plausible_new_same_user_process = (
                 started_at >= self._path_marker_started_at - 0.001
-                and (
-                    not self._current_username
-                    or not username
-                    or username == self._current_username
-                )
             )
             try:
                 environment = process.environ()
@@ -1022,18 +1096,20 @@ class _GateCancellation:
                 candidates[
                     (containment_id, identity.pid, identity.started_at)
                 ] = (containment_id, identity, process_group_id)
-            except psutil.AccessDenied:
-                if plausible_new_same_user_process:
-                    scans_complete = False
             except (
-                OSError,
-                TypeError,
-                ValueError,
                 psutil.NoSuchProcess,
                 psutil.ZombieProcess,
                 ProcessLookupError,
             ):
                 continue
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                if plausible_new_same_user_process:
+                    scans_complete = False
         return tuple(candidates.values()), scans_complete
 
     @staticmethod
@@ -1152,6 +1228,13 @@ async def run_dual_agent_gate_with_escalation(
             cleanup_quiescent = True
         except BaseException as exc:
             cleanup_error = exc
+            cleanup_quiescent = bool(
+                getattr(
+                    exc,
+                    "_dual_agent_containment_quiescent",
+                    False,
+                )
+            )
             if not cleanup_task.done():
                 cleanup_task.add_done_callback(_consume_task_result)
 
@@ -1166,18 +1249,47 @@ async def run_dual_agent_gate_with_escalation(
                 gate_join_error = exc
         gate_thread_terminated = gate_task.done()
         if gate_thread_terminated:
-            _consume_task_result(gate_task)
+            try:
+                gate_task.result()
+            except BaseException as exc:
+                if gate_join_error is None:
+                    gate_join_error = exc
         else:
             gate_task.add_done_callback(_consume_task_result)
 
-        if not cleanup_quiescent or not gate_thread_terminated:
-            primary_error = cleanup_error or gate_join_error
+        if (
+            isinstance(gate_join_error, _GateInvocationCancelled)
+            and cleanup_quiescent
+            and cleanup_error is None
+            and gate_thread_terminated
+        ):
+            # ``run_dual_agent_gate`` releases the handoff lock in its
+            # ``finally`` block. A release failure replaces this marker as the
+            # gate-task exception, so observing the marker after thread
+            # termination is itself the release proof. Re-reading the shared
+            # path here would race with a subsequent gate acquiring a new lock.
+            gate_join_error = None
+
+        if (
+            not cleanup_quiescent
+            or cleanup_error is not None
+            or not gate_thread_terminated
+            or gate_join_error is not None
+        ):
+            primary_error = (
+                cleanup_error
+                or gate_join_error
+            )
             phase = (
                 "cleanup_and_gate_thread_join"
                 if cleanup_error is not None and not gate_thread_terminated
                 else "cleanup"
                 if cleanup_error is not None
                 else "gate_thread_join"
+                if not gate_thread_terminated
+                else "gate_thread_cleanup"
+                if gate_join_error is not None
+                else "cancellation_cleanup"
             )
             detail = (
                 f"{type(primary_error).__name__}: {primary_error}"

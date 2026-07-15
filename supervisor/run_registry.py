@@ -30,7 +30,11 @@ from .state import State
 from .target.types import ScopeContract
 
 
-RUN_REGISTRATION_SCHEMA = "supervisor-run-registration/v2"
+RUN_REGISTRATION_SCHEMA_V2 = "supervisor-run-registration/v2"
+RUN_REGISTRATION_SCHEMA = "supervisor-run-registration/v3"
+_SUPPORTED_RUN_REGISTRATION_SCHEMAS = frozenset(
+    {RUN_REGISTRATION_SCHEMA_V2, RUN_REGISTRATION_SCHEMA}
+)
 LAUNCH_RECEIPT_SCHEMA = "supervisor-launch-receipt/v1"
 PENDING_SESSION_SOURCE = "pending_runtime_receipt"
 LAUNCH_RECEIPT_SOURCE = "launch_receipt"
@@ -44,6 +48,60 @@ _COMPLETION_POLICIES = frozenset({
 })
 DEFAULT_LAUNCH_RECEIPT_TTL_S = 3_600
 _LAUNCH_RECEIPT_DIRNAME = ".launch-receipts"
+
+
+def _supported_registration_schema(value: Any, *, label: str) -> str:
+    schema = str(value or "").strip()
+    if schema not in _SUPPORTED_RUN_REGISTRATION_SCHEMAS:
+        raise RuntimeError(f"{label} schema_version mismatch")
+    return schema
+
+
+def _runtime_target_run_id(
+    *,
+    schema_version: str,
+    workflow_run_id: str,
+    target_session_id: str,
+) -> str:
+    digest = hashlib.sha256(
+        (
+            f"{schema_version}\0target-run\0"
+            f"{workflow_run_id}\0{target_session_id}"
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"target-{digest[:32]}"
+
+
+def _validate_runtime_task_identity(
+    *,
+    schema_version: str,
+    task: str,
+    config_snapshot: Mapping[str, Any],
+    payload: Mapping[str, Any] | None = None,
+    label: str,
+) -> str:
+    expected = hashlib.sha256(str(task).encode("utf-8")).hexdigest()
+    observed_config = str(
+        config_snapshot.get("task_sha256") or ""
+    ).strip()
+    observed_payload = (
+        ""
+        if payload is None
+        else str(payload.get("task_sha256") or "").strip()
+    )
+    if schema_version == RUN_REGISTRATION_SCHEMA and (
+        not observed_config or (payload is not None and not observed_payload)
+    ):
+        raise RuntimeError(f"{label} task_sha256 is missing")
+    for surface, observed in (
+        ("config_snapshot", observed_config),
+        ("sidecar", observed_payload),
+    ):
+        if not observed:
+            continue
+        if not re.fullmatch(r"[0-9a-f]{64}", observed) or observed != expected:
+            raise RuntimeError(f"{label} {surface} task_sha256 mismatch")
+    return expected
 
 
 class LaunchReceiptError(ValueError):
@@ -91,6 +149,56 @@ def validate_run_registration_authority(
     expected_cwd: str | Path | None = None,
     expected_completion_policy: str | None = None,
     require_workflow_registration: bool = False,
+) -> dict[str, Any]:
+    """Validate one registration for evidence publication or reuse."""
+    return _validate_run_registration_authority(
+        state=state,
+        run_id=run_id,
+        expected_workflow_run_id=expected_workflow_run_id,
+        expected_task_id=expected_task_id,
+        expected_target_kind=expected_target_kind,
+        expected_cwd=expected_cwd,
+        expected_completion_policy=expected_completion_policy,
+        require_workflow_registration=require_workflow_registration,
+        require_pending_workflow=False,
+    )
+
+
+def validate_pending_workflow_registration_authority(
+    *,
+    state: State,
+    run_id: str,
+    expected_workflow_run_id: str,
+    expected_task_id: str,
+    expected_target_kind: str,
+    expected_cwd: str | Path,
+    expected_completion_policy: str | None = None,
+) -> dict[str, Any]:
+    """Validate immutable workflow authority while it is still pre-launch."""
+    return _validate_run_registration_authority(
+        state=state,
+        run_id=run_id,
+        expected_workflow_run_id=expected_workflow_run_id,
+        expected_task_id=expected_task_id,
+        expected_target_kind=expected_target_kind,
+        expected_cwd=expected_cwd,
+        expected_completion_policy=expected_completion_policy,
+        require_workflow_registration=True,
+        require_pending_workflow=True,
+    )
+
+
+def _validate_run_registration_authority(
+    *,
+    state: State,
+    run_id: str,
+    expected_workflow_run_id: str | None,
+    expected_task_id: str | None,
+    expected_target_kind: str | None,
+    expected_cwd: str | Path | None,
+    expected_completion_policy: str | None,
+    require_workflow_registration: bool,
+    require_pending_workflow: bool,
 ) -> dict[str, Any]:
     """Validate that one persisted run is complete enough to grant authority.
 
@@ -153,8 +261,10 @@ def validate_run_registration_authority(
     ):
         raise RuntimeError(f"{label} source mismatch")
     if is_workflow_registration:
-        if config_snapshot.get("schema_version") != RUN_REGISTRATION_SCHEMA:
-            raise RuntimeError(f"{label} schema_version mismatch")
+        registration_schema = _supported_registration_schema(
+            config_snapshot.get("schema_version"),
+            label=label,
+        )
         required_config_fields = (
             "workflow_run_id",
             "task_id",
@@ -187,22 +297,61 @@ def validate_run_registration_authority(
                 config_snapshot["session_id_source"]
             ).strip()
             if session_id_source == PENDING_SESSION_SOURCE:
-                if (
-                    str(run_payload["session_id"]).strip()
-                    != _pending_session_id(normalized_run_id)
-                ):
-                    raise RuntimeError(f"{label} pending session_id mismatch")
-                expected_rollout = (
-                    f"pending://{snapshot_target_kind}/{normalized_run_id}"
-                )
-                if str(run_payload["rollout_path"]).strip() != expected_rollout:
-                    raise RuntimeError(f"{label} pending rollout_path mismatch")
                 if str(
                     config_snapshot.get("target_session_id") or ""
                 ).strip():
                     raise RuntimeError(
                         f"{label} pending target_session_id mismatch"
                     )
+                observed_session_id = str(run_payload["session_id"]).strip()
+                pending_session_id = _pending_session_id(normalized_run_id)
+                if observed_session_id == pending_session_id:
+                    expected_rollout = (
+                        f"pending://{snapshot_target_kind}/{normalized_run_id}"
+                    )
+                    if (
+                        str(run_payload["rollout_path"]).strip()
+                        != expected_rollout
+                    ):
+                        raise RuntimeError(
+                            f"{label} pending rollout_path mismatch"
+                        )
+                elif require_pending_workflow:
+                    raise RuntimeError(f"{label} pending session_id mismatch")
+                else:
+                    _validate_workflow_target_session_binding_event(
+                        state=state,
+                        workflow_run_id=normalized_run_id,
+                        target_session_id=observed_session_id,
+                        expected={
+                            "workflow_run_id": normalized_run_id,
+                            "target_session_id": observed_session_id,
+                            "task_id": str(
+                                config_snapshot["task_id"]
+                            ).strip(),
+                            "target_kind": snapshot_target_kind,
+                        },
+                        label=label,
+                    )
+            else:
+                if require_pending_workflow:
+                    raise RuntimeError(f"{label} pending source mismatch")
+                target_session_id = str(
+                    config_snapshot.get("target_session_id") or ""
+                ).strip()
+                if not target_session_id:
+                    raise RuntimeError(f"{label} target_session_id is missing")
+                if str(run_payload["session_id"]).strip() != target_session_id:
+                    raise RuntimeError(f"{label} target_session_id mismatch")
+        else:
+            _validate_workflow_runtime_session_authority(
+                state=state,
+                run_id=normalized_run_id,
+                run_payload=run_payload,
+                config_snapshot=config_snapshot,
+                schema_version=registration_schema,
+                label=label,
+            )
 
     expected_values = (
         (
@@ -242,6 +391,183 @@ def validate_run_registration_authority(
         "config_snapshot": config_snapshot,
         "scope_contract": scope_snapshot,
     }
+
+
+def _validate_workflow_runtime_session_authority(
+    *,
+    state: State,
+    run_id: str,
+    run_payload: Mapping[str, Any],
+    config_snapshot: Mapping[str, Any],
+    schema_version: str,
+    label: str,
+) -> None:
+    for field in (
+        "target_run_id",
+        "target_session_id",
+        "gate",
+        "runtime_run_id",
+        "runtime_result_hash",
+    ):
+        if not str(config_snapshot.get(field) or "").strip():
+            raise RuntimeError(f"{label} {field} is missing")
+    workflow_run_id = str(
+        config_snapshot["workflow_run_id"]
+    ).strip()
+    target_run_id = str(config_snapshot["target_run_id"]).strip()
+    target_session_id = str(
+        config_snapshot["target_session_id"]
+    ).strip()
+    task_id = str(config_snapshot["task_id"]).strip()
+    target_kind = str(config_snapshot["target_kind"]).strip()
+    cwd = str(config_snapshot["cwd"]).strip()
+    gate = str(config_snapshot["gate"]).strip()
+    runtime_run_id = str(config_snapshot["runtime_run_id"]).strip()
+    runtime_result_hash = str(
+        config_snapshot["runtime_result_hash"]
+    ).strip()
+    task_sha256 = _validate_runtime_task_identity(
+        schema_version=schema_version,
+        task=str(run_payload.get("task") or ""),
+        config_snapshot=config_snapshot,
+        label=label,
+    )
+    session_id_source = str(
+        config_snapshot["session_id_source"]
+    ).strip()
+    completion_policy = str(
+        config_snapshot["completion_policy"]
+    ).strip()
+    if target_run_id != run_id:
+        raise RuntimeError(f"{label} target_run_id mismatch")
+    if str(run_payload["session_id"]).strip() != target_session_id:
+        raise RuntimeError(f"{label} target_session_id mismatch")
+    if workflow_run_id == run_id:
+        raise RuntimeError(f"{label} workflow_run_id mismatch")
+    expected_target_run_id = _runtime_target_run_id(
+        schema_version=schema_version,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+    )
+    if target_run_id != expected_target_run_id:
+        raise RuntimeError(f"{label} target_run_id mismatch")
+    if session_id_source == PENDING_SESSION_SOURCE:
+        raise RuntimeError(f"{label} session_id_source mismatch")
+    if completion_policy != SINGLE_TURN_COMPLETION_POLICY:
+        raise RuntimeError(f"{label} completion_policy mismatch")
+    if not re.fullmatch(r"[0-9a-f]{64}", runtime_result_hash):
+        raise RuntimeError(f"{label} runtime_result_hash is invalid")
+    parent_authority = _validate_run_registration_authority(
+        state=state,
+        run_id=workflow_run_id,
+        expected_workflow_run_id=workflow_run_id,
+        expected_task_id=task_id,
+        expected_target_kind=None,
+        expected_cwd=cwd,
+        expected_completion_policy=None,
+        require_workflow_registration=True,
+        require_pending_workflow=False,
+    )
+    if str(parent_authority["run"].get("task") or "") != str(
+        run_payload.get("task") or ""
+    ):
+        raise RuntimeError(f"{label} parent task mismatch")
+
+    expected_binding = {
+        "schema_version": schema_version,
+        "workflow_run_id": workflow_run_id,
+        "target_run_id": target_run_id,
+        "target_session_id": target_session_id,
+        "task_id": task_id,
+        "target_kind": target_kind,
+        "gate": gate,
+        "runtime_run_id": runtime_run_id,
+        "runtime_result_hash": runtime_result_hash,
+        "session_id_source": session_id_source,
+        "completion_policy": completion_policy,
+    }
+    if (
+        schema_version == RUN_REGISTRATION_SCHEMA
+        or str(config_snapshot.get("task_sha256") or "").strip()
+    ):
+        expected_binding["task_sha256"] = task_sha256
+    _validate_workflow_target_session_binding_event(
+        state=state,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+        expected=expected_binding,
+        label=label,
+    )
+
+
+def _validate_workflow_target_session_binding_event(
+    *,
+    state: State,
+    workflow_run_id: str,
+    target_session_id: str,
+    expected: Mapping[str, str],
+    label: str,
+) -> None:
+    exact_match = False
+    after_event_id = 0
+    while True:
+        events = state.read_events_since(
+            workflow_run_id,
+            after_event_id=after_event_id,
+            limit=1_000,
+        )
+        if not events:
+            break
+        for event in events:
+            if (
+                event.get("source") != "supervisor"
+                or event.get("kind") != "workflow_target_session_bound"
+            ):
+                continue
+            payload = event.get("payload")
+            if (
+                not isinstance(payload, Mapping)
+                or str(payload.get("target_session_id") or "").strip()
+                != target_session_id
+            ):
+                continue
+            discrepancies = [
+                field
+                for field, expected_value in expected.items()
+                if str(payload.get(field) or "").strip() != expected_value
+            ]
+            session_id_source = str(
+                payload.get("session_id_source") or ""
+            ).strip()
+            runtime_run_id = str(
+                payload.get("runtime_run_id") or ""
+            ).strip()
+            runtime_result_hash = str(
+                payload.get("runtime_result_hash") or ""
+            ).strip()
+            if (
+                not session_id_source
+                or session_id_source == PENDING_SESSION_SOURCE
+            ):
+                discrepancies.append("session_id_source")
+            if not str(payload.get("registry_path") or "").strip():
+                discrepancies.append("registry_path")
+            if bool(runtime_run_id) != bool(runtime_result_hash):
+                discrepancies.append("runtime_receipt")
+            elif runtime_result_hash and not re.fullmatch(
+                r"[0-9a-f]{64}",
+                runtime_result_hash,
+            ):
+                discrepancies.append("runtime_result_hash")
+            if discrepancies:
+                raise RuntimeError(
+                    f"{label} binding event mismatch: "
+                    + ", ".join(sorted(set(discrepancies)))
+                )
+            exact_match = True
+        after_event_id = max(int(event["event_id"]) for event in events)
+    if not exact_match:
+        raise RuntimeError(f"{label} binding event is missing")
 
 
 @dataclass(frozen=True)
@@ -562,11 +888,23 @@ def _validate_submitted_workflow_registration(
     volatile_fields: tuple[str, ...] = ("registered_at",),
 ) -> None:
     """Reject a resubmission that rebinds the sidecar to different provenance."""
+    observed_schema = _supported_registration_schema(
+        observed.get("schema_version"),
+        label="target session sidecar",
+    )
+    expected_for_schema = dict(expected)
+    expected_for_schema["schema_version"] = observed_schema
+    expected_config = expected.get("config_snapshot")
+    if isinstance(expected_config, Mapping):
+        expected_for_schema["config_snapshot"] = {
+            **expected_config,
+            "schema_version": observed_schema,
+        }
     discrepancies = [
         field
-        for field in expected
+        for field in expected_for_schema
         if field not in volatile_fields
-        and observed.get(field) != expected.get(field)
+        and observed.get(field) != expected_for_schema.get(field)
     ]
     if discrepancies:
         raise RuntimeError(
@@ -635,6 +973,13 @@ def register_workflow_runtime_session(
         raise KeyError(
             f"workflow run is not registered: {normalized_workflow_run_id}"
         )
+    parent_task = str(parent_run["task"] or "").strip()
+    if not parent_task:
+        raise RuntimeError("workflow run registration task is missing")
+    if normalized_task != parent_task:
+        raise ValueError(
+            "runtime task does not match workflow run registration task"
+        )
     try:
         parent_scope_payload = json.loads(
             str(parent_snapshot["scope_contract_json"] or "{}")
@@ -663,18 +1008,27 @@ def register_workflow_runtime_session(
         raise ValueError(
             "runtime cwd does not match workflow run registration cwd"
         )
+    validate_run_registration_authority(
+        state=state,
+        run_id=normalized_workflow_run_id,
+        expected_workflow_run_id=normalized_workflow_run_id,
+        expected_task_id=normalized_task_id,
+        expected_cwd=normalized_cwd,
+        require_workflow_registration=True,
+    )
+    task_sha256 = hashlib.sha256(
+        normalized_task.encode("utf-8")
+    ).hexdigest()
 
     session_path = _session_registry_path(
         registry_root,
         normalized_target_session_id,
     )
-    child_digest = hashlib.sha256(
-        (
-            f"{RUN_REGISTRATION_SCHEMA}\0target-run\0"
-            f"{normalized_workflow_run_id}\0{normalized_target_session_id}"
-        ).encode("utf-8")
-    ).hexdigest()
-    target_run_id = f"target-{child_digest[:32]}"
+    target_run_id = _runtime_target_run_id(
+        schema_version=RUN_REGISTRATION_SCHEMA,
+        workflow_run_id=normalized_workflow_run_id,
+        target_session_id=normalized_target_session_id,
+    )
     config_snapshot = {
         "source": "workflow_runtime_session",
         "schema_version": RUN_REGISTRATION_SCHEMA,
@@ -687,6 +1041,7 @@ def register_workflow_runtime_session(
         "gate": normalized_gate,
         "runtime_run_id": normalized_runtime_run_id,
         "runtime_result_hash": normalized_runtime_result_hash,
+        "task_sha256": task_sha256,
         "session_id_source": normalized_source,
         "completion_policy": SINGLE_TURN_COMPLETION_POLICY,
     }
@@ -710,6 +1065,7 @@ def register_workflow_runtime_session(
         "gate": normalized_gate,
         "runtime_run_id": normalized_runtime_run_id,
         "runtime_result_hash": normalized_runtime_result_hash,
+        "task_sha256": task_sha256,
         "registered_at": int(time.time()),
     }
     existing = load_session_registration(
@@ -739,7 +1095,7 @@ def register_workflow_runtime_session(
         )
         _ensure_runtime_session_state_binding(
             state=state,
-            metadata=metadata,
+            metadata=registration_metadata,
             scope=scope,
         )
     except Exception:
@@ -755,6 +1111,32 @@ def _validate_runtime_session_registration(
     expected: Mapping[str, Any],
 ) -> None:
     """Reject same-session retries that change any provenance-bearing field."""
+    observed_schema = _supported_registration_schema(
+        observed.get("schema_version"),
+        label="target session sidecar",
+    )
+    expected_for_schema = dict(expected)
+    expected_config = dict(expected["config_snapshot"])
+    if observed_schema != RUN_REGISTRATION_SCHEMA:
+        legacy_target_run_id = _runtime_target_run_id(
+            schema_version=observed_schema,
+            workflow_run_id=str(expected["workflow_run_id"]),
+            target_session_id=str(expected["target_session_id"]),
+        )
+        expected_for_schema["schema_version"] = observed_schema
+        expected_for_schema["run_id"] = legacy_target_run_id
+        expected_for_schema["target_run_id"] = legacy_target_run_id
+        expected_config["schema_version"] = observed_schema
+        expected_config["target_run_id"] = legacy_target_run_id
+        if "task_sha256" not in observed:
+            expected_for_schema.pop("task_sha256", None)
+        observed_config = observed.get("config_snapshot")
+        if (
+            not isinstance(observed_config, Mapping)
+            or "task_sha256" not in observed_config
+        ):
+            expected_config.pop("task_sha256", None)
+    expected_for_schema["config_snapshot"] = expected_config
     immutable_fields = (
         "schema_version",
         "workflow_run_id",
@@ -775,11 +1157,12 @@ def _validate_runtime_session_registration(
         "gate",
         "runtime_run_id",
         "runtime_result_hash",
+        "task_sha256",
     )
     discrepancies = [
         field
         for field in immutable_fields
-        if observed.get(field) != expected.get(field)
+        if observed.get(field) != expected_for_schema.get(field)
     ]
     if discrepancies:
         raise RuntimeError(
@@ -799,6 +1182,30 @@ def _ensure_runtime_session_state_binding(
     target_kind = str(metadata["target_kind"])
     task = str(metadata["task"])
     config_snapshot = dict(metadata["config_snapshot"])
+    workflow_run_id = str(metadata["workflow_run_id"])
+    binding_payload = {
+        "schema_version": str(metadata["schema_version"]),
+        "workflow_run_id": workflow_run_id,
+        "target_run_id": target_run_id,
+        "target_session_id": target_session_id,
+        "task_id": str(metadata["task_id"]),
+        "target_kind": target_kind,
+        "gate": str(metadata["gate"]),
+        "runtime_run_id": str(metadata["runtime_run_id"]),
+        "runtime_result_hash": str(metadata["runtime_result_hash"]),
+        "session_id_source": str(metadata["session_id_source"]),
+        "completion_policy": str(metadata["completion_policy"]),
+        "registry_path": str(metadata["registry_path"]),
+    }
+    task_sha256 = str(metadata.get("task_sha256") or "").strip()
+    if task_sha256:
+        binding_payload["task_sha256"] = task_sha256
+    binding_exists = _runtime_session_binding_event_exists(
+        state=state,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+        expected=binding_payload,
+    )
     run = state.get_run(target_run_id)
     snapshot = state.get_run_snapshot(target_run_id)
     if run is None and snapshot is None:
@@ -842,37 +1249,20 @@ def _ensure_runtime_session_state_binding(
             "target runtime State provenance discrepancy: "
             + ", ".join(discrepancies)
         )
-    workflow_run_id = str(metadata["workflow_run_id"])
-    if not _runtime_session_binding_event_exists(
-        state=state,
-        workflow_run_id=workflow_run_id,
-        target_session_id=target_session_id,
-    ):
+    if not binding_exists:
         state.write_event(
             run_id=workflow_run_id,
             source="supervisor",
             kind="workflow_target_session_bound",
-            payload={
-                "schema_version": RUN_REGISTRATION_SCHEMA,
-                "workflow_run_id": workflow_run_id,
-                "target_run_id": target_run_id,
-                "target_session_id": target_session_id,
-                "task_id": str(metadata["task_id"]),
-                "target_kind": target_kind,
-                "gate": str(metadata["gate"]),
-                "runtime_run_id": str(metadata["runtime_run_id"]),
-                "runtime_result_hash": str(
-                    metadata["runtime_result_hash"]
-                ),
-                "session_id_source": str(
-                    metadata["session_id_source"]
-                ),
-                "completion_policy": str(
-                    metadata["completion_policy"]
-                ),
-                "registry_path": str(metadata["registry_path"]),
-            },
+            payload=binding_payload,
         )
+    _validate_workflow_target_session_binding_event(
+        state=state,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+        expected=binding_payload,
+        label="target runtime State provenance",
+    )
 
 
 def _runtime_session_binding_event_exists(
@@ -880,7 +1270,9 @@ def _runtime_session_binding_event_exists(
     state: State,
     workflow_run_id: str,
     target_session_id: str,
+    expected: Mapping[str, Any],
 ) -> bool:
+    exact_match = False
     after_event_id = 0
     while True:
         events = state.read_events_since(
@@ -889,16 +1281,31 @@ def _runtime_session_binding_event_exists(
             limit=1_000,
         )
         if not events:
-            return False
+            return exact_match
         for event in events:
-            if event.get("kind") == "workflow_target_session_bound":
+            if (
+                event.get("source") == "supervisor"
+                and event.get("kind") == "workflow_target_session_bound"
+            ):
                 payload = event.get("payload")
                 if (
                     isinstance(payload, Mapping)
                     and str(payload.get("target_session_id") or "")
                     == target_session_id
                 ):
-                    return True
+                    discrepancies = [
+                        field
+                        for field, expected_value in expected.items()
+                        if str(payload.get(field) or "")
+                        != str(expected_value)
+                    ]
+                    if discrepancies:
+                        raise RuntimeError(
+                            "target runtime binding event provenance "
+                            "discrepancy: "
+                            + ", ".join(discrepancies)
+                        )
+                    exact_match = True
         after_event_id = max(
             int(event["event_id"]) for event in events
         )
@@ -1612,7 +2019,10 @@ def _ensure_workflow_target_session_binding_event(
         if not events:
             break
         for event in events:
-            if event.get("kind") != "workflow_target_session_bound":
+            if (
+                event.get("source") != "supervisor"
+                or event.get("kind") != "workflow_target_session_bound"
+            ):
                 continue
             payload = event.get("payload")
             if (
@@ -1709,7 +2119,31 @@ def load_session_registration(
     registry_dir: str | Path,
     session_id: str,
 ) -> dict[str, Any] | None:
-    """Load a valid session sidecar, returning None for absent/bad metadata."""
+    """Load only a complete sidecar that may authorize run ingestion."""
+    registry_root = Path(registry_dir).expanduser().resolve()
+    path = _session_registry_path(registry_root, session_id)
+    payload = _read_registration_file(registry_root, path)
+    if payload is None:
+        return None
+    try:
+        _validate_session_registration_authority(
+            payload=payload,
+            path=path,
+        )
+    except RuntimeError:
+        return None
+    return payload
+
+
+def load_non_authoritative_session_registration(
+    registry_dir: str | Path,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Read legacy/incomplete sidecars for inspection or migration only.
+
+    Callers must not use this result to create a run, select a run, or ingest
+    target events.
+    """
     registry_root = Path(registry_dir).expanduser().resolve()
     path = _session_registry_path(registry_root, session_id)
     payload = _read_registration_file(registry_root, path)
@@ -1773,8 +2207,10 @@ def _validate_session_registration_authority(
 ) -> None:
     if payload is None:
         raise RuntimeError("sidecar is unreadable")
-    if payload.get("schema_version") != RUN_REGISTRATION_SCHEMA:
-        raise RuntimeError("schema_version mismatch")
+    schema_version = _supported_registration_schema(
+        payload.get("schema_version"),
+        label="sidecar",
+    )
     if payload.get("pending") is not False:
         raise RuntimeError("pending state mismatch")
     target_session_id = str(
@@ -1802,6 +2238,17 @@ def _validate_session_registration_authority(
             raise RuntimeError(f"{field} is missing")
     if str(payload["completion_policy"]).strip() not in _COMPLETION_POLICIES:
         raise RuntimeError("completion_policy is invalid")
+    runtime_run_id = str(payload.get("runtime_run_id") or "").strip()
+    runtime_result_hash = str(
+        payload.get("runtime_result_hash") or ""
+    ).strip()
+    if bool(runtime_run_id) != bool(runtime_result_hash):
+        raise RuntimeError("runtime receipt mismatch")
+    if runtime_result_hash and not re.fullmatch(
+        r"[0-9a-f]{64}",
+        runtime_result_hash,
+    ):
+        raise RuntimeError("runtime_result_hash is invalid")
     scope_contract = payload.get("scope_contract")
     config_snapshot = payload.get("config_snapshot")
     if not isinstance(scope_contract, dict):
@@ -1812,9 +2259,10 @@ def _validate_session_registration_authority(
         ScopeContract.from_dict(scope_contract)
     except (TypeError, ValueError) as exc:
         raise RuntimeError("scope_contract is invalid") from exc
-    if config_snapshot.get("schema_version") != RUN_REGISTRATION_SCHEMA:
+    if config_snapshot.get("schema_version") != schema_version:
         raise RuntimeError("config_snapshot schema_version mismatch")
-    if str(config_snapshot.get("source") or "").strip() not in {
+    source = str(config_snapshot.get("source") or "").strip()
+    if source not in {
         "workflow_submission",
         "workflow_runtime_session",
     }:
@@ -1829,10 +2277,104 @@ def _validate_session_registration_authority(
     ):
         if not str(config_snapshot.get(field) or "").strip():
             raise RuntimeError(f"config_snapshot {field} is missing")
-    for field in ("workflow_run_id", "task_id", "target_kind"):
+    for field in (
+        "workflow_run_id",
+        "task_id",
+        "target_kind",
+        "completion_policy",
+    ):
         if str(config_snapshot[field]).strip() != str(payload[field]).strip():
             raise RuntimeError(f"config_snapshot {field} mismatch")
     _resolved_cwd(config_snapshot["cwd"])
+    if source == "workflow_submission":
+        workflow_run_id = str(payload["workflow_run_id"]).strip()
+        if str(payload["run_id"]).strip() != workflow_run_id:
+            raise RuntimeError("run_id mismatch")
+        if str(payload.get("target_run_id") or "").strip():
+            raise RuntimeError("target_run_id mismatch")
+        config_session_source = str(
+            config_snapshot["session_id_source"]
+        ).strip()
+        config_target_session = str(
+            config_snapshot.get("target_session_id") or ""
+        ).strip()
+        if config_session_source == PENDING_SESSION_SOURCE:
+            if config_target_session:
+                raise RuntimeError(
+                    "config_snapshot target_session_id mismatch"
+                )
+            if str(payload["session_id_source"]).strip() == (
+                PENDING_SESSION_SOURCE
+            ):
+                raise RuntimeError("session_id_source mismatch")
+        else:
+            if config_target_session != target_session_id:
+                raise RuntimeError(
+                    "config_snapshot target_session_id mismatch"
+                )
+            if config_session_source != str(
+                payload["session_id_source"]
+            ).strip():
+                raise RuntimeError(
+                    "config_snapshot session_id_source mismatch"
+                )
+        return
+
+    for field in (
+        "target_run_id",
+        "target_session_id",
+        "gate",
+        "runtime_run_id",
+        "runtime_result_hash",
+    ):
+        if not str(config_snapshot.get(field) or "").strip():
+            raise RuntimeError(f"config_snapshot {field} is missing")
+    target_run_id = str(config_snapshot["target_run_id"]).strip()
+    workflow_run_id = str(config_snapshot["workflow_run_id"]).strip()
+    if workflow_run_id == target_run_id:
+        raise RuntimeError("workflow_run_id mismatch")
+    if (
+        str(payload["run_id"]).strip() != target_run_id
+        or str(payload.get("target_run_id") or "").strip() != target_run_id
+    ):
+        raise RuntimeError("target_run_id mismatch")
+    if target_run_id != _runtime_target_run_id(
+        schema_version=schema_version,
+        workflow_run_id=workflow_run_id,
+        target_session_id=target_session_id,
+    ):
+        raise RuntimeError("target_run_id mismatch")
+    if str(config_snapshot["session_id_source"]).strip() == (
+        PENDING_SESSION_SOURCE
+    ):
+        raise RuntimeError("session_id_source mismatch")
+    if str(config_snapshot["completion_policy"]).strip() != (
+        SINGLE_TURN_COMPLETION_POLICY
+    ):
+        raise RuntimeError("completion_policy mismatch")
+    for field in (
+        "target_session_id",
+        "gate",
+        "runtime_run_id",
+        "runtime_result_hash",
+        "session_id_source",
+    ):
+        if str(config_snapshot[field]).strip() != str(
+            payload.get(field) or ""
+        ).strip():
+            raise RuntimeError(f"config_snapshot {field} mismatch")
+    if not re.fullmatch(
+        r"[0-9a-f]{64}",
+        str(config_snapshot["runtime_result_hash"]).strip(),
+    ):
+        raise RuntimeError("runtime_result_hash is invalid")
+    _validate_runtime_task_identity(
+        schema_version=schema_version,
+        task=str(payload["task"]),
+        config_snapshot=config_snapshot,
+        payload=payload,
+        label="runtime sidecar",
+    )
 
 
 def _validate_pending_launch_registration(
@@ -1869,14 +2411,13 @@ def _validate_pending_launch_registration(
     if not registered_cwd or _resolved_cwd(registered_cwd) != cwd:
         raise LaunchReceiptError("pending workflow registration cwd mismatch")
     try:
-        validate_run_registration_authority(
+        validate_pending_workflow_registration_authority(
             state=state,
             run_id=workflow_run_id,
             expected_workflow_run_id=workflow_run_id,
             expected_task_id=task_id,
             expected_target_kind=target_kind,
             expected_cwd=cwd,
-            require_workflow_registration=True,
         )
     except RuntimeError as exc:
         raise LaunchReceiptError(str(exc)) from exc

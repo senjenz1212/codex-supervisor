@@ -33,7 +33,7 @@ from supervisor.ledger_checkpoints import (
     LedgerCheckpointPolicy,
     LedgerCheckpointStore,
 )
-from supervisor.state import State
+from supervisor.state import HISTORICAL_OPERATION_EVENT_SOURCE, State
 
 
 def _write(root: Path, name: str, value: bytes) -> tuple[str, str]:
@@ -41,6 +41,41 @@ def _write(root: Path, name: str, value: bytes) -> tuple[str, str]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(value)
     return str(path), hashlib.sha256(value).hexdigest()
+
+
+def _insert_legacy_historical_event(
+    state: State,
+    *,
+    run_id: str,
+    kind: str,
+    payload: dict,
+) -> int:
+    """Build a controlled legacy fixture without reopening the public bypass."""
+    with state._write_lock:
+        state._conn.execute("BEGIN IMMEDIATE")
+        try:
+            prepared_payload = state._event_payload(
+                run_id=run_id,
+                source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                kind=kind,
+                payload=payload,
+            )
+            event_id = state._insert_event_unlocked(
+                run_id=run_id,
+                source=HISTORICAL_OPERATION_EVENT_SOURCE,
+                kind=kind,
+                payload=prepared_payload,
+            )
+            state._conn.commit()
+        except Exception:
+            state._conn.rollback()
+            raise
+    state._coordinate_committed_event(
+        run_id=run_id,
+        event_id=event_id,
+        event_kind=kind,
+    )
+    return event_id
 
 
 def _fixture(tmp_path: Path):
@@ -259,7 +294,8 @@ async def test_future_receipt_schema_fails_closed_without_reexecution(tmp_path):
         request_hash=request.request_hash,
         operation=request.operation.value,
     )
-    requested_event_id = state.write_historical_operation_event(
+    requested_event_id = _insert_legacy_historical_event(
+        state,
         run_id=request.operation_id,
         kind="historical_operation.requested",
         payload={
@@ -305,7 +341,8 @@ async def test_future_receipt_schema_fails_closed_without_reexecution(tmp_path):
             allow_nan=False,
         ).encode("utf-8")
     ).hexdigest()
-    state.write_historical_operation_event(
+    _insert_legacy_historical_event(
+        state,
         run_id=request.operation_id,
         kind="historical_operation.completed",
         payload={**receipt_body, "receipt_hash": receipt_hash},
@@ -577,7 +614,7 @@ async def test_concurrent_same_request_executes_once(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_two_service_instances_fail_closed_while_same_request_runs(
+async def test_live_owner_heartbeat_blocks_stale_takeover_and_terminalization(
     tmp_path,
 ):
     state, _service, source, artifacts, _calls = _fixture(tmp_path)
@@ -625,6 +662,7 @@ async def test_two_service_instances_fail_closed_while_same_request_runs(
             rerun_executor=lambda _request: {},
             regrade_executor=lambda _request: {},
             replay_executor=slow_replay,
+            claim_stale_after_s=1,
         )
 
     request = _request(
@@ -634,6 +672,7 @@ async def test_two_service_instances_fail_closed_while_same_request_runs(
     )
     first_task = asyncio.create_task(build_service(state).replay(request))
     await started.wait()
+    await asyncio.sleep(1.25)
     try:
         with pytest.raises(HistoricalOperationInProgress):
             await build_service(second_state).replay(request)
@@ -642,6 +681,255 @@ async def test_two_service_instances_fail_closed_while_same_request_runs(
     await first_task
 
     assert calls == 1
+    events = state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == [
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
+
+
+def test_sync_executor_keeps_owner_heartbeat_live_past_stale_threshold(
+    tmp_path,
+):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    second_state = State(
+        state.db_path,
+        ledger_checkpoint_coordinator=(
+            state._ledger_checkpoint_coordinator
+        ),
+    )
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def slow_replay(request):
+        nonlocal calls
+        calls += 1
+        started.set()
+        if not release.wait(timeout=5):
+            raise TimeoutError("test did not release historical executor")
+        ref, digest = _write(
+            tmp_path,
+            "outputs/sync-heartbeat-replay.json",
+            b'{"decision":"same"}',
+        )
+        artifacts[ref] = Path(ref).read_bytes()
+        return {
+            "status": "completed",
+            "execution_performed": False,
+            "source_frozen_result_sha256": (
+                request.source.frozen_result_sha256
+            ),
+            "source_manifest_sha256": (
+                request.source.source_manifest_sha256
+            ),
+            "deterministic": True,
+            "replay_schema_version": "replay/v1",
+            "artifact_ref": ref,
+            "artifact_sha256": digest,
+        }
+
+    def build_service(bound_state):
+        return HistoricalEvaluationService(
+            state=bound_state,
+            evidence_resolver=artifacts.get,
+            rerun_executor=lambda _request: {},
+            regrade_executor=lambda _request: {},
+            replay_executor=slow_replay,
+            claim_stale_after_s=1,
+        )
+
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="sync-heartbeat-owner",
+    )
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                asyncio.run,
+                build_service(state).replay(request),
+            )
+            assert started.wait(timeout=5)
+            time.sleep(1.25)
+            with pytest.raises(HistoricalOperationInProgress):
+                asyncio.run(build_service(second_state).replay(request))
+            release.set()
+            receipt = future.result(timeout=5)
+    finally:
+        release.set()
+        second_state._conn.close()
+
+    assert calls == 1
+    assert receipt.result["deterministic"] is True
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            request.operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
+
+
+def test_executor_never_starts_after_claim_is_lost_during_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    second_state = State(
+        state.db_path,
+        ledger_checkpoint_coordinator=(
+            state._ledger_checkpoint_coordinator
+        ),
+    )
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="claim-lost-during-requested-checkpoint",
+    )
+    checkpoint_entered = threading.Event()
+    release_checkpoint = threading.Event()
+    executor_calls = 0
+    coordinate_committed_event = state._coordinate_committed_event
+
+    def blocking_coordinate_committed_event(
+        *,
+        run_id,
+        event_id,
+        event_kind,
+    ):
+        if event_kind == "historical_operation.requested":
+            checkpoint_entered.set()
+            if not release_checkpoint.wait(timeout=5):
+                raise TimeoutError("test did not release requested checkpoint")
+        return coordinate_committed_event(
+            run_id=run_id,
+            event_id=event_id,
+            event_kind=event_kind,
+        )
+
+    def replay(_request):
+        nonlocal executor_calls
+        executor_calls += 1
+        pytest.fail("stale execution owner must not start the executor")
+
+    monkeypatch.setattr(
+        state,
+        "_coordinate_committed_event",
+        blocking_coordinate_committed_event,
+    )
+    service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=replay,
+        claim_stale_after_s=1,
+    )
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, service.replay(request))
+            assert checkpoint_entered.wait(timeout=5)
+            second_state._conn.execute(
+                """UPDATE historical_operation_claims
+                      SET execution_heartbeat_at=0, updated_at=0
+                    WHERE operation_id=?""",
+                (request.operation_id,),
+            )
+            second_state._conn.commit()
+            observed = dict(
+                second_state._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                        WHERE operation_id=?""",
+                    (request.operation_id,),
+                ).fetchone()
+            )
+            requested_event_id = int(
+                second_state._conn.execute(
+                    """SELECT event_id
+                         FROM events
+                        WHERE run_id=?
+                          AND kind='historical_operation.requested'""",
+                    (request.operation_id,),
+                ).fetchone()["event_id"]
+            )
+            takeover_claim, took_over = (
+                second_state.take_over_stale_historical_operation_execution(
+                    operation_id=request.operation_id,
+                    request_hash=request.request_hash,
+                    operation=request.operation.value,
+                    new_owner_token="checkpoint-takeover-owner",
+                    expected_requested_event_id=requested_event_id,
+                    expected_claim_updated_at=observed["updated_at"],
+                    expected_execution_owner_token=observed[
+                        "execution_owner_token"
+                    ],
+                    expected_execution_generation=observed[
+                        "execution_generation"
+                    ],
+                    expected_execution_heartbeat_at=observed[
+                        "execution_heartbeat_at"
+                    ],
+                    lease_duration_s=1.0,
+                )
+            )
+            assert took_over is True
+            failed_event_id, created = (
+                second_state.terminalize_historical_operation_execution(
+                    operation_id=request.operation_id,
+                    request_hash=request.request_hash,
+                    operation=request.operation.value,
+                    owner_token="checkpoint-takeover-owner",
+                    execution_generation=takeover_claim[
+                        "execution_generation"
+                    ],
+                    status="failed",
+                    payload={
+                        "operation_id": request.operation_id,
+                        "operation": request.operation.value,
+                        "request_hash": request.request_hash,
+                        "requested_event_id": requested_event_id,
+                        "execution_owner_token": (
+                            "checkpoint-takeover-owner"
+                        ),
+                        "execution_generation": takeover_claim[
+                            "execution_generation"
+                        ],
+                        "error_type": "HistoricalOperationIndeterminate",
+                        "error": "claim expired during checkpoint publication",
+                    },
+                )
+            )
+            assert failed_event_id is not None
+            assert created is True
+            release_checkpoint.set()
+            with pytest.raises(HistoricalOperationInProgress):
+                future.result(timeout=5)
+    finally:
+        release_checkpoint.set()
+        second_state._conn.close()
+
+    assert executor_calls == 0
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            request.operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
+        "historical_operation.requested",
+        "historical_operation.failed",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -833,6 +1121,60 @@ def _working_replay(tmp_path, artifacts, calls, name: str):
     return replay
 
 
+def test_state_clock_rejects_fresh_pre_side_effect_takeover(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    operation_id = "fresh-preflight-lease"
+    request_hash = "f" * 64
+    claim, reserved = state.reserve_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    assert state.historical_operation_preflight_claim_is_stale(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
+        expected_claim_updated_at=claim["updated_at"],
+        expected_execution_owner_token=claim["execution_owner_token"],
+        expected_execution_generation=claim["execution_generation"],
+        expected_execution_heartbeat_at=claim[
+            "execution_heartbeat_at"
+        ],
+        lease_duration_s=3600,
+    ) is False
+
+    current, requested_event_id, acquired = (
+        state.claim_historical_operation_execution(
+            operation_id=operation_id,
+            request_hash=request_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token="must-not-steal-fresh-claim",
+            expected_claim_updated_at=claim["updated_at"],
+            expected_execution_owner_token=claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=claim[
+                "execution_heartbeat_at"
+            ],
+            lease_duration_s=3600,
+        )
+    )
+
+    assert acquired is False
+    assert requested_event_id is None
+    assert current["execution_owner_token"] is None
+    assert state.read_events_since(
+        operation_id,
+        after_event_id=0,
+        limit=10,
+    ) == []
+
+
 @pytest.mark.asyncio
 async def test_stale_pre_side_effect_claim_is_taken_over_and_completes(
     tmp_path,
@@ -879,7 +1221,7 @@ async def test_stale_pre_side_effect_claim_is_taken_over_and_completes(
 
 
 @pytest.mark.asyncio
-async def test_stale_claim_past_side_effect_boundary_resolves_to_failed(
+async def test_genuinely_stale_owner_is_fenced_and_resolved_to_failed(
     tmp_path,
 ):
     state, _service, source, artifacts, _calls = _fixture(tmp_path)
@@ -888,21 +1230,85 @@ async def test_stale_claim_past_side_effect_boundary_resolves_to_failed(
         source,
         key="stale-mid-execution-claim",
     )
-    state.reserve_historical_operation(
+    reserved_claim, reserved = state.reserve_historical_operation(
         operation_id=request.operation_id,
         request_hash=request.request_hash,
         operation=request.operation.value,
     )
-    state.write_historical_operation_event(
-        run_id=request.operation_id,
-        kind="historical_operation.requested",
-        payload={
-            "operation_id": request.operation_id,
-            "request_hash": request.request_hash,
-            "request": request.to_dict(),
-        },
+    assert reserved is True
+    original_owner = "stale-owner-before-restart"
+    owned_claim, requested_event_id, acquired = (
+        state.claim_historical_operation_execution(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            operation=request.operation.value,
+            request=request.to_dict(),
+            owner_token=original_owner,
+            expected_claim_updated_at=reserved_claim["updated_at"],
+            expected_execution_owner_token=reserved_claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=reserved_claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=reserved_claim[
+                "execution_heartbeat_at"
+            ],
+        )
     )
-    _mark_claim_stale(state, request.operation_id)
+    assert acquired is True
+    assert requested_event_id is not None
+    original_generation = owned_claim["execution_generation"]
+    state._conn.execute(
+        """UPDATE historical_operation_claims
+              SET execution_heartbeat_at=0, updated_at=0
+            WHERE operation_id=?""",
+        (request.operation_id,),
+    )
+    state._conn.commit()
+    observed_stale = dict(
+        state._conn.execute(
+            """SELECT * FROM historical_operation_claims
+                WHERE operation_id=?""",
+            (request.operation_id,),
+        ).fetchone()
+    )
+    assert state.heartbeat_historical_operation_execution(
+        operation_id=request.operation_id,
+        request_hash=request.request_hash,
+        owner_token=original_owner,
+        execution_generation=original_generation,
+    ) is True
+    heartbeat_won_claim, heartbeat_won = (
+        state.take_over_stale_historical_operation_execution(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            operation=request.operation.value,
+            new_owner_token="stale-observation-must-lose",
+            expected_requested_event_id=requested_event_id,
+            expected_claim_updated_at=observed_stale["updated_at"],
+            expected_execution_owner_token=observed_stale[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=observed_stale[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=observed_stale[
+                "execution_heartbeat_at"
+            ],
+            lease_duration_s=1.0,
+        )
+    )
+    assert heartbeat_won is False
+    assert heartbeat_won_claim["execution_owner_token"] == original_owner
+    assert heartbeat_won_claim["execution_generation"] == original_generation
+    state._conn.execute(
+        """UPDATE historical_operation_claims
+              SET execution_heartbeat_at=0, updated_at=0
+            WHERE operation_id=?""",
+        (request.operation_id,),
+    )
+    state._conn.commit()
     service = HistoricalEvaluationService(
         state=state,
         evidence_resolver=artifacts.get,
@@ -930,11 +1336,43 @@ async def test_stale_claim_past_side_effect_boundary_resolves_to_failed(
         "historical_operation.failed",
     ]
     claim = state._conn.execute(
-        """SELECT status FROM historical_operation_claims
+        """SELECT status, execution_owner_token, execution_generation
+             FROM historical_operation_claims
             WHERE operation_id=?""",
         (request.operation_id,),
     ).fetchone()
     assert claim["status"] == "failed"
+    assert claim["execution_owner_token"] != original_owner
+    assert claim["execution_generation"] == original_generation + 1
+
+    loser_event_id, loser_created = (
+        state.terminalize_historical_operation_execution(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            operation=request.operation.value,
+            owner_token=original_owner,
+            execution_generation=original_generation,
+            status="completed",
+            payload={
+                "operation_id": request.operation_id,
+                "operation": request.operation.value,
+                "request_hash": request.request_hash,
+                "requested_event_id": requested_event_id,
+            },
+        )
+    )
+    assert (loser_event_id, loser_created) == (None, False)
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            request.operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
+        "historical_operation.requested",
+        "historical_operation.failed",
+    ]
 
     with pytest.raises(HistoricalOperationPreviouslyFailed):
         await service.replay(request)
@@ -1042,6 +1480,97 @@ async def test_preflight_failure_releases_claim_durably_across_restart(
     )
     assert [event["kind"] for event in events] == [
         "historical_operation.preflight_released",
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
+
+
+def test_stale_preflight_failure_cannot_append_after_terminal_completion(
+    tmp_path,
+):
+    state, _service, source, artifacts, calls = _fixture(tmp_path)
+    second_state = State(
+        state.db_path,
+        ledger_checkpoint_coordinator=(
+            state._ledger_checkpoint_coordinator
+        ),
+    )
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="stale-preflight-release",
+    )
+    preflight_started = threading.Event()
+    release_preflight = threading.Event()
+
+    def stale_resolver(ref):
+        if ref == source.source_manifest_ref:
+            preflight_started.set()
+            if not release_preflight.wait(timeout=5):
+                raise TimeoutError("test did not release stale preflight")
+            raise ConnectionError("stale verifier failed after completion")
+        return artifacts.get(ref)
+
+    stale_service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=stale_resolver,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=lambda _request: pytest.fail(
+            "stale verifier must never start an executor"
+        ),
+        claim_stale_after_s=1,
+    )
+    recovery_service = HistoricalEvaluationService(
+        state=second_state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=_working_replay(
+            tmp_path,
+            artifacts,
+            calls,
+            "stale-preflight-recovery",
+        ),
+        claim_stale_after_s=1,
+    )
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            stale_future = pool.submit(
+                asyncio.run,
+                stale_service.replay(request),
+            )
+            assert preflight_started.wait(timeout=5)
+            second_state._conn.execute(
+                """UPDATE historical_operation_claims
+                      SET updated_at=0
+                    WHERE operation_id=?""",
+                (request.operation_id,),
+            )
+            second_state._conn.commit()
+
+            receipt = asyncio.run(recovery_service.replay(request))
+            assert receipt.result["deterministic"] is True
+            release_preflight.set()
+            with pytest.raises(
+                HistoricalEvidenceError,
+                match="could not be resolved",
+            ):
+                stale_future.result(timeout=5)
+    finally:
+        release_preflight.set()
+        second_state._conn.close()
+
+    assert calls["replay"] == 1
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            request.operation_id,
+            after_event_id=0,
+            limit=10,
+        )
+    ] == [
         "historical_operation.requested",
         "historical_operation.completed",
     ]
@@ -1195,7 +1724,20 @@ def test_historical_event_source_and_requested_event_linkage_are_enforced(
             payload={"request_hash": request_hash},
         )
 
-    requested_event_id = state.write_historical_operation_event(
+    for kind in (
+        "historical_operation.requested",
+        "historical_operation.completed",
+        "historical_operation.failed",
+    ):
+        with pytest.raises(ValueError, match="owner-fenced state methods"):
+            state.write_historical_operation_event(
+                run_id=operation_id,
+                kind=kind,
+                payload={"request_hash": request_hash},
+            )
+
+    requested_event_id = _insert_legacy_historical_event(
+        state,
         run_id=operation_id,
         kind="historical_operation.requested",
         payload={
@@ -1204,7 +1746,8 @@ def test_historical_event_source_and_requested_event_linkage_are_enforced(
             "request": {"operation": "replay"},
         },
     )
-    wrong_link_event_id = state.write_historical_operation_event(
+    wrong_link_event_id = _insert_legacy_historical_event(
+        state,
         run_id=operation_id,
         kind="historical_operation.completed",
         payload={
@@ -1227,6 +1770,75 @@ def test_historical_event_source_and_requested_event_linkage_are_enforced(
         )
 
 
+def test_legacy_completion_cannot_terminalize_an_owned_running_claim(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    operation_id = "historical-owned-legacy-bypass"
+    request_hash = "b" * 64
+    reserved_claim, reserved = state.reserve_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    owned_claim, requested_event_id, acquired = (
+        state.claim_historical_operation_execution(
+            operation_id=operation_id,
+            request_hash=request_hash,
+            operation="replay",
+            request={"operation": "replay"},
+            owner_token="owned-legacy-bypass",
+            expected_claim_updated_at=reserved_claim["updated_at"],
+            expected_execution_owner_token=reserved_claim[
+                "execution_owner_token"
+            ],
+            expected_execution_generation=reserved_claim[
+                "execution_generation"
+            ],
+            expected_execution_heartbeat_at=reserved_claim[
+                "execution_heartbeat_at"
+            ],
+        )
+    )
+    assert acquired is True
+    assert owned_claim["execution_generation"] == 1
+    assert requested_event_id is not None
+    terminal_event_id = _insert_legacy_historical_event(
+        state,
+        run_id=operation_id,
+        kind="historical_operation.completed",
+        payload={
+            "operation_id": operation_id,
+            "operation": "replay",
+            "request_hash": request_hash,
+            "requested_event_id": requested_event_id,
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="compare-and-set failed"):
+        state.complete_historical_operation(
+            operation_id=operation_id,
+            request_hash=request_hash,
+            status="completed",
+            terminal_event_id=terminal_event_id,
+        )
+
+    stored = state._conn.execute(
+        """SELECT status, terminal_event_id, execution_owner_token,
+                  execution_generation
+             FROM historical_operation_claims
+            WHERE operation_id=?""",
+        (operation_id,),
+    ).fetchone()
+    assert dict(stored) == {
+        "status": "running",
+        "terminal_event_id": None,
+        "execution_owner_token": "owned-legacy-bypass",
+        "execution_generation": 1,
+    }
+
+
 @pytest.mark.asyncio
 async def test_wrong_source_terminal_event_cannot_forge_a_cached_failure(
     tmp_path,
@@ -1242,7 +1854,8 @@ async def test_wrong_source_terminal_event_cannot_forge_a_cached_failure(
         request_hash=request.request_hash,
         operation=request.operation.value,
     )
-    requested_event_id = state.write_historical_operation_event(
+    requested_event_id = _insert_legacy_historical_event(
+        state,
         run_id=request.operation_id,
         kind="historical_operation.requested",
         payload={
@@ -1708,7 +2321,8 @@ async def test_legacy_receipt_without_pin_validates_with_frozen_rules(
         request_hash=request.request_hash,
         operation=request.operation.value,
     )
-    requested_event_id = state.write_historical_operation_event(
+    requested_event_id = _insert_legacy_historical_event(
+        state,
         run_id=request.operation_id,
         kind="historical_operation.requested",
         payload={
@@ -1755,7 +2369,8 @@ async def test_legacy_receipt_without_pin_validates_with_frozen_rules(
             allow_nan=False,
         ).encode("utf-8")
     ).hexdigest()
-    state.write_historical_operation_event(
+    _insert_legacy_historical_event(
+        state,
         run_id=request.operation_id,
         kind="historical_operation.completed",
         payload={**receipt_body, "receipt_hash": receipt_hash},

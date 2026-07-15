@@ -408,6 +408,49 @@ def _migration_historical_operation_claims(
     )
 
 
+def _migration_historical_operation_execution_ownership(
+    conn: sqlite3.Connection,
+) -> None:
+    if not _table_exists(conn, "historical_operation_claims"):
+        return
+    running_claim = conn.execute(
+        """SELECT operation_id
+             FROM historical_operation_claims
+            WHERE status='running'
+            ORDER BY operation_id ASC
+            LIMIT 1"""
+    ).fetchone()
+    if running_claim is not None:
+        raise RuntimeError(
+            "historical execution-ownership migration requires quiescence: "
+            f"operation_id={_row_str(running_claim, 'operation_id', 0)} "
+            "is running; complete or fail every historical operation "
+            "before retrying"
+        )
+    columns = _columns(conn, "historical_operation_claims")
+    if "execution_owner_token" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_owner_token TEXT"
+        )
+    if "execution_generation" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_generation INTEGER NOT NULL DEFAULT 0"
+        )
+    if "execution_heartbeat_at" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_heartbeat_at REAL"
+        )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS
+             idx_historical_operation_claims_execution_owner
+           ON historical_operation_claims(execution_owner_token)
+           WHERE execution_owner_token IS NOT NULL"""
+    )
+
+
 def _migration_supervisor_lessons(conn: sqlite3.Connection) -> None:
     conn.execute(
         """CREATE TABLE IF NOT EXISTS supervisor_lessons (
@@ -1905,5 +1948,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         17,
         "dual_agent_workflow_jobs.spawn_ownership",
         _migration_workflow_job_spawn_ownership,
+    ),
+    SchemaMigration(
+        18,
+        "historical_operation_claims.execution_ownership",
+        _migration_historical_operation_execution_ownership,
     ),
 )

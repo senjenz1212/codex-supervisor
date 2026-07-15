@@ -9,17 +9,20 @@ import threading
 import pytest
 
 import supervisor.run_registry as run_registry
+from supervisor.rollout_watcher import RolloutWatcher
 from supervisor.run_registry import (
     LaunchReceiptError,
     PENDING_SESSION_SOURCE,
     bind_unambiguous_pending_workflow,
     bind_workflow_target_session,
     consume_launch_receipt,
+    load_non_authoritative_session_registration,
     load_session_registration,
     register_submitted_workflow,
     register_workflow_runtime_session,
     reserve_launch_receipt,
     resolve_target_session_id,
+    validate_run_registration_authority,
 )
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
@@ -108,6 +111,59 @@ def test_registry_load_rejects_traversal_instead_of_reading_outside(tmp_path):
 
     with pytest.raises(ValueError, match="safe registry filename"):
         load_session_registration(tmp_path / "registry", "../escaped")
+
+
+@pytest.mark.asyncio
+async def test_forged_minimal_sidecar_cannot_authorize_rollout_ingestion(
+    tmp_path,
+):
+    sessions_root = tmp_path / "sessions"
+    registry = tmp_path / "registry"
+    rollout_dir = sessions_root / "2026" / "07" / "15"
+    rollout_dir.mkdir(parents=True)
+    registry.mkdir()
+    session_id = "abababab-1111-2222-3333-444444444444"
+    forged_run_id = "workflow-forged-minimal-sidecar"
+    rollout = (
+        rollout_dir
+        / f"rollout-2026-07-15T10-00-00-{session_id}.jsonl"
+    )
+    rollout.write_text(
+        json.dumps({"type": "message", "text": "must quarantine"}) + "\n",
+        encoding="utf-8",
+    )
+    (registry / f"{session_id}.json").write_text(
+        json.dumps({
+            "workflow_run_id": forged_run_id,
+            "target_session_id": session_id,
+        }),
+        encoding="utf-8",
+    )
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry),
+        state=state,
+    )
+
+    assert load_session_registration(registry, session_id) is None
+    legacy = load_non_authoritative_session_registration(
+        registry,
+        session_id,
+    )
+    assert legacy is not None
+    assert legacy["workflow_run_id"] == forged_run_id
+
+    await watcher._drain_file(rollout)
+
+    assert state.get_run(forged_run_id) is None
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM events WHERE source='rollout'"
+    ).fetchone()[0] == 0
+    assert state.get_tail_offset(str(rollout)) == 0
+    assert len(list(
+        (registry / ".rollout-quarantine").glob("*.json")
+    )) == 1
 
 
 def test_registry_rejects_existing_sidecar_symlink_to_outside(tmp_path):
@@ -230,6 +286,49 @@ def test_unknown_target_session_stays_pending_until_runtime_binding(tmp_path):
         tmp_path / "registry",
         "real-session",
     )["workflow_run_id"] == "workflow-run"
+
+
+def test_bound_pending_workflow_is_authoritative_for_publication(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-bound-publication",
+        task_id="task-bound-publication",
+        cwd=tmp_path,
+    )
+    bind_workflow_target_session(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-bound-publication",
+        target_session_id="session-bound-publication",
+        source="runtime_result",
+        rollout_path="/captured/session-bound-publication.jsonl",
+        runtime_run_id="runtime-bound-publication",
+        runtime_result_hash="a" * 64,
+    )
+
+    validated = validate_run_registration_authority(
+        state=state,
+        run_id="workflow-bound-publication",
+        expected_workflow_run_id="workflow-bound-publication",
+        expected_task_id="task-bound-publication",
+        expected_target_kind="codex",
+        expected_cwd=tmp_path,
+        require_workflow_registration=True,
+    )
+
+    assert validated["run"]["session_id"] == "session-bound-publication"
+    with pytest.raises(RuntimeError, match="pending session_id mismatch"):
+        run_registry.validate_pending_workflow_registration_authority(
+            state=state,
+            run_id="workflow-bound-publication",
+            expected_workflow_run_id="workflow-bound-publication",
+            expected_task_id="task-bound-publication",
+            expected_target_kind="codex",
+            expected_cwd=tmp_path,
+        )
 
 
 def test_launch_receipt_rejects_sparse_state_registration(tmp_path):
@@ -1181,7 +1280,7 @@ def test_runtime_session_cwd_must_match_parent_registration(
             workflow_run_id=workflow_run_id,
             target_session_id=session_id,
             task_id=f"task-runtime-{runtime_cwd_mode}",
-            task="Bind the runtime to the authoritative workspace.",
+            task=f"Do task-runtime-{runtime_cwd_mode}.",
             target_kind="codex",
             cwd=runtime_cwd,
             gate="execution",
@@ -1190,6 +1289,187 @@ def test_runtime_session_cwd_must_match_parent_registration(
         )
 
     assert load_session_registration(registry, session_id) is None
+    assert state._conn.execute(
+        "SELECT COUNT(*) FROM runs"
+    ).fetchone()[0] == 1
+
+
+def test_runtime_registration_authority_rejects_forked_session_substitution(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-runtime-fork",
+        task_id="task-runtime-fork",
+        cwd=tmp_path,
+    )
+    registration = register_workflow_runtime_session(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-runtime-fork",
+        target_session_id="session-runtime-authoritative",
+        task_id="task-runtime-fork",
+        task="Do task-runtime-fork.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-run-authoritative",
+        runtime_result_hash="c" * 64,
+    )
+    state.bind_run_session(
+        run_id=registration["target_run_id"],
+        session_id="session-runtime-forked",
+        rollout_path="/captured/session-runtime-forked.jsonl",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="target_session_id mismatch",
+    ):
+        validate_run_registration_authority(
+            state=state,
+            run_id=registration["target_run_id"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("target_run_id", "target-run-forked"),
+        ("target_session_id", "session-runtime-forked"),
+        ("workflow_run_id", "workflow-runtime-forked"),
+        ("task_id", "task-runtime-forked"),
+        ("target_kind", "claude_code"),
+        ("cwd", "/tmp/runtime-forked"),
+        ("completion_policy", "reusable_session"),
+        ("gate", "review"),
+        ("runtime_run_id", "runtime-run-forked"),
+        ("runtime_result_hash", "d" * 64),
+        ("session_id_source", "forked_runtime_result"),
+    ),
+)
+def test_runtime_registration_authority_binds_exact_provenance_fields(
+    tmp_path,
+    field,
+    replacement,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-runtime-exact",
+        task_id="task-runtime-exact",
+        cwd=tmp_path,
+    )
+    registration = register_workflow_runtime_session(
+        state=state,
+        registry_dir=registry,
+        workflow_run_id="workflow-runtime-exact",
+        target_session_id="session-runtime-exact",
+        task_id="task-runtime-exact",
+        task="Do task-runtime-exact.",
+        target_kind="codex",
+        cwd=tmp_path,
+        gate="execution",
+        runtime_run_id="runtime-run-exact",
+        runtime_result_hash="c" * 64,
+    )
+    target_run_id = str(registration["target_run_id"])
+    snapshot = state.get_run_snapshot(target_run_id)
+    assert snapshot is not None
+    config_snapshot = json.loads(snapshot["config_json"])
+    config_snapshot[field] = replacement
+    state._conn.execute(
+        "UPDATE run_snapshots SET config_json=? WHERE run_id=?",
+        (json.dumps(config_snapshot), target_run_id),
+    )
+    state._conn.commit()
+
+    with pytest.raises(RuntimeError):
+        validate_run_registration_authority(
+            state=state,
+            run_id=target_run_id,
+        )
+
+
+def test_runtime_registration_rejects_task_different_from_parent(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id="workflow-runtime-task",
+        task_id="task-runtime-task",
+        cwd=tmp_path,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="runtime task does not match",
+    ):
+        register_workflow_runtime_session(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id="workflow-runtime-task",
+            target_session_id="session-runtime-task",
+            task_id="task-runtime-task",
+            task="Different task text.",
+            target_kind="codex",
+            cwd=tmp_path,
+            gate="execution",
+            runtime_run_id="runtime-run-task",
+            runtime_result_hash="c" * 64,
+        )
+
+
+def test_runtime_registration_rejects_conflicting_existing_binding_event(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    registry = tmp_path / "registry"
+    workflow_run_id = "workflow-runtime-binding-conflict"
+    target_session_id = "session-runtime-binding-conflict"
+    _register_pending(
+        state=state,
+        registry=registry,
+        workflow_run_id=workflow_run_id,
+        task_id="task-runtime-binding-conflict",
+        cwd=tmp_path,
+    )
+    state.write_event(
+        run_id=workflow_run_id,
+        source="supervisor",
+        kind="workflow_target_session_bound",
+        payload={
+            "workflow_run_id": workflow_run_id,
+            "target_session_id": target_session_id,
+            "runtime_result_hash": "d" * 64,
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="binding event provenance discrepancy",
+    ):
+        register_workflow_runtime_session(
+            state=state,
+            registry_dir=registry,
+            workflow_run_id=workflow_run_id,
+            target_session_id=target_session_id,
+            task_id="task-runtime-binding-conflict",
+            task="Do task-runtime-binding-conflict.",
+            target_kind="codex",
+            cwd=tmp_path,
+            gate="execution",
+            runtime_run_id="runtime-run-binding-conflict",
+            runtime_result_hash="c" * 64,
+        )
+
+    assert load_session_registration(registry, target_session_id) is None
     assert state._conn.execute(
         "SELECT COUNT(*) FROM runs"
     ).fetchone()[0] == 1
