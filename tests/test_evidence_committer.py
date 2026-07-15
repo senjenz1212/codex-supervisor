@@ -149,6 +149,22 @@ def test_evidence_request_fingerprint_binds_expected_workflow_context(
     )
 
 
+def test_evidence_commit_rejects_sparse_registered_run(tmp_path: Path) -> None:
+    fixture = _build_fixture(tmp_path)
+    fixture.state._conn.execute(
+        "UPDATE runs SET session_id='' WHERE run_id='runtime-run'"
+    )
+    fixture.state._conn.commit()
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="run registration session_id is missing",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+
 class _CountingCheckpointAuthority:
     def __init__(self) -> None:
         self._delegate = HmacCheckpointAuthority(

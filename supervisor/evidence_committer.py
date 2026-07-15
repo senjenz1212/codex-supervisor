@@ -78,6 +78,7 @@ from .ledger_checkpoints import (
     normalize_checkpoint_identity,
     verify_authoritative_event_chain,
 )
+from .run_registry import validate_run_registration_authority
 from .state import State, is_postgres_state_dsn
 from .trace_graph import (
     TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
@@ -1449,13 +1450,7 @@ class EvidenceCommitter:
         terminal_events = self._load_terminal_arm_events()
         registered = set(request.registered_run_ids)
         for run_id in registered:
-            if (
-                self.state.get_run(run_id) is None
-                or self.state.get_run_snapshot(run_id) is None
-            ):
-                raise EvidenceCommitIntegrityError(
-                    f"canonical State registration is missing for {run_id}"
-                )
+            self._validated_state_registration(run_id)
         with (
             GradeBook(self.experiment_db_path) as authority_gradebook,
             GradeBook(self.gradebook_path) as gradebook,
@@ -1569,13 +1564,7 @@ class EvidenceCommitter:
         terminal_events = self._load_terminal_arm_events()
         registered = set(request.registered_run_ids)
         for run_id in registered:
-            if (
-                self.state.get_run(run_id) is None
-                or self.state.get_run_snapshot(run_id) is None
-            ):
-                raise EvidenceCommitIntegrityError(
-                    f"canonical State registration is missing for {run_id}"
-                )
+            self._validated_state_registration(run_id)
         with (
             GradeBook(self.experiment_db_path) as authority_gradebook,
             GradeBook(self.gradebook_path) as gradebook,
@@ -2555,14 +2544,9 @@ class EvidenceCommitter:
         self,
         run_id: str,
     ) -> dict[str, Any]:
-        run = self.state.get_run(run_id)
-        snapshot = self.state.get_run_snapshot(run_id)
-        if run is None or snapshot is None:
-            raise EvidenceCommitIntegrityError(
-                f"canonical State registration is missing for {run_id}"
-            )
-        run_payload = dict(run)
-        snapshot_payload = dict(snapshot)
+        registration = self._validated_state_registration(run_id)
+        run_payload = registration["run"]
+        snapshot_payload = registration["snapshot"]
         return {
             "run_id": run_id,
             "session_id": run_payload.get("session_id"),
@@ -2576,6 +2560,21 @@ class EvidenceCommitter:
                 canonical_json_bytes(snapshot_payload)
             ),
         }
+
+    def _validated_state_registration(
+        self,
+        run_id: str,
+    ) -> dict[str, Any]:
+        try:
+            return validate_run_registration_authority(
+                state=self.state,
+                run_id=run_id,
+            )
+        except RuntimeError as exc:
+            raise EvidenceCommitIntegrityError(
+                f"canonical State registration is invalid for {run_id}: "
+                f"{exc}"
+            ) from exc
 
     def _verify_materialization(
         self,
