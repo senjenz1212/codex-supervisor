@@ -22,6 +22,16 @@ ineligible.
 
 ## Reproducible Verification
 
+The source, tests, proof registry, and release scripts verified below are
+pinned by implementation commit:
+
+```text
+172e1ebf4680cd70ab6472dfd3dc9ba3e4a6182a
+```
+
+The follow-up receipt commit only records this immutable implementation
+identity; it does not change the tested implementation.
+
 Final full-suite command:
 
 ```text
