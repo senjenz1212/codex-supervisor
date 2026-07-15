@@ -5380,6 +5380,15 @@ class CodexSupervisorMcpAPI:
                     registration.get("target_session_id") or ""
                 ).strip() == call_session_id
             ]
+            if call_session_id == call_run_id:
+                if registrations or not re.fullmatch(
+                    r"[0-9a-f]{64}", call_result_hash
+                ):
+                    raise RuntimeError(
+                        "persisted runtime call and registration provenance "
+                        "differ"
+                    )
+                continue
             if (
                 len(registrations) != 1
                 or not call_run_id
@@ -5408,7 +5417,15 @@ class CodexSupervisorMcpAPI:
                 registration.get("target_session_id") or ""
             ).strip() == runtime_session_id
         ]
-        if accepted and len(matching_registrations) != 1:
+        lead_call_uses_run_id_fallback = bool(runtime_session_id) and (
+            runtime_session_id
+            == str(runtime_call.get("runtime_run_id") or "").strip()
+        )
+        if (
+            accepted
+            and not lead_call_uses_run_id_fallback
+            and len(matching_registrations) != 1
+        ):
             raise RuntimeError(
                 "accepted production trace runtime call lacks one exact "
                 "workflow registration"

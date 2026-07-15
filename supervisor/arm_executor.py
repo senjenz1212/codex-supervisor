@@ -38,6 +38,8 @@ from .task_environment import (
 log = logging.getLogger(__name__)
 
 
+_MAX_RETAINED_ASSIGNMENTS = 128
+_MAX_RETAINED_TASK_MANIFESTS = 128
 _ISOLATION_ENV_KEYS = frozenset(
     {
         "HOME",
@@ -204,6 +206,8 @@ class RepositoryArmExecutor:
             str,
             dict[Arm, Mapping[str, Any]],
         ] = {}
+        self._active_assignments: dict[str, int] = {}
+        self._active_task_hashes: dict[str, int] = {}
         self._verifier_denied_paths: dict[str, tuple[str, ...]] = {}
         if (
             self._compute_resource_fingerprints[Arm.B]
@@ -255,6 +259,75 @@ class RepositoryArmExecutor:
         self._verifier_denied_paths[task_hash] = paths
 
     async def execute(
+        self,
+        *,
+        arm: Arm,
+        task: TaskSpec,
+        budget: ArmBudget,
+        assignment_id: str,
+    ) -> ArmExecution:
+        self._evict_terminal_retention()
+        task_hash = task.spec_hash
+        self._active_assignments[assignment_id] = (
+            self._active_assignments.get(assignment_id, 0) + 1
+        )
+        self._active_task_hashes[task_hash] = (
+            self._active_task_hashes.get(task_hash, 0) + 1
+        )
+        try:
+            return await self._execute(
+                arm=arm,
+                task=task,
+                budget=budget,
+                assignment_id=assignment_id,
+            )
+        finally:
+            for mapping, key in (
+                (self._active_assignments, assignment_id),
+                (self._active_task_hashes, task_hash),
+            ):
+                remaining = mapping[key] - 1
+                if remaining:
+                    mapping[key] = remaining
+                else:
+                    del mapping[key]
+
+    def _evict_terminal_retention(self) -> None:
+        retained_assignments = list(dict.fromkeys(
+            key[0] for key in self._runtime_identity_owners
+        ))
+        excess_assignments = (
+            len(retained_assignments) - _MAX_RETAINED_ASSIGNMENTS
+        )
+        if excess_assignments > 0:
+            stale_assignments = set(
+                [
+                    assignment_id
+                    for assignment_id in retained_assignments
+                    if assignment_id not in self._active_assignments
+                ][:excess_assignments]
+            )
+            if stale_assignments:
+                stale_keys = [
+                    key
+                    for key in self._runtime_identity_owners
+                    if key[0] in stale_assignments
+                ]
+                for key in stale_keys:
+                    del self._runtime_identity_owners[key]
+        excess_tasks = (
+            len(self._task_runtime_manifests) - _MAX_RETAINED_TASK_MANIFESTS
+        )
+        if excess_tasks > 0:
+            stale_tasks = [
+                task_hash
+                for task_hash in self._task_runtime_manifests
+                if task_hash not in self._active_task_hashes
+            ][:excess_tasks]
+            for task_hash in stale_tasks:
+                del self._task_runtime_manifests[task_hash]
+
+    async def _execute(
         self,
         *,
         arm: Arm,

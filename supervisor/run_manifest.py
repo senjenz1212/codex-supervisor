@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
@@ -473,16 +474,25 @@ def _write_content_addressed_snapshot(path: Path, content: bytes) -> None:
         if path.is_file() and path.read_bytes() == content:
             return
         raise OSError("content-addressed acceptance snapshot collision")
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    token = f"{os.getpid()}.{threading.get_ident()}.{os.urandom(8).hex()}"
+    temporary = path.with_name(f".{path.name}.{token}.tmp")
     try:
         with temporary.open("xb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        if path.is_file() and path.read_bytes() == content:
+            return
+        raise
     finally:
-        if temporary.exists():
-            temporary.unlink()
+        temporary.unlink(missing_ok=True)
 
 
 def _workspace_snapshot_issues(
@@ -1754,6 +1764,24 @@ def _find_keys(value: Any, keys: set[str], prefix: str = "") -> Iterator[tuple[s
             yield from _find_keys(item, keys, f"{prefix}[{index}]")
 
 
+_GIT_CONFIG_OVERRIDES = (
+    "-c", "core.fsmonitor=false",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.pager=cat",
+)
+
+
+def _hardened_git_env() -> dict[str, str]:
+    return {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
+
+
 def _git_changed_paths(root: Path) -> list[Path] | None:
     commands = (
         ("diff", "--name-only", "-z", "HEAD"),
@@ -1764,11 +1792,12 @@ def _git_changed_paths(root: Path) -> list[Path] | None:
     for args in commands:
         try:
             completed = subprocess.run(
-                ["git", *args],
+                ["git", *_GIT_CONFIG_OVERRIDES, *args],
                 cwd=root,
                 check=False,
                 capture_output=True,
                 timeout=10,
+                env=_hardened_git_env(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return None
@@ -1785,12 +1814,13 @@ def _git_changed_paths(root: Path) -> list[Path] | None:
 def _git_output(root: Path, *args: str) -> str:
     try:
         completed = subprocess.run(
-            ["git", *args],
+            ["git", *_GIT_CONFIG_OVERRIDES, *args],
             cwd=root,
             check=False,
             capture_output=True,
             text=True,
             timeout=10,
+            env=_hardened_git_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""

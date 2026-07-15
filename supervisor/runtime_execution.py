@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
@@ -13,7 +16,15 @@ from .agent_runtime import (
     AgentTask,
     RuntimeEvent,
 )
-from .runtime_cleanup import cancel_runtime_after_failure
+from .runtime_cleanup import (
+    CANCEL_CLEANUP_DEADLINE_S,
+    cancel_runtime_after_failure,
+)
+
+log = logging.getLogger(__name__)
+
+INTERRUPT_LOOP_READY_WAIT_S = 5.0
+INTERRUPT_CLEANUP_WAIT_S = CANCEL_CLEANUP_DEADLINE_S + 5.0
 
 
 @dataclass(frozen=True)
@@ -72,15 +83,25 @@ def execute_agent_task_blocking(
         loop_state["task"] = asyncio.current_task()
         return await execute_agent_task(runtime, task)
 
-    with ThreadPoolExecutor(
+    pool = ThreadPoolExecutor(
         max_workers=1,
         thread_name_prefix="agent-runtime-execution",
-    ) as pool:
+    )
+    join_worker_on_exit = True
+    try:
         future = pool.submit(asyncio.run, _execute())
         try:
             return future.result()
         except KeyboardInterrupt:
+            join_worker_on_exit = False
             future.cancel()
+            deadline = time.monotonic() + INTERRUPT_LOOP_READY_WAIT_S
+            while not future.done() and time.monotonic() < deadline:
+                if isinstance(
+                    loop_state.get("loop"), asyncio.AbstractEventLoop
+                ) and isinstance(loop_state.get("task"), asyncio.Task):
+                    break
+                time.sleep(0.02)
             loop = loop_state.get("loop")
             inner_task = loop_state.get("task")
             if isinstance(loop, asyncio.AbstractEventLoop) and isinstance(
@@ -90,11 +111,21 @@ def execute_agent_task_blocking(
                     loop.call_soon_threadsafe(inner_task.cancel)
                 except RuntimeError:
                     pass
-            try:
-                future.result()
-            except BaseException:
-                pass
+            done, _pending = concurrent.futures.wait(
+                (future,),
+                timeout=INTERRUPT_CLEANUP_WAIT_S,
+            )
+            if not done:
+                log.error(
+                    "agent runtime cancellation unconfirmed %.1fs after "
+                    "KeyboardInterrupt; abandoning runtime thread: "
+                    "task_id=%s",
+                    INTERRUPT_CLEANUP_WAIT_S,
+                    task.task_id,
+                )
             raise
+    finally:
+        pool.shutdown(wait=join_worker_on_exit)
 
 
 def runtime_task_runner(factory: RuntimeFactory) -> RuntimeTaskRunner:

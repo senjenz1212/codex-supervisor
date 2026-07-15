@@ -258,7 +258,19 @@ def test_event_verification_fails_closed_on_redacted_key_collision():
 
     assert verification.valid is False
     assert verification.failure_code == "payload_not_redacted"
-    assert "duplicate object key" in str(verification.detail)
+    assert "bound redactor would change" in str(verification.detail)
+
+    disambiguated = _event_for_hash_schema(
+        schema_version=evidence_ledger_module.EVENT_HASH_SCHEMA_VERSION,
+        payload={
+            "API_KEY=[REDACTED]": "secret-key",
+            "API_KEY=[REDACTED_2]": "existing-marker",
+        },
+    )
+    assert verify_event_chain_structure(
+        [disambiguated],
+        expected_run_id="schema-run",
+    ).valid is True
 
 
 def test_historical_event_schema_binding_ignores_mutable_registry_overrides(

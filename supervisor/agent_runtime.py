@@ -58,6 +58,7 @@ _RUNTIME_EXECUTION_MODES = frozenset({
     "test",
 })
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
+_MAX_RETAINED_TERMINAL_RUNS = 128
 _SUBPROCESS_STREAM_LIMIT = 32 * 1024 * 1024
 _WORKSPACE_ONLY_ISOLATION_MODE = "workspace_only"
 _EXECUTION_ENVIRONMENT_ATTESTATION_SCHEMA_VERSION = (
@@ -499,20 +500,6 @@ class CommandAgentRuntime:
                 "runtime transport cannot enforce filesystem isolation mode "
                 f"{isolation.mode}"
             )
-        run_id = str(uuid.uuid4())
-        token = await self._transport.start(
-            run_id=run_id,
-            argv=self._start_argv(task),
-            cwd=cwd,
-            env=self._runtime_env(task),
-            timeout_s=max(0.001, float(task.timeout_s)),
-            metadata=dict(task.metadata),
-        )
-        self._tokens[run_id] = token
-        self._tasks[run_id] = task
-        self._events[run_id] = []
-        self._generation_event_offsets[run_id] = 0
-        self._session_ids[run_id] = run_id
         transport_capabilities: Mapping[str, bool] = {}
         capability_provider = getattr(
             self._transport,
@@ -529,6 +516,21 @@ class CommandAgentRuntime:
                 str(key): bool(value)
                 for key, value in provided.items()
             }
+        self._evict_terminal_runs()
+        run_id = str(uuid.uuid4())
+        token = await self._transport.start(
+            run_id=run_id,
+            argv=self._start_argv(task),
+            cwd=cwd,
+            env=self._runtime_env(task),
+            timeout_s=max(0.001, float(task.timeout_s)),
+            metadata=dict(task.metadata),
+        )
+        self._tokens[run_id] = token
+        self._tasks[run_id] = task
+        self._events[run_id] = []
+        self._generation_event_offsets[run_id] = 0
+        self._session_ids[run_id] = run_id
         discovered_capabilities = {
             **dict(transport_capabilities),
             "filesystem_isolation": supports_isolation,
@@ -695,6 +697,29 @@ class CommandAgentRuntime:
             if discovered:
                 session_id = discovered
         self._session_ids[handle.run_id] = session_id
+
+    def _evict_terminal_runs(self) -> None:
+        excess = len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS
+        if excess <= 0:
+            return
+        active_probe = getattr(self._transport, "is_active", None)
+        if not callable(active_probe):
+            return
+        stale = [
+            run_id
+            for run_id, token in self._tokens.items()
+            if not active_probe(token)
+        ][:excess]
+        for run_id in stale:
+            for mapping in (
+                self._tokens,
+                self._tasks,
+                self._events,
+                self._generation_event_offsets,
+                self._session_ids,
+                self._capability_evidence,
+            ):
+                mapping.pop(run_id, None)
 
     def _task_for(self, handle: AgentRunHandle) -> AgentTask:
         try:
@@ -1371,6 +1396,7 @@ class SubprocessRuntimeTransport:
         timeout_s: float,
         metadata: Mapping[str, Any],
     ) -> str:
+        self._evict_terminal_tokens()
         policy = _filesystem_isolation_policy(metadata, cwd=cwd)
         launch_argv = await self._prepare_launch_argv(
             argv,
@@ -1689,6 +1715,18 @@ class SubprocessRuntimeTransport:
             return
         while line := await _read_stream_line(item.process.stderr):
             item.stderr.append(line.decode("utf-8", errors="replace"))
+
+    def _evict_terminal_tokens(self) -> None:
+        excess = len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS
+        if excess <= 0:
+            return
+        stale = [
+            run_id
+            for run_id, item in self._tokens.items()
+            if item.done.done()
+        ][:excess]
+        for run_id in stale:
+            del self._tokens[run_id]
 
     def _get(self, token: str) -> _SubprocessToken:
         try:

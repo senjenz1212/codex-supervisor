@@ -657,7 +657,10 @@ class RolloutWatcher:
         if not root.is_dir():
             return
         for quarantine_path in sorted(root.glob("*.json")):
-            header = self._load_quarantine_header(quarantine_path)
+            header = self._load_quarantine_header(
+                quarantine_path,
+                truncate_torn_suffix=False,
+            )
             if header is None:
                 self._drop_undecodable_quarantine(quarantine_path)
                 continue
@@ -934,6 +937,8 @@ class RolloutWatcher:
     def _read_quarantine_records(
         self,
         quarantine_path: Path,
+        *,
+        truncate_torn_suffix: bool = True,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
         try:
             resolved_root = self._quarantine_root().resolve()
@@ -1010,7 +1015,7 @@ class RolloutWatcher:
             != quarantine_path.resolve(strict=False)
         ):
             return None
-        if torn_suffix_bytes:
+        if torn_suffix_bytes and truncate_torn_suffix:
             self._truncate_quarantine_suffix(
                 resolved_path,
                 complete_end=complete_end,
@@ -1033,8 +1038,13 @@ class RolloutWatcher:
     def _load_quarantine_header(
         self,
         quarantine_path: Path,
+        *,
+        truncate_torn_suffix: bool = True,
     ) -> dict[str, Any] | None:
-        records = self._read_quarantine_records(quarantine_path)
+        records = self._read_quarantine_records(
+            quarantine_path,
+            truncate_torn_suffix=truncate_torn_suffix,
+        )
         if records is None:
             return None
         return records[0]

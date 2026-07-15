@@ -459,135 +459,35 @@ def scan_containment(
                 )
             continue
         except psutil.AccessDenied:
-            pid = int(process.pid)
-            identity = _identity_for_unreadable_error(
-                pid,
-                identity_by_pid=identity_by_pid,
-                previous_unreadable_by_pid=previous_unreadable_by_pid,
-                known_by_pid=known_by_pid,
-            )
-            error = f"access_denied:{pid}"
-            candidate_principal_relation = _principal_relation(
-                current_principal,
-                _process_principal(process),
-            )
-            if candidate_principal_relation == "different":
-                continue
-            if identity is None and (
-                containment_only_recovery or earliest is not None
-            ):
-                relation = (
-                    "unknown_principal"
-                    if candidate_principal_relation != "same"
-                    else "non_identifiable"
-                )
-                if relation:
-                    unreadable_identity = UnreadableProcessIdentity(
-                        pid=pid,
-                        started_at=None,
-                        relation=relation,
-                        error=error,
-                    )
-                    unreadable[(pid, None)] = unreadable_identity
-                    errors.append(error)
-                continue
-            relation = _retained_or_observed_unreadable_relation(
-                identity,
-                previous_unreadable_by_pid=previous_unreadable_by_pid,
-                unreadable_scope=unreadable_scope,
+            _record_unreadable_scan_process(
+                process,
+                error=f"access_denied:{int(process.pid)}",
+                current_principal=current_principal,
+                containment_only_recovery=containment_only_recovery,
                 earliest=earliest,
+                unreadable_scope=unreadable_scope,
                 parent_by_pid=parent_by_pid,
                 identity_by_pid=identity_by_pid,
+                previous_unreadable_by_pid=previous_unreadable_by_pid,
                 known_by_pid=known_by_pid,
+                unreadable=unreadable,
+                errors=errors,
             )
-            if (
-                relation is None
-                and containment_only_recovery
-                and earliest is not None
-                and identity is not None
-            ):
-                relation = "same_user_after_root"
-            if (
-                relation is not None
-                and candidate_principal_relation != "same"
-            ):
-                relation = "unknown_principal"
-            if identity is not None and relation is not None:
-                unreadable_identity = UnreadableProcessIdentity(
-                    pid=identity.pid,
-                    started_at=identity.started_at,
-                    relation=relation,
-                    error=error,
-                )
-                unreadable[
-                    (identity.pid, identity.started_at)
-                ] = unreadable_identity
-                errors.append(error)
         except (OSError, ValueError) as exc:
-            pid = int(process.pid)
-            identity = _identity_for_unreadable_error(
-                pid,
-                identity_by_pid=identity_by_pid,
-                previous_unreadable_by_pid=previous_unreadable_by_pid,
-                known_by_pid=known_by_pid,
-            )
-            error = f"scan_error:{pid}:{type(exc).__name__}"
-            candidate_principal_relation = _principal_relation(
-                current_principal,
-                _process_principal(process),
-            )
-            if candidate_principal_relation == "different":
-                continue
-            if identity is None and (
-                containment_only_recovery or earliest is not None
-            ):
-                relation = (
-                    "unknown_principal"
-                    if candidate_principal_relation != "same"
-                    else "non_identifiable"
-                )
-                if relation:
-                    unreadable_identity = UnreadableProcessIdentity(
-                        pid=pid,
-                        started_at=None,
-                        relation=relation,
-                        error=error,
-                    )
-                    unreadable[(pid, None)] = unreadable_identity
-                    errors.append(error)
-                continue
-            relation = _retained_or_observed_unreadable_relation(
-                identity,
-                previous_unreadable_by_pid=previous_unreadable_by_pid,
-                unreadable_scope=unreadable_scope,
+            _record_unreadable_scan_process(
+                process,
+                error=f"scan_error:{int(process.pid)}:{type(exc).__name__}",
+                current_principal=current_principal,
+                containment_only_recovery=containment_only_recovery,
                 earliest=earliest,
+                unreadable_scope=unreadable_scope,
                 parent_by_pid=parent_by_pid,
                 identity_by_pid=identity_by_pid,
+                previous_unreadable_by_pid=previous_unreadable_by_pid,
                 known_by_pid=known_by_pid,
+                unreadable=unreadable,
+                errors=errors,
             )
-            if (
-                relation is None
-                and containment_only_recovery
-                and earliest is not None
-                and identity is not None
-            ):
-                relation = "same_user_after_root"
-            if (
-                relation is not None
-                and candidate_principal_relation != "same"
-            ):
-                relation = "unknown_principal"
-            if identity is not None and relation is not None:
-                unreadable_identity = UnreadableProcessIdentity(
-                    pid=identity.pid,
-                    started_at=identity.started_at,
-                    relation=relation,
-                    error=error,
-                )
-                unreadable[
-                    (identity.pid, identity.started_at)
-                ] = unreadable_identity
-                errors.append(error)
     for known in known_by_pid.values():
         key = (known.pid, known.started_at)
         if key in found or key in unreadable:
@@ -1164,6 +1064,18 @@ def _terminate_phase(
             if pid in protected_pids:
                 continue
             signal_sent = _send_pidfd_signal(pidfd, sig) or signal_sent
+        if not _pidfd_signalling_available():
+            for identity in _exact_signal_targets(snapshot):
+                if (
+                    identity.pid in protected_pids
+                    or identity.pid <= 0
+                    or identity.pid == os.getpid()
+                ):
+                    continue
+                signal_sent = (
+                    _send_verified_pid_signal(identity, sig)
+                    or signal_sent
+                )
         _close_pidfds(termination_scan.pidfds)
         phase_signal_sent = phase_signal_sent or signal_sent
 
@@ -1277,25 +1189,10 @@ def _scan_before_deadline(
                 containment_id,
                 **scan_kwargs,
             )
-            exact_targets = {
-                (identity.pid, identity.started_at): identity
-                for identity in snapshot.processes
-            }
-            for unreadable_identity in snapshot.unreadable_identities:
-                if unreadable_identity.relation not in {
-                    "known_identity",
-                    "structural_descendant",
-                }:
-                    continue
-                exact_identity = unreadable_identity.identity
-                if exact_identity is not None:
-                    exact_targets[
-                        (exact_identity.pid, exact_identity.started_at)
-                    ] = exact_identity
-            for key, identity in exact_targets.items():
+            for identity in _exact_signal_targets(snapshot):
                 pidfd = _open_verified_pidfd(identity)
                 if pidfd is not None:
-                    pidfds[key] = pidfd
+                    pidfds[(identity.pid, identity.started_at)] = pidfd
             termination_scan = _TerminationScan(
                 snapshot=snapshot,
                 pidfds=pidfds,
@@ -1545,6 +1442,52 @@ def _open_verified_pidfd(identity: ProcessIdentity) -> int | None:
     return pidfd
 
 
+def _pidfd_signalling_available() -> bool:
+    return callable(getattr(os, "pidfd_open", None)) and callable(
+        getattr(signal, "pidfd_send_signal", None)
+    )
+
+
+def _exact_signal_targets(
+    snapshot: ContainmentSnapshot,
+) -> tuple[ProcessIdentity, ...]:
+    targets: dict[tuple[int, float], ProcessIdentity] = {
+        (identity.pid, identity.started_at): identity
+        for identity in snapshot.processes
+    }
+    for unreadable_identity in snapshot.unreadable_identities:
+        if unreadable_identity.relation not in {
+            "known_identity",
+            "structural_descendant",
+        }:
+            continue
+        exact_identity = unreadable_identity.identity
+        if exact_identity is not None:
+            targets.setdefault(
+                (exact_identity.pid, exact_identity.started_at),
+                exact_identity,
+            )
+    return tuple(targets.values())
+
+
+def _send_verified_pid_signal(
+    identity: ProcessIdentity,
+    sig: signal.Signals,
+) -> bool:
+    observed = process_identity(identity.pid)
+    if (
+        observed is None
+        or not _same_start(observed.started_at, identity.started_at)
+        or not _pid_principal_matches_current(identity.pid)
+    ):
+        return False
+    try:
+        os.kill(identity.pid, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
+    return True
+
+
 def _send_pidfd_signal(pidfd: int, sig: signal.Signals) -> bool:
     pidfd_send_signal = getattr(signal, "pidfd_send_signal", None)
     if not callable(pidfd_send_signal):
@@ -1640,6 +1583,85 @@ def _close_pidfds(pidfds: Mapping[tuple[int, float], int]) -> None:
             pass
 
 
+def _record_unreadable_scan_process(
+    process: Any,
+    *,
+    error: str,
+    current_principal: _ProcessPrincipal,
+    containment_only_recovery: bool,
+    earliest: float | None,
+    unreadable_scope: str,
+    parent_by_pid: Mapping[int, int],
+    identity_by_pid: Mapping[int, ProcessIdentity],
+    previous_unreadable_by_pid: Mapping[int, UnreadableProcessIdentity],
+    known_by_pid: Mapping[int, ProcessIdentity],
+    unreadable: MutableMapping[
+        tuple[int, float | None],
+        UnreadableProcessIdentity,
+    ],
+    errors: list[str],
+) -> None:
+    pid = int(process.pid)
+    identity = _identity_for_unreadable_error(
+        pid,
+        identity_by_pid=identity_by_pid,
+        previous_unreadable_by_pid=previous_unreadable_by_pid,
+        known_by_pid=known_by_pid,
+    )
+    candidate_principal_relation = _principal_relation(
+        current_principal,
+        _process_principal(process),
+    )
+    if candidate_principal_relation == "different":
+        return
+    if identity is None:
+        if (
+            containment_only_recovery
+            or earliest is not None
+            or unreadable_scope == "same_user"
+        ):
+            relation = (
+                "unknown_principal"
+                if candidate_principal_relation != "same"
+                else "non_identifiable"
+            )
+            unreadable[(pid, None)] = UnreadableProcessIdentity(
+                pid=pid,
+                started_at=None,
+                relation=relation,
+                error=error,
+            )
+            errors.append(error)
+        return
+    relation = _retained_or_observed_unreadable_relation(
+        identity,
+        previous_unreadable_by_pid=previous_unreadable_by_pid,
+        unreadable_scope=unreadable_scope,
+        earliest=earliest,
+        parent_by_pid=parent_by_pid,
+        identity_by_pid=identity_by_pid,
+        known_by_pid=known_by_pid,
+    )
+    if (
+        relation is None
+        and containment_only_recovery
+        and earliest is not None
+    ):
+        relation = "same_user_after_root"
+    if relation is not None and candidate_principal_relation != "same":
+        relation = "unknown_principal"
+    if relation is not None:
+        unreadable[
+            (identity.pid, identity.started_at)
+        ] = UnreadableProcessIdentity(
+            pid=identity.pid,
+            started_at=identity.started_at,
+            relation=relation,
+            error=error,
+        )
+        errors.append(error)
+
+
 def _retained_or_observed_unreadable_relation(
     identity: ProcessIdentity | None,
     *,
@@ -1691,8 +1713,10 @@ def _observed_unreadable_relation(
         known_by_pid=known_by_pid,
     ):
         return "structural_descendant"
-    if unreadable_scope == "same_user" and earliest is not None:
-        return "same_user_after_root"
+    if unreadable_scope == "same_user":
+        if earliest is not None:
+            return "same_user_after_root"
+        return "same_user_unbounded"
     return None
 
 

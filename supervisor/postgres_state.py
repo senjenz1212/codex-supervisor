@@ -3976,7 +3976,8 @@ class PostgresState:
                  AND terminal_outcome_json IS NULL
                  AND leased_by IS NOT NULL
                  AND lease_expires_at IS NOT NULL
-                 AND lease_expires_at > %s""",
+                 AND lease_expires_at > %s
+                 AND cleanup_escalated_at IS NULL""",
             (int(now),),
         ).fetchone()
         return int(row["count"] if row is not None else 0)
@@ -4968,19 +4969,19 @@ class PostgresState:
                     if discrepancy
                     else "dual_agent_workflow_terminal_outcome"
                 )
-        if idempotent_replay:
-            if replayed_terminal_event_id is not None:
-                self._coordinate_committed_event(
-                    run_id=committed_run_id,
-                    event_id=replayed_terminal_event_id,
-                    event_kind="dual_agent_workflow_terminal_outcome",
-                )
-            return 0
-        self._coordinate_committed_event(
-            run_id=committed_run_id,
-            event_id=event_id,
-            event_kind=committed_event_kind,
-        )
+            if idempotent_replay:
+                if replayed_terminal_event_id is not None:
+                    self._coordinate_committed_event(
+                        run_id=committed_run_id,
+                        event_id=replayed_terminal_event_id,
+                        event_kind="dual_agent_workflow_terminal_outcome",
+                    )
+                return 0
+            self._coordinate_committed_event(
+                run_id=committed_run_id,
+                event_id=event_id,
+                event_kind=committed_event_kind,
+            )
         if discrepancy:
             raise RuntimeError(
                 f"workflow job terminal outcome discrepancy: {job_id}"

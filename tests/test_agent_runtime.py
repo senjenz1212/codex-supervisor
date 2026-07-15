@@ -287,12 +287,6 @@ def test_runtime_leak_helper_retains_access_denied_known_descendant(
     assert cleanup._inspection_failures == {"access_denied:50019"}
 
 
-def _pidfd_signalling_available() -> bool:
-    return callable(getattr(os, "pidfd_open", None)) and callable(
-        getattr(signal, "pidfd_send_signal", None)
-    )
-
-
 def test_experiment_and_task_core_do_not_import_provider_sdks() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     core_modules = (
@@ -1180,11 +1174,7 @@ time.sleep(30)
     child_pid = 0
 
     try:
-        expected_error = (
-            "stream-json line exceeds"
-            if _pidfd_signalling_available()
-            else "runtime containment could not prove process-tree reap"
-        )
+        expected_error = "stream-json line exceeds"
         with pytest.raises(
             RuntimeError,
             match=expected_error,
@@ -1207,14 +1197,8 @@ time.sleep(30)
         assert asyncio.get_running_loop().time() - started_at < 10
         if psutil.pid_exists(root_pid):
             assert psutil.Process(root_pid).status() == psutil.STATUS_ZOMBIE
-        if _pidfd_signalling_available():
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid <= 0 and child_path.exists():
             with contextlib.suppress(
@@ -1813,34 +1797,18 @@ while True:
         tagged_runtime_cleanup.watch_pid(child_pid, pgid=child_pid)
         assert os.getpgid(child_pid) == child_pid
 
-        if _pidfd_signalling_available():
-            await transport.cancel(token)
-            result = await transport.collect(token)
-            product_survivors = tagged_runtime_cleanup.snapshot(
-                containment_id
-            )
-            assert {"type": "run.cancelled"} in result.raw_events
-            for pid in (root_pid, child_pid):
-                if not psutil.pid_exists(pid):
-                    continue
-                process = psutil.Process(pid)
-                assert process.status() == psutil.STATUS_ZOMBIE
-            assert product_survivors == ()
-        else:
-            with pytest.raises(
-                RuntimeError,
-                match=(
-                    "runtime containment could not prove process-tree reap"
-                ),
-            ):
-                await transport.cancel(token)
-            product_survivors = tagged_runtime_cleanup.snapshot(
-                containment_id
-            )
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        await transport.cancel(token)
+        result = await transport.collect(token)
+        product_survivors = tagged_runtime_cleanup.snapshot(
+            containment_id
+        )
+        assert {"type": "run.cancelled"} in result.raw_events
+        for pid in (root_pid, child_pid):
+            if not psutil.pid_exists(pid):
+                continue
+            process = psutil.Process(pid)
+            assert process.status() == psutil.STATUS_ZOMBIE
+        assert product_survivors == ()
     finally:
         for pid in (root_pid, child_pid):
             if pid <= 0:
@@ -1950,17 +1918,7 @@ print('root-complete')
     )
     child_pid = 0
     try:
-        if _pidfd_signalling_available():
-            result = await transport.collect(token)
-        else:
-            with pytest.raises(
-                RuntimeError,
-                match=(
-                    "runtime containment could not prove process-tree reap"
-                ),
-            ):
-                await transport.collect(token)
-            result = None
+        result = await transport.collect(token)
         deadline = asyncio.get_running_loop().time() + 2
         while (
             asyncio.get_running_loop().time() < deadline
@@ -1972,16 +1930,10 @@ print('root-complete')
         )
         tagged_runtime_cleanup.watch_pid(child_pid, pgid=child_pid)
         product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
-        if _pidfd_signalling_available():
-            assert result is not None
-            assert result.returncode == 0
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result is not None
+        assert result.returncode == 0
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid and psutil.pid_exists(child_pid):
             try:
@@ -2084,18 +2036,8 @@ while True:
             await asyncio.sleep(0.01)
         assert ready_path.exists()
 
-        if _pidfd_signalling_available():
-            await transport.cancel(token)
-            result = await transport.collect(token)
-        else:
-            with pytest.raises(
-                RuntimeError,
-                match=(
-                    "runtime containment could not prove process-tree reap"
-                ),
-            ):
-                await transport.cancel(token)
-            result = None
+        await transport.cancel(token)
+        result = await transport.collect(token)
 
         deadline = asyncio.get_running_loop().time() + 2
         while (
@@ -2110,16 +2052,10 @@ while True:
             tagged_runtime_cleanup.watch_pid(child_pid, pgid=child_pid)
         product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
         assert child_pid > 0
-        if _pidfd_signalling_available():
-            assert result is not None
-            assert {"type": "run.cancelled"} in result.raw_events
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result is not None
+        assert {"type": "run.cancelled"} in result.raw_events
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         if child_pid and psutil.pid_exists(child_pid):
             try:
@@ -2990,51 +2926,22 @@ while True:
             assert "-m" in argv
             assert argv[-1] == "Remain active until cancellation."
 
-        if _pidfd_signalling_available():
-            await runtime.cancel(handle)
-            result = await runtime.collect(handle)
-        else:
-            with pytest.raises(
-                RuntimeError,
-                match=(
-                    "runtime containment could not prove process-tree reap"
-                ),
-            ):
-                await runtime.cancel(handle)
-            token = runtime._token_for(handle)
-            transport = runtime._transport
-
-            def consume_done_exception(done: asyncio.Future[int]) -> None:
-                with contextlib.suppress(
-                    asyncio.CancelledError,
-                    Exception,
-                ):
-                    done.exception()
-
-            transport._get(token).done.add_done_callback(
-                consume_done_exception
-            )
-            result = None
+        await runtime.cancel(handle)
+        result = await runtime.collect(handle)
 
         product_survivors = tagged_runtime_cleanup.snapshot(containment_id)
-        if _pidfd_signalling_available():
-            assert result is not None
-            assert result.status == "cancelled"
-            assert handle.exercised_capabilities["cancel"] is True
-            assert (
-                result.metadata["capability_evidence"]["exercised"]["cancel"]
-                is True
-            )
-            for pid in (root_pid, child_pid):
-                if not psutil.pid_exists(pid):
-                    continue
-                assert psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
-            assert product_survivors == ()
-        else:
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result is not None
+        assert result.status == "cancelled"
+        assert handle.exercised_capabilities["cancel"] is True
+        assert (
+            result.metadata["capability_evidence"]["exercised"]["cancel"]
+            is True
+        )
+        for pid in (root_pid, child_pid):
+            if not psutil.pid_exists(pid):
+                continue
+            assert psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+        assert product_survivors == ()
     finally:
         for pid in (root_pid, child_pid):
             if pid <= 0:

@@ -440,6 +440,8 @@ def test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs(tmp_path: 
     worker = {
         "worker_id": "audit-1",
         "pid": 43210,
+        "pid_create_time_s": 90.0,
+        "status": "running",
         "started_at_s": 100,
         "timeout_s": 30,
         "budget_usd": 1.5,
@@ -452,11 +454,13 @@ def test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs(tmp_path: 
         task_id="workflow-1",
         workers=[worker],
         now_s=200,
-        is_pid_alive=lambda pid: pid == 43210,
+        is_pid_alive=lambda pid: pid == 43210 and not killed,
         terminate=lambda pid, sig: killed.append((pid, sig)),
+        process_create_time=lambda pid: 90.0,
     )
 
     assert result["status"] == "cleanup_completed"
+    assert result["cleaned"][0]["status"] == "terminated"
     assert result["cleaned"][0]["reason"] == "timeout_exceeded"
     assert result["cleaned"][0]["timeout_s"] == 30
     assert result["cleaned"][0]["budget_usd"] == 1.5
@@ -593,6 +597,7 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_path.write_text(
         '{"task_id":"workflow-1","worker_id":"stale-1","pid":43210,'
+        '"pid_create_time_s":90.0,"status":"running",'
         '"started_at_s":100,"timeout_s":30,"budget_usd":0.2,'
         '"log_ref":".handoff/agentic-workers/workflow-1/stale-1/worker.log"}\n',
         encoding="utf-8",
@@ -622,8 +627,9 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
         cwd=tmp_path,
         task_id=task_id,
         now_s=200,
-        is_pid_alive=lambda pid: pid in {43210, 43211},
+        is_pid_alive=lambda pid: pid in {43210, 43211} and pid not in killed,
         terminate=lambda pid, sig: killed.append(pid),
+        process_create_time=lambda pid: 90.0,
     )
 
     assert killed == [43210]

@@ -1260,7 +1260,7 @@ class TraceGraph:
             edge.target
             for edge in self._edges
             if edge.relation is EdgeType.PROMOTES
-            and edge.source.node_type is NodeType.PROMOTION
+            and edge.source.node_type in (NodeType.PROMOTION, NodeType.DEP)
             and edge.target.node_type is NodeType.DEC
         }
         authoritative_decisions = promoted_decisions or decision_identities
@@ -2743,6 +2743,19 @@ class TraceGraphStore:
 
                 """
             )
+            stored_versions = [
+                str(row[0])
+                for row in self._conn.execute(
+                    "SELECT schema_version FROM trace_store_metadata"
+                    " ORDER BY schema_version"
+                ).fetchall()
+            ]
+            if stored_versions != [TRACE_GRAPH_STORE_SCHEMA_VERSION]:
+                raise TraceGraphError(
+                    "trace graph store schema version mismatch: expected "
+                    f"{TRACE_GRAPH_STORE_SCHEMA_VERSION}, found "
+                    + (", ".join(stored_versions) or "none")
+                )
 
 
 def _trace_lifecycle_revision_from_row(

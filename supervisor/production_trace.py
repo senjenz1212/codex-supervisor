@@ -58,6 +58,7 @@ PRODUCTION_TRACE_NAMESPACE = "harness-v1/production-trace"
 PRODUCTION_TRACE_VERIFIER_ID = "supervisor.production-trace.process-verifier"
 PRODUCTION_TRACE_VERIFIER_VERSION = "1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_PASSING_GATE_STATUSES = frozenset({"accepted", "completed", "passed"})
 _UUID7_TIMESTAMP_MAX = (1 << 48) - 1
 _PRODUCTION_TRACE_THREAD_LOCK = threading.RLock()
 
@@ -219,8 +220,11 @@ class ProductionTraceEvidence:
 
     @property
     def passed(self) -> bool:
-        """Whether the persisted process event completed, not gate outcome."""
-        return self.source_event_state == "completed"
+        """Whether the event persisted as completed and the gate passed."""
+        return (
+            self.source_event_state == "completed"
+            and self.gate_status in _PASSING_GATE_STATUSES
+        )
 
     @property
     def assignment_id(self) -> str:
@@ -402,7 +406,12 @@ class ProductionTraceRecorder:
                         failure_classification=(
                             ""
                             if evidence.passed
-                            else "source_event_failed"
+                            else (
+                                "source_event_failed"
+                                if evidence.source_event_state
+                                != "completed"
+                                else "gate_failed"
+                            )
                         ),
                     ),
                     verifier_config_hash=verifier_config_hash,

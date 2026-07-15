@@ -11,6 +11,7 @@ import platform
 import posixpath
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -1134,6 +1135,76 @@ class LegacyEnvironmentSelectedSweBenchVerifier:
         )
 
 
+_UNITY_ENV_KEYS = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+)
+
+
+def _unity_process_env() -> dict[str, str]:
+    return {
+        key: os.environ[key]
+        for key in _UNITY_ENV_KEYS
+        if key in os.environ
+    }
+
+
+def _run_unity_process(
+    command: Sequence[str],
+    *,
+    cwd: str | None = None,
+    capture_output: bool = False,
+    text: bool = False,
+    timeout: float | None = None,
+    check: bool = False,
+    env: Mapping[str, str] | None = None,
+    start_new_session: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    pipe = subprocess.PIPE if capture_output else None
+    with subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=pipe,
+        stderr=pipe,
+        text=text,
+        env=env,
+        start_new_session=start_new_session,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            if start_new_session and hasattr(os, "killpg"):
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            process.kill()
+            stdout, stderr = process.communicate()
+            raise subprocess.TimeoutExpired(
+                command,
+                timeout if timeout is not None else 0,
+                output=stdout,
+                stderr=stderr,
+            ) from exc
+    completed = subprocess.CompletedProcess(
+        command,
+        process.returncode,
+        stdout,
+        stderr,
+    )
+    if check:
+        completed.check_returncode()
+    return completed
+
+
 class UnityTestFrameworkVerifier:
     """Run hidden Unity tests only after the agent result has been frozen.
 
@@ -1159,7 +1230,7 @@ class UnityTestFrameworkVerifier:
         test_platform: str = "EditMode",
         timeout_s: int = 900,
         process_runner: Callable[..., subprocess.CompletedProcess[str]] = (
-            subprocess.run
+            _run_unity_process
         ),
     ) -> None:
         self.verifier_id = verifier_id
@@ -1347,6 +1418,8 @@ class UnityTestFrameworkVerifier:
                         text=True,
                         timeout=self._timeout_s,
                         check=False,
+                        env=_unity_process_env(),
+                        start_new_session=True,
                     )
                 except subprocess.TimeoutExpired as exc:
                     return _unity_infrastructure_result(

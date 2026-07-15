@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -2396,13 +2397,34 @@ def _create_repository(path: Path, *, unity: bool) -> str:
     return _git(path, "rev-parse", "HEAD").lower()
 
 
+_FIXTURE_GIT_DATE = "2026-01-01T00:00:00 +0000"
+
+
 def _git(cwd: Path, *args: str) -> str:
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "HOME": str(cwd),
+        "GIT_AUTHOR_NAME": "Harness Tracer",
+        "GIT_AUTHOR_EMAIL": "tracer@example.invalid",
+        "GIT_COMMITTER_NAME": "Harness Tracer",
+        "GIT_COMMITTER_EMAIL": "tracer@example.invalid",
+        "GIT_AUTHOR_DATE": _FIXTURE_GIT_DATE,
+        "GIT_COMMITTER_DATE": _FIXTURE_GIT_DATE,
+    }
     return subprocess.run(
-        ("git", *args),
+        (
+            "git",
+            "-c", "commit.gpgsign=false",
+            "-c", "core.hooksPath=",
+            *args,
+        ),
         cwd=cwd,
         check=True,
         text=True,
         capture_output=True,
+        env=env,
     ).stdout.strip()
 
 

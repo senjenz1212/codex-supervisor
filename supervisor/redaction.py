@@ -13,7 +13,8 @@ Markers ARE deliberate — reviewers should see redaction happened, not just
 think the field was empty.
 
 Ledger rules are versioned: v1 preserves the historical values-only behavior;
-v2 also redacts object keys and rejects key collisions.
+v2 also redacts object keys and deterministically disambiguates key
+collisions with numeric suffixes.
 """
 from __future__ import annotations
 import re
@@ -153,31 +154,11 @@ def _build_frozen_redactor(
     frozen_redact_keys = bool(redact_keys)
 
     def apply(value: Any) -> Any:
-        if isinstance(value, str):
-            out = value
-            for pattern, replacement in frozen_patterns:
-                out = pattern.sub(replacement, out)
-            return out
-        if isinstance(value, dict):
-            redacted: dict[Any, Any] = {}
-            for key, item in value.items():
-                redacted_key = (
-                    apply(key)
-                    if frozen_redact_keys and isinstance(key, str)
-                    else key
-                )
-                if redacted_key in redacted:
-                    raise ValueError(
-                        "redaction produced duplicate object key: "
-                        f"{redacted_key!r}"
-                    )
-                redacted[redacted_key] = apply(item)
-            return redacted
-        if isinstance(value, list):
-            return [apply(item) for item in value]
-        if isinstance(value, tuple):
-            return tuple(apply(item) for item in value)
-        return value
+        return _redact_with_patterns(
+            value,
+            frozen_patterns,
+            redact_keys=frozen_redact_keys,
+        )
 
     return apply
 

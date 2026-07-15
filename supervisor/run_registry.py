@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import errno
 import hashlib
 import hmac
 import json
@@ -877,6 +878,11 @@ def register_submitted_workflow(
             ),
         )
         if pending:
+            if str(existing.get("task") or "") != registration.task:
+                state.update_pending_run_task(
+                    run_id=registration.workflow_run_id,
+                    task=registration.task,
+                )
             _replace_write_json(registration.registry_path, metadata)
     return registration
 
@@ -2597,7 +2603,7 @@ def _session_registry_path(registry_root: Path, session_id: str) -> Path:
     raw = str(session_id).strip()
     if (
         not raw
-        or raw in {".", ".."}
+        or raw.startswith(".")
         or "\x00" in raw
         or "/" in raw
         or "\\" in raw
@@ -2996,13 +3002,11 @@ def _durable_unlink(path: Path) -> bool:
 
 
 def _fsync_directory(directory: Path) -> None:
-    try:
-        descriptor = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
+    descriptor = os.open(directory, os.O_RDONLY)
     try:
         os.fsync(descriptor)
-    except OSError:
-        pass
+    except OSError as exc:
+        if exc.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
     finally:
         os.close(descriptor)

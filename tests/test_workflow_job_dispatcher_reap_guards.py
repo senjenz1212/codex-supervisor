@@ -220,7 +220,7 @@ def test_cleanup_retry_escalates_durably_without_parking_live_worker(
     assert str(row["leased_by"]).startswith("cleanup:")
     assert (
         state.count_active_dual_agent_workflow_job_leases(now=3000)
-        == 1
+        == 0
     )
 
 

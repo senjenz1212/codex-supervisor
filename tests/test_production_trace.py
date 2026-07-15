@@ -268,7 +268,9 @@ def test_process_grade_does_not_treat_gate_outcome_as_hidden_evidence(
             receipt.grade_citation.grade_id
         )
 
-    assert revision.passed is True
+    assert revision.passed is False
+    assert revision.score == 0.0
+    assert revision.failure_classification == "gate_failed"
     assert revision.evidence["claim_cap"] == "L1"
     assert revision.evidence["hidden_outcome_evidence"] is False
     assert (

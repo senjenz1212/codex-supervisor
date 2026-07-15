@@ -1579,6 +1579,31 @@ def _secure_open_error(
     return error_type(f"{label} could not be opened safely: {error}")
 
 
+def _mkdir_durable(
+    parent_fd: int,
+    name: str,
+    *,
+    error_type: type[LedgerError],
+    label: str,
+) -> None:
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        return
+    except OSError as exc:
+        raise _secure_open_error(
+            error_type=error_type,
+            label=label,
+            error=exc,
+        ) from exc
+    try:
+        os.fsync(parent_fd)
+    except OSError as exc:
+        raise error_type(
+            f"{label} parent directory fsync failed: {exc}"
+        ) from exc
+
+
 def _require_no_follow_support(error_type: type[LedgerError]) -> None:
     if not _NOFOLLOW or not _DIRECTORY:
         raise error_type("secure no-follow filesystem operations are unavailable")
@@ -1619,16 +1644,12 @@ def _open_directory_tree(
                 label=label,
             )
             if create:
-                try:
-                    os.mkdir(component, mode=0o700, dir_fd=current_fd)
-                except FileExistsError:
-                    pass
-                except OSError as exc:
-                    raise _secure_open_error(
-                        error_type=error_type,
-                        label=label,
-                        error=exc,
-                    ) from exc
+                _mkdir_durable(
+                    current_fd,
+                    component,
+                    error_type=error_type,
+                    label=label,
+                )
             try:
                 child_fd = os.open(
                     component,
@@ -1680,16 +1701,12 @@ def _open_child_directory(
 ) -> int | None:
     _validate_path_component(name, error_type=error_type, label=label)
     if create:
-        try:
-            os.mkdir(name, mode=0o700, dir_fd=parent_fd)
-        except FileExistsError:
-            pass
-        except OSError as exc:
-            raise _secure_open_error(
-                error_type=error_type,
-                label=label,
-                error=exc,
-            ) from exc
+        _mkdir_durable(
+            parent_fd,
+            name,
+            error_type=error_type,
+            label=label,
+        )
     try:
         return os.open(name, _DIRECTORY_FLAGS, dir_fd=parent_fd)
     except FileNotFoundError:

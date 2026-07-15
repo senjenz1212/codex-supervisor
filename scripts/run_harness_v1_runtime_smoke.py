@@ -120,38 +120,46 @@ async def _run_one(
     }
 
 
+def _prepare_task_repo(task_root: Path) -> str:
+    _run(["git", "init", "--quiet"], cwd=task_root)
+    _run(
+        ["git", "config", "user.email", "harness@example.invalid"],
+        cwd=task_root,
+    )
+    _run(["git", "config", "user.name", "Harness"], cwd=task_root)
+    (task_root / "README.md").write_text(
+        "runtime compatibility smoke\n",
+        encoding="utf-8",
+    )
+    _run(["git", "add", "-A"], cwd=task_root)
+    _run(["git", "commit", "--quiet", "-m", "base"], cwd=task_root)
+    return _run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=task_root,
+    ).stdout.strip()
+
+
 async def _main(args: argparse.Namespace) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(
-        prefix="harness-v1-runtime-smoke-"
-    ) as value:
-        task_root = Path(value)
-        _run(["git", "init", "--quiet"], cwd=task_root)
-        _run(
-            ["git", "config", "user.email", "harness@example.invalid"],
-            cwd=task_root,
-        )
-        _run(["git", "config", "user.name", "Harness"], cwd=task_root)
-        (task_root / "README.md").write_text(
-            "runtime compatibility smoke\n",
-            encoding="utf-8",
-        )
-        _run(["git", "add", "-A"], cwd=task_root)
-        _run(["git", "commit", "--quiet", "-m", "base"], cwd=task_root)
-        task_revision = _run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=task_root,
-        ).stdout.strip()
+        prefix="harness-v1-runtime-smoke-claude-"
+    ) as claude_dir, tempfile.TemporaryDirectory(
+        prefix="harness-v1-runtime-smoke-codex-"
+    ) as codex_dir:
+        claude_root = Path(claude_dir)
+        codex_root = Path(codex_dir)
+        claude_revision = _prepare_task_repo(claude_root)
+        codex_revision = _prepare_task_repo(codex_root)
 
         claude = await _run_one(
             ClaudeCodeRuntime(),
             model=args.claude_model,
-            root=task_root,
+            root=claude_root,
         )
         codex = await _run_one(
             CodexRuntime(),
             model=args.codex_model,
-            root=task_root,
+            root=codex_root,
         )
 
     head = _run(
@@ -174,6 +182,9 @@ async def _main(args: argparse.Namespace) -> int:
     both_completed = (
         claude["result"]["status"] == "completed"
         and codex["result"]["status"] == "completed"
+    )
+    both_workspaces_clean = (
+        claude["workspace_clean_after"] and codex["workspace_clean_after"]
     )
     receipt = {
         "schema_version": "harness-v1-runtime-operational-smoke/v1",
@@ -208,7 +219,10 @@ async def _main(args: argparse.Namespace) -> int:
             "instruction_sha256": hashlib.sha256(
                 INSTRUCTION.encode("utf-8")
             ).hexdigest(),
-            "repository_revision": task_revision,
+            "repository_revision": {
+                "claude_code": claude_revision,
+                "codex": codex_revision,
+            },
         },
         "runs": {
             "claude_code": claude,
@@ -217,6 +231,7 @@ async def _main(args: argparse.Namespace) -> int:
         "same_result_schema": same_result_schema,
         "both_completed": both_completed,
         "exact_output_ok": exact_output,
+        "both_workspaces_clean": both_workspaces_clean,
     }
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -231,6 +246,7 @@ async def _main(args: argparse.Namespace) -> int:
                 "same_result_schema": same_result_schema,
                 "both_completed": both_completed,
                 "exact_output_ok": exact_output,
+                "both_workspaces_clean": both_workspaces_clean,
                 "claude_resolved_model": claude["result"]["resolved_model"],
                 "codex_resolved_model": codex["result"]["resolved_model"],
             },
@@ -238,7 +254,14 @@ async def _main(args: argparse.Namespace) -> int:
             indent=2,
         )
     )
-    return 0 if same_result_schema and both_completed and exact_output else 1
+    return (
+        0
+        if same_result_schema
+        and both_completed
+        and exact_output
+        and both_workspaces_clean
+        else 1
+    )
 
 
 def main() -> int:

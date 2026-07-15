@@ -5196,6 +5196,15 @@ def _quote_sqlite_identifier(value: str) -> str:
     return '"' + str(value).replace('"', '""') + '"'
 
 
+_RESERVED_EVIDENCE_ROOT_NAMES = frozenset(
+    {"cas", "checkpoints", "evidence-commits.db"}
+    | {
+        f"evidence-commits.db{suffix}"
+        for suffix in _SQLITE_SIDECAR_SUFFIXES
+    }
+)
+
+
 def _safe_relative_path(value: str) -> PurePosixPath:
     raw = str(value).strip().replace("\\", "/")
     path = PurePosixPath(raw)
@@ -5203,6 +5212,7 @@ def _safe_relative_path(value: str) -> PurePosixPath:
         not raw
         or path.is_absolute()
         or any(part in {"", ".", ".."} for part in path.parts)
+        or path.parts[0].casefold() in _RESERVED_EVIDENCE_ROOT_NAMES
     ):
         raise ValueError(f"unsafe evidence artifact path: {value!r}")
     return path

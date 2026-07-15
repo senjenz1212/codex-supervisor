@@ -61,6 +61,7 @@ def _is_sensitive_env_entry(key: str, value: str) -> bool:
         return True
     return _redact_secret_text(value) != value
 _SDK_ATTESTATION_SCHEMA = "supervisor-claude-sdk-attestation/v1"
+_MAX_RETAINED_TERMINAL_EXECUTIONS = 128
 _LAUNCHER_SOURCE = f"""#!{sys.executable}
 import hashlib
 import json
@@ -303,6 +304,13 @@ class ClaudeAgentSdkTransport:
         timeout_s: float,
         metadata: Mapping[str, Any],
     ) -> str:
+        existing = self._executions.get(run_id)
+        if existing is not None and not existing.task.done():
+            raise RuntimeError(
+                "cannot start while the previous runtime generation is active"
+            )
+        self._executions.pop(run_id, None)
+        self._evict_terminal_executions()
         containment = self._new_containment(env) if self._contained else None
         execution = _SdkExecution(
             queue=asyncio.Queue(),
@@ -752,6 +760,18 @@ class ClaudeAgentSdkTransport:
         if containment is None:
             return
         shutil.rmtree(containment.root, ignore_errors=True)
+
+    def _evict_terminal_executions(self) -> None:
+        excess = len(self._executions) - _MAX_RETAINED_TERMINAL_EXECUTIONS
+        if excess <= 0:
+            return
+        stale = [
+            token
+            for token, execution in self._executions.items()
+            if execution.task.done()
+        ][:excess]
+        for token in stale:
+            del self._executions[token]
 
     def _get(self, token: str) -> _SdkExecution:
         try:

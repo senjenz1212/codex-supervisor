@@ -308,12 +308,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _pidfd_signalling_available() -> bool:
-    return callable(getattr(os, "pidfd_open", None)) and callable(
-        getattr(signal, "pidfd_send_signal", None)
-    )
-
-
 def _spawn_stubborn_worker_with_child(
     tmp_path: Path,
     cleanup: _TaggedProcessCleanup,
@@ -598,18 +592,10 @@ def test_cancel_kills_descendant_that_escaped_with_setsid(
             tree["containment_id"]
         )
         assert child_pid in result["descendant_pids"]
-        if _pidfd_signalling_available():
-            assert result["safe_to_finalize"] is True
-            with pytest.raises(ProcessLookupError):
-                os.getpgid(child_pid)
-            assert product_survivors == ()
-        else:
-            assert result["safe_to_finalize"] is False
-            assert child_pid in result["surviving_pids"]
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result["safe_to_finalize"] is True
+        with pytest.raises(ProcessLookupError):
+            os.getpgid(child_pid)
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_process_group(process, process.pid)
@@ -704,17 +690,9 @@ while True:
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
         assert child_pid > 0
         assert child_pid in result["descendant_pids"]
-        if _pidfd_signalling_available():
-            assert result["safe_to_finalize"] is True
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert result["safe_to_finalize"] is False
-            assert child_pid in result["surviving_pids"]
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result["safe_to_finalize"] is True
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_process_group(process, process.pid)
@@ -795,17 +773,9 @@ subprocess.Popen(
 
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
         assert child_pid in result["descendant_pids"]
-        if _pidfd_signalling_available():
-            assert result["safe_to_finalize"] is True
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert result["safe_to_finalize"] is False
-            assert child_pid in result["surviving_pids"]
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result["safe_to_finalize"] is True
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         if child_pid:
@@ -1237,30 +1207,13 @@ subprocess.Popen(
         child_pid = int(spawned_child["pid"])
         product_survivors = tagged_process_cleanup.snapshot()
 
-        if _pidfd_signalling_available():
-            assert retried["status"] == "submitted"
-            assert retried["recovery_point"] == "request_written"
-            assert retried["dispatch_attempts"] == 1
-            assert retried["next_dispatch_at"] is not None
-            assert retried["error"] == "spawned_worker_identity_untrusted"
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert retried["status"] == "running"
-            assert retried["recovery_point"] == "spawn_prepared"
-            assert retried["pid"] is None
-            assert retried["worker_pgid"] is None
-            assert retried["worker_started_at"] is None
-            assert retried["worker_containment_id"]
-            assert str(retried["leased_by"]).startswith("cleanup:")
-            assert retried["error"] in {
-                "generation_bound_signal_unavailable",
-                "worker_tree_survived_sigkill",
-                "worker_containment_scan_incomplete",
-            }
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert retried["status"] == "submitted"
+        assert retried["recovery_point"] == "request_written"
+        assert retried["dispatch_attempts"] == 1
+        assert retried["next_dispatch_at"] is not None
+        assert retried["error"] == "spawned_worker_identity_untrusted"
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         if child_pid:
@@ -1529,17 +1482,9 @@ def test_pid_reuse_still_terminates_surviving_tagged_descendant(
         assert child_pid in result["descendant_pids"]
         assert root_signals == []
         assert root_group_signals == []
-        if _pidfd_signalling_available():
-            assert result["safe_to_finalize"] is True
-            assert not psutil.pid_exists(child_pid)
-            assert product_survivors == ()
-        else:
-            assert result["safe_to_finalize"] is False
-            assert child_pid in result["surviving_pids"]
-            assert psutil.pid_exists(child_pid)
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result["safe_to_finalize"] is True
+        assert not psutil.pid_exists(child_pid)
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_pid(child_pid)
@@ -1649,25 +1594,13 @@ def test_pid_reuse_reaps_tagged_descendant_before_dispatcher_finalizes(
         assert row is not None
         assert root_signals == []
         assert root_group_signals == []
-        if _pidfd_signalling_available():
-            assert result["failed"] == ["pid-reuse"]
-            assert result["cleanup_retry_pending"] == []
-            assert completion_observations == [True]
-            assert row["status"] == "failed"
-            assert row["recovery_point"] == "terminal"
-            assert row["worker_reaped_at"] == 1000
-            assert product_survivors == ()
-        else:
-            assert result["failed"] == []
-            assert result["cleanup_retry_pending"] == ["pid-reuse"]
-            assert completion_observations == []
-            assert row["status"] == "running"
-            assert row["recovery_point"] == "spawned"
-            assert row["worker_reaped_at"] is None
-            assert str(row["leased_by"]).startswith("cleanup:")
-            assert child_pid in {
-                identity.pid for identity in product_survivors
-            }
+        assert result["failed"] == ["pid-reuse"]
+        assert result["cleanup_retry_pending"] == []
+        assert completion_observations == [True]
+        assert row["status"] == "failed"
+        assert row["recovery_point"] == "terminal"
+        assert row["worker_reaped_at"] == 1000
+        assert product_survivors == ()
     finally:
         tagged_process_cleanup.cleanup()
         _cleanup_pid(child_pid)
@@ -2992,17 +2925,9 @@ def test_containment_id_only_recovery_reaps_real_tagged_process(
         product_survivors = tagged_process_cleanup.snapshot(containment_id)
         product_returncode = process.poll()
         assert process.pid in result["descendant_pids"]
-        if _pidfd_signalling_available():
-            assert result["safe_to_finalize"] is True
-            assert product_survivors == ()
-            assert product_returncode is not None
-        else:
-            assert result["safe_to_finalize"] is False
-            assert process.pid in result["surviving_pids"]
-            assert process.pid in {
-                identity.pid for identity in product_survivors
-            }
-            assert product_returncode is None
+        assert result["safe_to_finalize"] is True
+        assert product_survivors == ()
+        assert product_returncode is not None
     finally:
         tagged_process_cleanup.cleanup()
 

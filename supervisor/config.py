@@ -284,6 +284,7 @@ class TelegramCfg(BaseModel):
 class DriftCfg(BaseModel):
     l1_scope_violation_threshold: int = 3
     l2_similarity_threshold: float = 0.4
+    l3_timeout_s: float = 120.0
     nudge_text_template: str = "Refocus on: {task}"
 
 

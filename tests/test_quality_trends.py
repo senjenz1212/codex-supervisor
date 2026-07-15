@@ -1561,7 +1561,7 @@ def test_sampled_p11_audit_skips_events_without_recorded_runtime_baseline(tmp_pa
         test_timeout_s=1,
     )
 
-    assert audit["status"] == "audited"
+    assert audit["status"] == "no_evidence"
     assert audit["audited"] == []
     assert audit["false_accept_count"] == 0
     assert audit["false_accept_denominator"] == 0

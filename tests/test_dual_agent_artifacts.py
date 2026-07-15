@@ -791,7 +791,7 @@ def test_export_preserves_only_hash_bound_nested_deliverables(tmp_path):
     )
 
 
-def test_export_rejects_hash_bound_deliverable_mismatch(tmp_path):
+def test_export_degrades_hash_bound_deliverable_mismatch(tmp_path):
     state = _state(tmp_path)
     output_dir = tmp_path / "docs" / "dual-agent" / "task-1"
     report = output_dir / "pilot" / "report.json"
@@ -820,14 +820,24 @@ def test_export_rejects_hash_bound_deliverable_mismatch(tmp_path):
         ts=1001,
     )
 
-    with pytest.raises(ValueError, match="hash-bound export artifact"):
-        export_dual_agent_run_artifacts(
-            state,
-            run_id="run-1",
-            task_id="task-1",
-            output_dir=output_dir,
-            trusted_workspace_root=tmp_path,
-        )
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+        trusted_workspace_root=tmp_path,
+    )
+
+    assert result.status == "incomplete"
+    assert not (output_dir / "pilot" / "report.json").exists()
+    manifest = strict_json_object_loads(
+        (output_dir / "replay" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["preserved_artifacts"] == []
+    assert [
+        descriptor["reason"]
+        for descriptor in manifest["unresolved_artifacts"]
+    ] == ["hash_mismatch"]
 
 
 def test_explicit_trusted_root_cannot_be_expanded_by_ledger_snapshot(tmp_path):
@@ -930,17 +940,25 @@ def test_hash_bound_export_rejects_ancestor_symlink_swap_during_open(
 
     monkeypatch.setattr(os, "open", swap_parent_then_open)
 
-    with pytest.raises(ValueError, match="hash-bound export artifact"):
-        export_dual_agent_run_artifacts(
-            state,
-            run_id="run-1",
-            task_id="task-1",
-            output_dir=output_dir,
-            trusted_workspace_root=repo,
-        )
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+        trusted_workspace_root=repo,
+    )
 
     assert swapped is True
+    assert result.status == "incomplete"
     assert not (output_dir / "artifacts" / "proof.txt").exists()
+    manifest = strict_json_object_loads(
+        (output_dir / "replay" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["preserved_artifacts"] == []
+    assert [
+        descriptor["reason"]
+        for descriptor in manifest["unresolved_artifacts"]
+    ] == ["hash_mismatch"]
 
 
 def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):

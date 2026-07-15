@@ -167,6 +167,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--claude-extra-arg", action="append", default=[])
     args = parser.parse_args(argv)
+    if args.claude_extra_arg:
+        parser.error(
+            "--claude-extra-arg is unsupported: the Claude runtime rejects "
+            "freeform extra CLI args; use the typed runner flags "
+            "(e.g. --model, --permission-mode, --max-budget-usd) instead"
+        )
 
     input_path = Path(os.environ[PUBLIC_PACKET_ENV])
     output_path = Path(os.environ[ATTEMPT_OUTPUT_ENV])

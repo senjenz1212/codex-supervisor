@@ -131,6 +131,13 @@ class CursorSdkTimeoutError(TimeoutError):
     """Raised when the supervisor-side watchdog bounds Cursor SDK execution."""
 
 
+class CursorSdkWorkerLeakedError(CursorSdkTimeoutError):
+    """Raised when a timed-out Cursor SDK worker thread could not be joined."""
+
+
+_CURSOR_SDK_WORKER_JOIN_GRACE_S = 5.0
+
+
 def select_cursor_model(
     *,
     quality: ModelQuality,
@@ -580,6 +587,14 @@ def _run_cursor_sdk_with_infra_retries(
     for infra_attempt in range(1, max_attempts + 1):
         try:
             transcript, metadata = _run_cursor_sdk_bounded(request)
+        except CursorSdkWorkerLeakedError:
+            attempts.append({
+                "attempt": infra_attempt,
+                "reason": "cursor_sdk_timeout",
+                "timeout_s": max(1, int(request.timeout_s)),
+                "worker_leaked": True,
+            })
+            break
         except CursorSdkTimeoutError:
             attempts.append({
                 "attempt": infra_attempt,
@@ -751,6 +766,12 @@ def _run_cursor_sdk_bounded(
     )
     worker.start()
     if not done.wait(timeout=seconds):
+        worker.join(timeout=_CURSOR_SDK_WORKER_JOIN_GRACE_S)
+        if worker.is_alive():
+            raise CursorSdkWorkerLeakedError(
+                f"cursor_sdk_timeout after {seconds}s; worker thread is still "
+                "running and further attempts against the same cwd are unsafe"
+            )
         raise CursorSdkTimeoutError(f"cursor_sdk_timeout after {seconds}s")
     if "error" in outcome:
         raise outcome["error"]

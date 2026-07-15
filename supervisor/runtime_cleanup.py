@@ -54,8 +54,11 @@ async def cancel_runtime_after_failure(
     cancellation; the loop also waits through repeated cancellation so a
     confirmed result means the runtime's cancellation contract completed.
     The hard deadline returns an explicit unconfirmed result while the owned
-    cleanup task continues in the background. Callers that own a workspace
-    must quarantine it instead of deleting or reusing it when unconfirmed.
+    cleanup task stays scheduled on the current event loop. That task only
+    makes progress while this loop keeps running; loop shutdown (for example
+    ``asyncio.run`` teardown) cancels it, so an unconfirmed result means
+    containment may never complete. Callers that own a workspace must
+    quarantine it instead of deleting or reusing it when unconfirmed.
     """
 
     cleanup = asyncio.create_task(runtime.cancel(handle))
@@ -74,7 +77,8 @@ async def cancel_runtime_after_failure(
             )
             logger.error(
                 "runtime cancellation cleanup is unconfirmed after %.3fs; "
-                "background containment reaper retained: run_id=%s",
+                "cleanup task left on the current event loop and will not "
+                "survive loop shutdown: run_id=%s",
                 deadline_s,
                 handle.run_id,
             )

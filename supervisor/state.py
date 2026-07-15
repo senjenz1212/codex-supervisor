@@ -1106,6 +1106,16 @@ class State:
                 ).fetchone()
                 if row is None:
                     raise KeyError(f"run not found: {run_id}")
+                current_session = str(row["session_id"] or "")
+                if current_session not in {
+                    "",
+                    f"pending:{run_id}",
+                    target_session,
+                }:
+                    raise RuntimeError(
+                        "run is already bound to a different session: "
+                        f"{run_id}"
+                    )
                 conflict = self._conn.execute(
                     """SELECT run_id FROM runs
                        WHERE session_id=? AND run_id!=?
@@ -1131,6 +1141,31 @@ class State:
                 if rebound is None:
                     raise RuntimeError("bound run disappeared")
                 return rebound
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def update_pending_run_task(self, *, run_id: str, task: str) -> None:
+        """Replace the task of a run that is still pending its session bind."""
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    "SELECT session_id FROM runs WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"run not found: {run_id}")
+                if str(row["session_id"] or "") != f"pending:{run_id}":
+                    raise RuntimeError(
+                        "run is no longer pending; task cannot be replaced: "
+                        f"{run_id}"
+                    )
+                self._conn.execute(
+                    "UPDATE runs SET task=? WHERE run_id=?",
+                    (str(task), run_id),
+                )
+                self._conn.commit()
             except Exception:
                 self._conn.rollback()
                 raise
@@ -1858,13 +1893,13 @@ class State:
             except Exception:
                 self._conn.rollback()
                 raise
+            for event_id, (kind, _payload) in zip(event_ids, events):
+                self._coordinate_committed_event(
+                    run_id=run_id,
+                    event_id=event_id,
+                    event_kind=kind,
+                )
 
-        for event_id, (kind, _payload) in zip(event_ids, events):
-            self._coordinate_committed_event(
-                run_id=run_id,
-                event_id=event_id,
-                event_kind=kind,
-            )
         if decision is not None:
             self._decision_wakeup.set()
         return result
@@ -3622,12 +3657,12 @@ class State:
             except Exception:
                 self._conn.rollback()
                 raise
-        if committed_event_id is not None:
-            self._coordinate_committed_event(
-                run_id=operation_id,
-                event_id=committed_event_id,
-                event_kind="historical_operation.preflight_released",
-            )
+            if committed_event_id is not None:
+                self._coordinate_committed_event(
+                    run_id=operation_id,
+                    event_id=committed_event_id,
+                    event_kind="historical_operation.preflight_released",
+                )
         return committed_event_id
 
     def heartbeat_historical_operation_execution(
@@ -3991,13 +4026,14 @@ class State:
             except Exception:
                 self._conn.rollback()
                 raise
+            if committed_event_id is not None:
+                self._coordinate_committed_event(
+                    run_id=operation_id,
+                    event_id=committed_event_id,
+                    event_kind=expected_kind,
+                )
         if committed_event_id is None:
             return None, False
-        self._coordinate_committed_event(
-            run_id=operation_id,
-            event_id=committed_event_id,
-            event_kind=expected_kind,
-        )
         return committed_event_id, created
 
     def complete_historical_operation(
@@ -4481,7 +4517,8 @@ class State:
                  AND terminal_outcome_json IS NULL
                  AND leased_by IS NOT NULL
                  AND lease_expires_at IS NOT NULL
-                 AND lease_expires_at > ?""",
+                 AND lease_expires_at > ?
+                 AND cleanup_escalated_at IS NULL""",
             (now,),
         ).fetchone()
         return int(row["count"] if row is not None else 0)

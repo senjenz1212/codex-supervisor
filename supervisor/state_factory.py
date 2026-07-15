@@ -186,10 +186,16 @@ def require_state_capabilities(
         if not callable(getattr(state, name, None))
     )
     if missing:
-        raise StateFactoryError(
+        message = (
             f"state backend {type(state).__name__} does not support "
             f"{profile}: missing {', '.join(missing)}"
         )
+        if type(state).__name__ == "PostgresState":
+            message += (
+                "; PostgresState does not yet implement durable decision "
+                "settlement, so daemon mode requires a SQLite state_db"
+            )
+        raise StateFactoryError(message)
 
 
 def _resolve_runtime_provider(

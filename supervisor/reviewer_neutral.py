@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
+import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
@@ -854,6 +855,30 @@ def _outcome_transcript(outcome: Outcome) -> str:
     )
 
 
+_BACKGROUND_LOOP_LOCK = threading.Lock()
+_BACKGROUND_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _shutdown_background_loop(loop: asyncio.AbstractEventLoop) -> None:
+    if not loop.is_closed():
+        loop.call_soon_threadsafe(loop.stop)
+
+
+def _background_loop() -> asyncio.AbstractEventLoop:
+    global _BACKGROUND_LOOP
+    with _BACKGROUND_LOOP_LOCK:
+        if _BACKGROUND_LOOP is None or _BACKGROUND_LOOP.is_closed():
+            loop = asyncio.new_event_loop()
+            threading.Thread(
+                target=loop.run_forever,
+                name="structured-reviewer-loop",
+                daemon=True,
+            ).start()
+            atexit.register(_shutdown_background_loop, loop)
+            _BACKGROUND_LOOP = loop
+        return _BACKGROUND_LOOP
+
+
 def _run_awaitable_blocking(
     factory: Callable[[], Awaitable[T]],
     *,
@@ -866,11 +891,8 @@ def _run_awaitable_blocking(
             return await factory()
         return await asyncio.wait_for(factory(), timeout_s)
 
-    with ThreadPoolExecutor(
-        max_workers=1,
-        thread_name_prefix="structured-reviewer",
-    ) as pool:
-        return pool.submit(lambda: asyncio.run(_invoke())).result()
+    future = asyncio.run_coroutine_threadsafe(_invoke(), _background_loop())
+    return future.result()
 
 
 def _duration_ms(started: float) -> int:

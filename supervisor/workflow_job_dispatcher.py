@@ -97,6 +97,7 @@ class WorkflowJobDispatcher:
         self.max_dispatch_attempts = max(1, int(max_dispatch_attempts))
         self.max_cleanup_retry_attempts = max(1, int(max_cleanup_retry_attempts))
         self._reap_skipped_missing_containment: set[str] = set()
+        self._terminal_reap_persist_attempts: dict[str, int] = {}
         self.budget_hook = budget_hook or (lambda _row: True)
         self.popen = popen
         self.pid_alive = pid_alive
@@ -176,11 +177,41 @@ class WorkflowJobDispatcher:
                 continue
             termination = self._terminate_row_worker(terminal_row)
             if termination["safe_to_finalize"]:
+                terminal_job_id = str(terminal_row["job_id"])
                 try:
                     self._record_worker_reaped(terminal_row, termination)
-                except Exception:
+                except Exception as e:
+                    attempts = (
+                        self._terminal_reap_persist_attempts.get(
+                            terminal_job_id, 0
+                        )
+                        + 1
+                    )
+                    self._terminal_reap_persist_attempts[
+                        terminal_job_id
+                    ] = attempts
+                    print(
+                        "workflow-job-dispatcher terminal reap persistence "
+                        f"failed (job_id={terminal_job_id}, "
+                        f"attempt={attempts}/"
+                        f"{self.max_cleanup_retry_attempts}): {e!r}",
+                        file=sys.stderr,
+                    )
+                    if attempts == self.max_cleanup_retry_attempts:
+                        self._write_job_event(
+                            terminal_row,
+                            status="terminal_reap_persistence_escalated",
+                            recovery_point=str(
+                                terminal_row["recovery_point"] or "terminal"
+                            ),
+                            pid=terminal_row["pid"],
+                            error=f"terminal_reap_persistence_failed: {e}",
+                        )
                     continue
-                reaped.append(str(terminal_row["job_id"]))
+                self._terminal_reap_persist_attempts.pop(
+                    terminal_job_id, None
+                )
+                reaped.append(terminal_job_id)
             else:
                 cleanup_retry_pending.append(str(terminal_row["job_id"]))
         for row in self.state.list_dual_agent_workflow_job_leases():
@@ -231,12 +262,10 @@ class WorkflowJobDispatcher:
             # A prepared spawn has no durably recorded worker generation.
             # Any result at that point is unowned and must not terminalize this
             # attempt or a later retry.
-            if recovery_point == "spawned" and result_path.exists():
-                try:
-                    loaded = json.loads(result_path.read_text(encoding="utf-8"))
-                    result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
-                except (OSError, json.JSONDecodeError) as e:
-                    failure_error = f"malformed_worker_result: {e}"
+            if recovery_point == "spawned":
+                result, parse_error = self._read_worker_result(result_path)
+                if parse_error is not None:
+                    failure_error = parse_error
             termination = self._terminate_row_worker(row)
             if not termination["safe_to_finalize"]:
                 deferred = self._defer_unsafe_cleanup(
@@ -246,6 +275,14 @@ class WorkflowJobDispatcher:
                 if str(deferred["status"]) != "parked":
                     cleanup_retry_pending.append(str(row["job_id"]))
                 continue
+            if recovery_point == "spawned" and result is None:
+                harvested, parse_error = self._read_worker_result(
+                    result_path
+                )
+                if harvested is not None:
+                    result = harvested
+                elif parse_error is not None:
+                    failure_error = parse_error
             try:
                 self._record_worker_reaped(row, termination)
             except Exception as e:
@@ -304,6 +341,20 @@ class WorkflowJobDispatcher:
             "reaped": reaped,
             "cleanup_retry_pending": cleanup_retry_pending,
         }
+
+    @staticmethod
+    def _read_worker_result(
+        result_path: Path,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if not result_path.exists():
+            return None, None
+        try:
+            loaded = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            return None, f"malformed_worker_result: {e}"
+        if isinstance(loaded, dict):
+            return loaded, None
+        return {"raw_result": loaded}, None
 
     def _write_request(self, row: Any) -> Any:
         request_path = Path(str(row["request_path"]))
@@ -691,6 +742,14 @@ class WorkflowJobDispatcher:
             row["cleanup_escalated_at"] is None
             and deferred["cleanup_escalated_at"] is not None
         )
+        if escalated_now:
+            print(
+                "workflow-job-dispatcher cleanup escalated past "
+                f"{self.max_cleanup_retry_attempts} attempts "
+                f"(job_id={row['job_id']}, reason={reason}); "
+                "lease excluded from spawn backpressure",
+                file=sys.stderr,
+            )
         self._write_job_event(
             deferred,
             status=(

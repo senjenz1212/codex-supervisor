@@ -75,18 +75,48 @@ class AgentInvoker:
         decision = await self.state.next_decision(lease_s=DECISION_LEASE_S)
         try:
             verdict = await self._handle(decision)
-        except asyncio.CancelledError:
-            self.state.retry_decision(
-                decision,
-                error="dispatcher_cancelled",
-                delay_s=0,
+        except asyncio.CancelledError as exc:
+            unconfirmed = getattr(
+                exc, "runtime_containment_unconfirmed", None
             )
-            raise
-        except Exception as exc:
-            if decision.attempt_count >= self.max_decision_attempts:
+            if unconfirmed is not None:
                 self.state.dead_letter_decision(
                     decision,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=(
+                        "dispatcher_cancelled_containment_unconfirmed: "
+                        f"{unconfirmed}"
+                    ),
+                )
+                log.error(
+                    "decision %s dead-lettered: runtime containment "
+                    "unconfirmed after cancellation: %s",
+                    decision.kind,
+                    unconfirmed,
+                )
+            else:
+                self.state.retry_decision(
+                    decision,
+                    error="dispatcher_cancelled",
+                    delay_s=0,
+                )
+            raise
+        except Exception as exc:
+            unconfirmed = getattr(
+                exc, "runtime_containment_unconfirmed", None
+            )
+            if (
+                unconfirmed is not None
+                or decision.attempt_count >= self.max_decision_attempts
+            ):
+                error = f"{type(exc).__name__}: {exc}"
+                if unconfirmed is not None:
+                    error = (
+                        "runtime_containment_unconfirmed: "
+                        f"{unconfirmed}; {error}"
+                    )
+                self.state.dead_letter_decision(
+                    decision,
+                    error=error,
                 )
                 log.exception(
                     "decision %s dead-lettered after %s attempts: %s",
@@ -197,12 +227,14 @@ class AgentInvoker:
                 },
                 latency_ms=0,
             )
-        except BaseException:
-            await cancel_runtime_after_failure(
+        except BaseException as exc:
+            cleanup = await cancel_runtime_after_failure(
                 self.agent_runtime,
                 handle,
                 logger=log,
             )
+            if not cleanup.confirmed:
+                exc.runtime_containment_unconfirmed = cleanup.reason
             raise
 
     def _model_for(self, kind: str) -> str:

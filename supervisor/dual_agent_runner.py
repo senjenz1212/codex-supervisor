@@ -49,6 +49,7 @@ from .dual_agent_lead import (
     OutcomeValidationPolicy,
     PlanningArtifact,
     Runner,
+    _GateInvocationCancelled,
     compute_file_sha256,
     handoff_packet_path,
     invoke_lead,
@@ -95,10 +96,6 @@ class DualAgentCancellationCleanupError(RuntimeError):
         self.cleanup_quiescent = cleanup_quiescent
         self.gate_thread_terminated = gate_thread_terminated
         self.phase = phase
-
-
-class _GateInvocationCancelled(RuntimeError):
-    """Internal marker for a synchronous gate unwinding after cancellation."""
 
 
 @dataclass(frozen=True)
@@ -1088,6 +1085,7 @@ class _GateCancellation:
                     environment.get(CONTAINMENT_ENV_VAR, "")
                 ).strip()
                 if not containment_id:
+                    scans_complete = False
                     continue
                 process_group_id = _process_group_id(pid)
                 if process_group_id is None:

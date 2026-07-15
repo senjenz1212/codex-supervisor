@@ -1319,11 +1319,15 @@ def test_runtime_registration_authority_rejects_forked_session_substitution(
         runtime_run_id="runtime-run-authoritative",
         runtime_result_hash="c" * 64,
     )
-    state.bind_run_session(
-        run_id=registration["target_run_id"],
-        session_id="session-runtime-forked",
-        rollout_path="/captured/session-runtime-forked.jsonl",
+    state._conn.execute(
+        "UPDATE runs SET session_id=?, rollout_path=? WHERE run_id=?",
+        (
+            "session-runtime-forked",
+            "/captured/session-runtime-forked.jsonl",
+            registration["target_run_id"],
+        ),
     )
+    state._conn.commit()
 
     with pytest.raises(
         RuntimeError,

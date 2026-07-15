@@ -20,6 +20,7 @@ from .agentic_workers import (
     _runtime_error,
     _runtime_timed_out,
     cleanup_orphaned_agentic_workers,
+    discover_agentic_worker_runtime_records,
     run_agentic_worker_fanout,
 )
 from .dual_agent_lead import ModelQuality, select_lead_model
@@ -207,11 +208,18 @@ def produce_agentic_worker_receipts(
     )
     for index, receipt in enumerate(receipts):
         worker_id = str(receipt.get("worker_id") or specs[index].worker_id)
+        granted = specs[index].runtime_metadata
         receipt.setdefault("receipt_id", f"agentic-worker-{worker_id}")
         receipt.setdefault("role", specs[index].role)
         receipt.setdefault("persona_id", specs[index].persona_id)
-        receipt.setdefault("permission_mode", specs[index].permission_mode)
-        receipt.setdefault("tool_pins", list(specs[index].tool_pins))
+        receipt.setdefault(
+            "permission_mode",
+            str(granted.get("permission_mode") or specs[index].permission_mode),
+        )
+        receipt.setdefault(
+            "tool_pins",
+            [str(item) for item in granted.get("allowed_tools") or specs[index].tool_pins],
+        )
         receipt.setdefault("agent_runtime", specs[index].agent_runtime)
         receipt.setdefault("agent_id", specs[index].agent_id or worker_id)
 
@@ -221,19 +229,43 @@ def produce_agentic_worker_receipts(
         in {"timeout", "failed", "error", "cancelled", "canceled"}
         for receipt in receipts
     ):
+        runtime_records = {
+            str(record.get("worker_id") or ""): record
+            for record in discover_agentic_worker_runtime_records(
+                cwd=cwd,
+                task_id=task_id,
+            )
+        }
+        cleanup_workers: list[dict[str, Any]] = []
+        for index, receipt in enumerate(receipts):
+            worker_id = str(receipt.get("worker_id") or specs[index].worker_id)
+            record = runtime_records.get(worker_id)
+            timeout_value = receipt.get("timeout_s") or specs[index].timeout_s
+            if record is not None:
+                cleanup_workers.append({
+                    "worker_id": worker_id,
+                    "pid": record.get("pid"),
+                    "pid_create_time_s": record.get("pid_create_time_s"),
+                    "status": record.get("status"),
+                    "timeout_s": record.get("timeout_s") or timeout_value,
+                    "budget_usd": record.get("budget_usd") or receipt.get("budget_usd") or specs[index].budget_usd,
+                    "started_at_s": record.get("started_at_s"),
+                    "log_ref": record.get("log_ref") or receipt.get("log_ref"),
+                })
+            else:
+                cleanup_workers.append({
+                    "worker_id": worker_id,
+                    "timeout_s": timeout_value,
+                    "budget_usd": receipt.get("budget_usd") or specs[index].budget_usd,
+                    "started_at_s": now_s() - timeout_value - 1,
+                    "synthetic": True,
+                    "synthetic_reason": "runtime_record_missing",
+                    "log_ref": receipt.get("log_ref"),
+                })
         cleanup = cleanup_runner(
             cwd=cwd,
             task_id=task_id,
-            workers=[
-                {
-                    "worker_id": receipt.get("worker_id") or specs[index].worker_id,
-                    "timeout_s": receipt.get("timeout_s") or specs[index].timeout_s,
-                    "budget_usd": receipt.get("budget_usd") or specs[index].budget_usd,
-                    "started_at_s": now_s() - (receipt.get("timeout_s") or specs[index].timeout_s) - 1,
-                    "log_ref": receipt.get("log_ref"),
-                }
-                for index, receipt in enumerate(receipts)
-            ],
+            workers=cleanup_workers,
             now_s=now_s(),
         )
 

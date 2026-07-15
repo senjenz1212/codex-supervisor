@@ -27,8 +27,12 @@ def stamp_trace_envelope(
             tool_calls = envelope.get("tool_calls")
             if isinstance(tool_calls, list):
                 envelope["tool_calls"] = [
-                    ensure_tool_call_timing(item, fallback_started_at_ms=0)
-                    for item in tool_calls
+                    ensure_tool_call_timing(
+                        item,
+                        fallback_started_at_ms=0,
+                        ordinal=index,
+                    )
+                    for index, item in enumerate(tool_calls)
                     if isinstance(item, dict)
                 ]
         return stamped
@@ -71,15 +75,23 @@ def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     direct = payload.get("tool_calls")
     if isinstance(direct, list):
         return [
-            ensure_tool_call_timing(item, fallback_started_at_ms=0)
-            for item in direct
+            ensure_tool_call_timing(
+                item,
+                fallback_started_at_ms=0,
+                ordinal=index,
+            )
+            for index, item in enumerate(direct)
             if isinstance(item, dict)
         ]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
     return [
-        ensure_tool_call_timing(item, fallback_started_at_ms=0)
-        for item in calls
+        ensure_tool_call_timing(
+            item,
+            fallback_started_at_ms=0,
+            ordinal=index,
+        )
+        for index, item in enumerate(calls)
         if isinstance(item, dict)
     ] if isinstance(calls, list) else []
 
@@ -124,6 +136,7 @@ def ensure_tool_call_timing(
     call: dict[str, Any],
     *,
     fallback_started_at_ms: int | None = None,
+    ordinal: int | None = None,
 ) -> dict[str, Any]:
     """Return a tool-call record with the standard timing fields present."""
     record = dict(call)
@@ -142,6 +155,12 @@ def ensure_tool_call_timing(
     duration = _int_or_none(record.get("duration_ms"))
     duration_us = _int_or_none(record.get("duration_us"))
     ended = _int_or_none(record.get("ended_at_ms"))
+    untimed = (
+        started is None
+        and duration is None
+        and duration_us is None
+        and ended is None
+    )
     if started is None and ended is not None and duration is not None:
         started = max(0, ended - duration)
     if started is None:
@@ -164,11 +183,21 @@ def ensure_tool_call_timing(
     record["duration_ms"] = int(duration)
     record["duration_us"] = int(duration_us)
     record["ended_at_ms"] = int(ended)
-    record.setdefault("tool_call_id", _default_tool_call_id(record))
+    record.setdefault(
+        "tool_call_id",
+        _default_tool_call_id(
+            record,
+            ordinal=ordinal if untimed else None,
+        ),
+    )
     return record
 
 
-def _default_tool_call_id(record: dict[str, Any]) -> str:
+def _default_tool_call_id(
+    record: dict[str, Any],
+    *,
+    ordinal: int | None = None,
+) -> str:
     name = _slug(_text(record.get("name")) or "tool")
     started = _int_or_none(record.get("started_at_ms")) or 0
     duration_us = _int_or_none(record.get("duration_us"))
@@ -177,6 +206,8 @@ def _default_tool_call_id(record: dict[str, Any]) -> str:
     raw_probe = _text(record.get("probe_id"))
     probe = _slug(raw_probe) if raw_probe else ""
     suffix = f"#{probe}" if probe else ""
+    if ordinal is not None:
+        suffix += f"#{int(ordinal)}"
     return f"{name}#{started}#{duration_us}{suffix}"
 
 

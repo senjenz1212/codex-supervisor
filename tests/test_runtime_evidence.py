@@ -71,6 +71,7 @@ def test_supervisor_owned_exclusion_rejects_path_separator_task_ids() -> None:
     assert _is_supervisor_owned_runtime_path(
         "docs/dual-agent/task-1/release/notes.md",
         task_id="task-1",
+        tracked_paths=frozenset(),
     )
     assert not _is_supervisor_owned_runtime_path(
         "docs/dual-agent/task-1/evil/release/notes.md",

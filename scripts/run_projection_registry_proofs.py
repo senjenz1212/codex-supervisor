@@ -67,11 +67,26 @@ _SYMBOL_FIELDS = (
     "sqlite_rebuilder",
     "postgres_rebuilder",
 )
-_PYTEST_ENV_BLOCKLIST = {
-    "PYTEST_ADDOPTS",
-    "PYTEST_PLUGINS",
-    "PYTHONPATH",
-}
+_PYTEST_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "VIRTUAL_ENV",
+    }
+)
+_PYTEST_ENV_ALLOWED_PREFIXES = ("UV_",)
+_POSTGRES_ENV_ALLOWLIST = frozenset(
+    {
+        "CODEX_SUPERVISOR_POSTGRES_TEST_DSN",
+        "CODEX_SUPERVISOR_POSTGRES_TEST_IMAGE",
+    }
+)
+_POSTGRES_ENV_ALLOWED_PREFIXES = ("DOCKER_",)
+_HERMETIC_PROOF_TIMEOUT_S = 1800
+_POSTGRES_PROOF_TIMEOUT_S = 3600
 
 
 @dataclass(frozen=True)
@@ -339,11 +354,16 @@ def _load_proofs(registry_path: Path = REGISTRY) -> list[str]:
 
 def _sanitized_pytest_env(
     extra: dict[str, str] | None = None,
+    *,
+    allowed_names: frozenset[str] = frozenset(),
+    allowed_prefixes: tuple[str, ...] = (),
 ) -> dict[str, str]:
+    names = _PYTEST_ENV_ALLOWLIST | allowed_names
+    prefixes = _PYTEST_ENV_ALLOWED_PREFIXES + allowed_prefixes
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key not in _PYTEST_ENV_BLOCKLIST
+        if key in names or key.startswith(prefixes)
     }
     environment.update(
         {
@@ -480,33 +500,43 @@ def _run_pytest_proofs(
         prefix="codex-projection-proof-"
     ) as temp_dir:
         receipt_path = Path(temp_dir) / "proof-receipt.json"
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "--extra",
-                "dev",
-                "python",
-                "-m",
-                "pytest",
-                "-q",
-                "-o",
-                "addopts=",
-                "-p",
-                "pytest_asyncio.plugin",
-                "-p",
-                "scripts.projection_proof_plugin",
-                *node_ids,
-            ],
-            cwd=ROOT,
-            env=_sanitized_pytest_env(
-                {
-                    "CODEX_PROJECTION_PROOF_BINDINGS": json.dumps(bindings),
-                    "CODEX_PROJECTION_PROOF_RECEIPT": str(receipt_path),
-                }
-            ),
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "--offline",
+                    "--extra",
+                    "dev",
+                    "python",
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-o",
+                    "addopts=",
+                    "-p",
+                    "pytest_asyncio.plugin",
+                    "-p",
+                    "scripts.projection_proof_plugin",
+                    *node_ids,
+                ],
+                cwd=ROOT,
+                env=_sanitized_pytest_env(
+                    {
+                        "CODEX_PROJECTION_PROOF_BINDINGS": json.dumps(
+                            bindings
+                        ),
+                        "CODEX_PROJECTION_PROOF_RECEIPT": str(receipt_path),
+                    }
+                ),
+                check=True,
+                timeout=_HERMETIC_PROOF_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise SystemExit(
+                "hermetic projection proofs timed out after "
+                f"{_HERMETIC_PROOF_TIMEOUT_S}s"
+            ) from exc
         _validate_proof_receipt(
             receipt_path,
             expected_node_ids=node_ids,
@@ -566,17 +596,28 @@ def _run_postgres_proofs(
         prefix="codex-postgres-projection-proof-"
     ) as temp_dir:
         receipt_path = Path(temp_dir) / "proof-receipt.json"
-        subprocess.run(
-            ["./scripts/run_postgres_conformance.sh"],
-            cwd=ROOT,
-            env=_sanitized_pytest_env(
-                {
-                    "CODEX_PROJECTION_PROOF_BINDINGS": json.dumps(bindings),
-                    "CODEX_PROJECTION_PROOF_RECEIPT": str(receipt_path),
-                }
-            ),
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ["./scripts/run_postgres_conformance.sh"],
+                cwd=ROOT,
+                env=_sanitized_pytest_env(
+                    {
+                        "CODEX_PROJECTION_PROOF_BINDINGS": json.dumps(
+                            bindings
+                        ),
+                        "CODEX_PROJECTION_PROOF_RECEIPT": str(receipt_path),
+                    },
+                    allowed_names=_POSTGRES_ENV_ALLOWLIST,
+                    allowed_prefixes=_POSTGRES_ENV_ALLOWED_PREFIXES,
+                ),
+                check=True,
+                timeout=_POSTGRES_PROOF_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise SystemExit(
+                "PostgreSQL projection proofs timed out after "
+                f"{_POSTGRES_PROOF_TIMEOUT_S}s"
+            ) from exc
         _validate_proof_receipt(
             receipt_path,
             expected_node_ids=_postgres_manifest_node_ids(),

@@ -14,6 +14,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable
 
+import psutil
+
 from .agent_runtime import (
     AgentRunHandle,
     AgentRunResult,
@@ -102,6 +104,8 @@ def run_agentic_worker(
     worker_dir = cwd_path / ".handoff" / "agentic-workers" / _safe_segment(spec.task_id) / _safe_segment(spec.worker_id)
     worker_dir.mkdir(parents=True, exist_ok=True)
     started_at_s = now()
+    worker_pid = os.getpid()
+    worker_pid_create_time_s = _process_create_time(worker_pid)
     runtime_path = worker_dir / "runtime.json"
     _write_worker_file(
         cwd_path,
@@ -112,7 +116,8 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
-                "pid": None,
+                "pid": worker_pid,
+                "pid_create_time_s": worker_pid_create_time_s,
                 "status": "running",
                 "started_at_s": started_at_s,
                 "timeout_s": spec.timeout_s,
@@ -126,6 +131,11 @@ def run_agentic_worker(
     )
 
     task = _worker_agent_task(spec, cwd=cwd_path)
+    granted_permission_mode = str(task.metadata.get("permission_mode") or "")
+    granted_tools = [str(item) for item in task.metadata.get("allowed_tools") or ()]
+    granted_disallowed_tools = [
+        str(item) for item in task.metadata.get("disallowed_tools") or ()
+    ]
     try:
         execution = (
             task_runner(task)
@@ -147,7 +157,8 @@ def run_agentic_worker(
                     "task_id": spec.task_id,
                     "worker_id": spec.worker_id,
                     "role": spec.role,
-                    "pid": None,
+                    "pid": worker_pid,
+                    "pid_create_time_s": worker_pid_create_time_s,
                     "status": "cancelled",
                     "started_at_s": started_at_s,
                     "ended_at_s": now(),
@@ -207,8 +218,11 @@ def run_agentic_worker(
         "token_provenance": result.token_provenance,
         "agent_run_result": _agent_run_result_payload(result),
         "agent_id": spec.agent_id or spec.worker_id,
-        "permission_mode": spec.permission_mode,
-        "tool_pins": list(spec.tool_pins),
+        "permission_mode": granted_permission_mode,
+        "tool_pins": granted_tools,
+        "disallowed_tools": granted_disallowed_tools,
+        "requested_permission_mode": spec.permission_mode,
+        "requested_tool_pins": list(spec.tool_pins),
         "timeout_s": spec.timeout_s,
         "budget_usd": spec.budget_usd,
         "stdout_ref": stdout_ref,
@@ -286,7 +300,8 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
-                "pid": None,
+                "pid": worker_pid,
+                "pid_create_time_s": worker_pid_create_time_s,
                 "status": status,
                 "started_at_s": started_at_s,
                 "ended_at_s": ended_at_s,
@@ -332,8 +347,11 @@ def run_agentic_worker(
         "cost_provenance": result.cost_provenance,
         "token_provenance": result.token_provenance,
         "agent_id": spec.agent_id or spec.worker_id,
-        "permission_mode": spec.permission_mode,
-        "tool_pins": list(spec.tool_pins),
+        "permission_mode": granted_permission_mode,
+        "tool_pins": granted_tools,
+        "disallowed_tools": granted_disallowed_tools,
+        "requested_permission_mode": spec.permission_mode,
+        "requested_tool_pins": list(spec.tool_pins),
         "timeout_s": spec.timeout_s,
         "budget_usd": spec.budget_usd,
         "exit_code": exit_code,
@@ -633,6 +651,8 @@ def cleanup_orphaned_agentic_workers(
     now_s: int | float,
     is_pid_alive: PidProbe | None = None,
     terminate: Terminator | None = None,
+    process_create_time: Callable[[int], float | None] | None = None,
+    exit_wait_s: float = 5.0,
 ) -> dict[str, Any]:
     """Terminate still-running workers that exceeded their timeout.
 
@@ -642,6 +662,7 @@ def cleanup_orphaned_agentic_workers(
     cwd_path = Path(cwd).resolve()
     pid_alive = is_pid_alive or _pid_alive
     kill = terminate or _terminate
+    create_time = process_create_time or _process_create_time
     cleaned: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -651,6 +672,8 @@ def cleanup_orphaned_agentic_workers(
         pid = _int(worker.get("pid"))
         timeout_s = _int(worker.get("timeout_s"))
         started_at_s = _float(worker.get("started_at_s"))
+        recorded_create_time_s = _float(worker.get("pid_create_time_s"))
+        worker_status = str(worker.get("status") or "").strip().lower()
         budget_usd = worker.get("budget_usd")
         log_ref = str(worker.get("log_ref") or worker_log_ref(
             cwd=cwd_path,
@@ -665,8 +688,18 @@ def cleanup_orphaned_agentic_workers(
             "budget_usd": budget_usd,
             "log_ref": log_ref,
         }
+        if worker_status and worker_status != "running":
+            skipped.append({
+                **base,
+                "reason": "worker_not_running",
+                "worker_status": worker_status,
+            })
+            continue
         if pid is None or timeout_s is None or started_at_s is None:
             skipped.append({**base, "reason": "missing_worker_runtime_fields"})
+            continue
+        if pid == os.getpid():
+            skipped.append({**base, "reason": "worker_hosted_by_cleanup_process"})
             continue
         if not pid_alive(pid):
             skipped.append({**base, "reason": "pid_not_alive"})
@@ -675,12 +708,28 @@ def cleanup_orphaned_agentic_workers(
         if elapsed_s <= timeout_s:
             active.append({**base, "elapsed_s": elapsed_s})
             continue
-        try:
-            kill(pid, signal.SIGTERM)
-            status = "terminated"
-        except OSError as e:
-            status = "terminate_failed"
-            base["error"] = str(e)
+        if recorded_create_time_s is None:
+            skipped.append({**base, "reason": "pid_identity_unverified"})
+            continue
+        observed_create_time_s = create_time(pid)
+        if observed_create_time_s is None:
+            skipped.append({**base, "reason": "pid_identity_unverified"})
+            continue
+        if abs(observed_create_time_s - recorded_create_time_s) > 1.0:
+            skipped.append({
+                **base,
+                "reason": "pid_identity_mismatch",
+                "recorded_create_time_s": recorded_create_time_s,
+                "observed_create_time_s": observed_create_time_s,
+            })
+            continue
+        status = _terminate_and_confirm(
+            pid,
+            pid_alive=pid_alive,
+            kill=kill,
+            exit_wait_s=exit_wait_s,
+            base=base,
+        )
         cleaned.append({
             **base,
             "status": status,
@@ -691,13 +740,18 @@ def cleanup_orphaned_agentic_workers(
     unverifiable = [
         entry
         for entry in skipped
-        if entry.get("reason") == "missing_worker_runtime_fields"
+        if entry.get("reason") in {
+            "missing_worker_runtime_fields",
+            "pid_identity_unverified",
+            "pid_identity_mismatch",
+        }
     ]
-    status = (
-        "cleanup_skipped_unverifiable_workers"
-        if unverifiable and not cleaned and not active
-        else "cleanup_completed"
-    )
+    if unverifiable and not cleaned and not active:
+        status = "cleanup_skipped_unverifiable_workers"
+    elif any(entry.get("status") != "terminated" for entry in cleaned):
+        status = "cleanup_incomplete"
+    else:
+        status = "cleanup_completed"
     return {
         "schema_version": "agentic-worker-cleanup/v1",
         "status": status,
@@ -710,6 +764,53 @@ def cleanup_orphaned_agentic_workers(
         "active_count": len(active),
         "skipped_count": len(skipped),
     }
+
+
+def _terminate_and_confirm(
+    pid: int,
+    *,
+    pid_alive: PidProbe,
+    kill: Terminator,
+    exit_wait_s: float,
+    base: dict[str, Any],
+) -> str:
+    try:
+        kill(pid, signal.SIGTERM)
+    except OSError as e:
+        base["error"] = str(e)
+        return "terminate_failed"
+    if _confirm_exit(pid, pid_alive=pid_alive, exit_wait_s=exit_wait_s):
+        return "terminated"
+    try:
+        kill(pid, signal.SIGKILL)
+    except OSError as e:
+        base["error"] = str(e)
+        return "terminate_failed"
+    if _confirm_exit(pid, pid_alive=pid_alive, exit_wait_s=exit_wait_s):
+        return "terminated"
+    return "termination_unconfirmed"
+
+
+def _confirm_exit(
+    pid: int,
+    *,
+    pid_alive: PidProbe,
+    exit_wait_s: float,
+) -> bool:
+    deadline = time.monotonic() + max(0.0, float(exit_wait_s))
+    while True:
+        if not pid_alive(pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _process_create_time(pid: int) -> float | None:
+    try:
+        return float(psutil.Process(int(pid)).create_time())
+    except (psutil.Error, ValueError, TypeError, OSError):
+        return None
 
 
 def discover_agentic_worker_runtime_records(
@@ -749,6 +850,8 @@ def cleanup_agentic_workers_for_task(
     now_s: int | float,
     is_pid_alive: PidProbe | None = None,
     terminate: Terminator | None = None,
+    process_create_time: Callable[[int], float | None] | None = None,
+    exit_wait_s: float = 5.0,
 ) -> dict[str, Any]:
     """Discover and clean stale persisted worker runtime records for a task."""
     return cleanup_orphaned_agentic_workers(
@@ -758,6 +861,8 @@ def cleanup_agentic_workers_for_task(
         now_s=now_s,
         is_pid_alive=is_pid_alive,
         terminate=terminate,
+        process_create_time=process_create_time,
+        exit_wait_s=exit_wait_s,
     )
 
 

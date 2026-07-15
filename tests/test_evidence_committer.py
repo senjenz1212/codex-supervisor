@@ -298,11 +298,15 @@ def test_evidence_commit_rejects_forked_workflow_runtime_session(
             ),
         },
     )
-    fixture.state.bind_run_session(
-        run_id="runtime-run",
-        session_id="runtime-run-session-forked",
-        rollout_path=str(tmp_path / "runtime-run-session-forked.jsonl"),
+    fixture.state._conn.execute(
+        "UPDATE runs SET session_id=?, rollout_path=? WHERE run_id=?",
+        (
+            "runtime-run-session-forked",
+            str(tmp_path / "runtime-run-session-forked.jsonl"),
+            "runtime-run",
+        ),
     )
+    fixture.state._conn.commit()
 
     with pytest.raises(
         EvidenceCommitIntegrityError,

@@ -262,6 +262,8 @@ async def plan_progress_check(
     recent: list[dict],
     cfg: Config,
     model_client: ModelClient,
+    *,
+    timeout_s: float = 120.0,
 ) -> dict:
     prompt = f"""Task given to the agent:
 {task}
@@ -275,17 +277,20 @@ Last 15 events (oldest first):
 Output JSON only, conforming to this schema:
 {json.dumps(PLAN_SCHEMA)}
 """
-    response = await model_client.complete(
-        ModelRequest(
-            model=cfg.models.drift_l3_model,
-            messages=(ModelMessage(role="user", content=prompt),),
-            max_tokens=400,
-            temperature=0.0,
-            metadata={
-                "purpose": "drift_plan_progress",
-                "response_schema": PLAN_SCHEMA,
-            },
-        )
+    response = await asyncio.wait_for(
+        model_client.complete(
+            ModelRequest(
+                model=cfg.models.drift_l3_model,
+                messages=(ModelMessage(role="user", content=prompt),),
+                max_tokens=400,
+                temperature=0.0,
+                metadata={
+                    "purpose": "drift_plan_progress",
+                    "response_schema": PLAN_SCHEMA,
+                },
+            )
+        ),
+        timeout_s,
     )
     text = response.text
     try:
@@ -442,6 +447,7 @@ class DriftDetector:
                 recent,
                 self.cfg,
                 self.model_client,
+                timeout_s=self.cfg.drift.l3_timeout_s,
             )
             self.state.write_verdict(
                 run_id=run_id, phase="drift", layer="L3",

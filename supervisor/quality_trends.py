@@ -352,7 +352,7 @@ def run_sampled_p11_false_accept_audit(
     denominator = len(audited)
     false_accept_count = sum(1 for item in audited if item["false_accept"])
     return {
-        "status": "audited",
+        "status": "audited" if denominator else "no_evidence",
         "operation": operation,
         "run_id": run_id,
         "task_id": resolved_task_id,
@@ -607,7 +607,10 @@ def run_weekly_p11_audit_if_due(
             "schema_version": "supervisor-p11-audit-schedule/v1",
             "scheduled_at": timestamp,
             "audit": audit,
-            "cadence_consumed": str(audit.get("status") or "") != "incompatible",
+            "cadence_consumed": (
+                str(audit.get("status") or "")
+                not in _NON_CADENCE_CONSUMING_AUDIT_STATUSES
+            ),
             "observational_only": True,
             "gate_authority": "unchanged",
         },
@@ -615,10 +618,19 @@ def run_weekly_p11_audit_if_due(
     return {**audit, "schedule_event_id": event_id}
 
 
+_NON_CADENCE_CONSUMING_AUDIT_STATUSES = frozenset({
+    "incompatible",
+    "no_evidence",
+})
+
+
 def _scheduled_audit_consumed_cadence(payload: dict[str, Any]) -> bool:
     audit = payload.get("audit")
     if isinstance(audit, dict):
-        return str(audit.get("status") or "") != "incompatible"
+        return (
+            str(audit.get("status") or "")
+            not in _NON_CADENCE_CONSUMING_AUDIT_STATUSES
+        )
     return True
 
 

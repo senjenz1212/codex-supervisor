@@ -49,6 +49,10 @@ from .runtime_execution import RuntimeTaskRunner
 
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
 
+
+class _GateInvocationCancelled(RuntimeError):
+    """Internal marker for a synchronous gate unwinding after cancellation."""
+
 GateName = Literal[
     "intent",
     "prd_review",
@@ -721,6 +725,8 @@ def _invoke_runtime_lead(
             transcript="",
             model=task.model,
         )
+    except _GateInvocationCancelled:
+        raise
     except Exception as exc:
         return LeadInvocationResult(
             probe=ProbeResult(

@@ -510,14 +510,11 @@ def export_dual_agent_run_artifacts(
             "Outcome Review Gate",
             outcome_review_events,
         )
-        files[7].write_text(
-            (
-                files[7].read_text(encoding="utf-8")
-                if files[7].exists()
-                else outcome_review_markdown
-            ),
-            encoding="utf-8",
-        )
+        if not files[7].exists():
+            files[7].write_text(
+                outcome_review_markdown,
+                encoding="utf-8",
+            )
         files[8].write_text(
             _interactions_markdown(run_id, task_id, events),
             encoding="utf-8",
@@ -640,6 +637,10 @@ def export_dual_agent_run_artifacts(
         and production_trace_manifest["status"] != "complete"
     )
     ledger_incomplete = ledger_manifest["status"] != "verified_structural_prefix"
+    artifact_integrity_incomplete = any(
+        descriptor.get("reason") in {"hash_mismatch", "ambiguous_hash"}
+        for descriptor in unresolved_artifact_manifest
+    )
     authoritative_ledger_incomplete = (
         require_authoritative_ledger
         and not ledger_manifest["authoritative_head_verified"]
@@ -656,6 +657,7 @@ def export_dual_agent_run_artifacts(
                 or trace_incomplete
                 or ledger_incomplete
                 or authoritative_ledger_incomplete
+                or artifact_integrity_incomplete
             )
             else "ok"
         ),
@@ -1581,14 +1583,19 @@ def _copy_hash_bound_export_artifacts(
             if sha256(content).hexdigest() == ref.sha256:
                 matching.append((source, relative, content))
         if not matching:
-            candidate_text = ", ".join(
-                f"{source} -> {relative}"
-                for source, relative in candidates
-            ) or "<none>"
-            raise ValueError(
-                "hash-bound export artifact cannot be resolved at its "
-                f"ledger-pinned hash: {ref.source_path}: {candidate_text}"
-            )
+            unresolved_by_key[(
+                ref.source_event_id,
+                ref.source_kind,
+                ref.source_path,
+                ref.sha256,
+            )] = {
+                "sha256": ref.sha256,
+                "source_event_id": ref.source_event_id,
+                "source_kind": ref.source_kind,
+                "source_path": ref.source_path,
+                "reason": "hash_mismatch",
+            }
+            continue
         relative_paths = {relative for _, relative, _ in matching}
         if len(relative_paths) != 1:
             raise ValueError(
@@ -1598,10 +1605,19 @@ def _copy_hash_bound_export_artifacts(
         _source, relative, content = matching[0]
         prior_hash = expected_hashes.get(relative)
         if prior_hash is not None and prior_hash != ref.sha256:
-            raise ValueError(
-                "conflicting hash-bound export artifact references: "
-                f"{relative}"
-            )
+            unresolved_by_key[(
+                ref.source_event_id,
+                ref.source_kind,
+                ref.source_path,
+                ref.sha256,
+            )] = {
+                "sha256": ref.sha256,
+                "source_event_id": ref.source_event_id,
+                "source_kind": ref.source_kind,
+                "source_path": ref.source_path,
+                "reason": "ambiguous_hash",
+            }
+            continue
         expected_hashes[relative] = ref.sha256
         target = staging_dir / Path(PurePosixPath(relative))
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -2810,7 +2826,7 @@ def _export_production_trace_records(
                 continue
             target = destination / filename
             written = target.write_bytes(content)
-            copied_hash = sha256(content).hexdigest()
+            copied_hash = sha256(target.read_bytes()).hexdigest()
             if written != len(content):
                 record_issues.append(
                     f"{label} copied byte count differs from the source"

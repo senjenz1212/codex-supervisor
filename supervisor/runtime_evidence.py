@@ -297,7 +297,10 @@ def _current_changed_files(
             "name_status": [],
             "stderr": _tail(status.stderr),
         }
-    tracked_paths = _git_tracked_repo_paths(cwd, runner=runner)
+    tracked_refs: tuple[str, ...] = (
+        ("HEAD", baseline_head) if baseline_head else ("HEAD",)
+    )
+    tracked_paths = _git_tracked_repo_paths(cwd, runner=runner, refs=tracked_refs)
     entries: list[dict[str, str]] = []
     files: list[str] = []
     excluded_supervisor_files: list[str] = []
@@ -440,33 +443,55 @@ def _is_supervisor_owned_runtime_path(
     if not normalized.startswith(task_prefix):
         return False
     relative = normalized[len(task_prefix):]
-    return (
-        relative == "runtime-baseline-execution.json"
-        or relative == "release"
-        or relative.startswith("release/")
-    )
+    if relative == "runtime-baseline-execution.json":
+        return tracked_known and normalized not in tracked
+    if relative == "release" or relative.startswith("release/"):
+        return (
+            tracked_known
+            and f"{task_prefix}release" not in tracked
+            and normalized not in tracked
+        )
+    return False
 
 
-def _git_tracked_repo_paths(cwd: Path, *, runner: Runner) -> frozenset[str] | None:
+def _git_tracked_repo_paths(
+    cwd: Path,
+    *,
+    runner: Runner,
+    refs: tuple[str, ...] = (),
+) -> frozenset[str] | None:
     try:
         completed = _run_git(cwd, ["ls-files", "-z"], runner=runner)
     except (OSError, subprocess.SubprocessError):
         return None
     if completed.returncode != 0:
         return None
+    listings = [completed.stdout or ""]
+    for ref in dict.fromkeys(ref for ref in refs if ref):
+        try:
+            tree = _run_git(
+                cwd,
+                ["ls-tree", "-r", "-z", "--name-only", ref],
+                runner=runner,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if tree.returncode == 0:
+            listings.append(tree.stdout or "")
     tracked: set[str] = set()
-    for raw in (completed.stdout or "").split("\0"):
-        if not raw:
-            continue
-        path = PurePath(raw)
-        if path.is_absolute():
-            continue
-        tracked.add(path.as_posix())
-        tracked.update(
-            parent.as_posix()
-            for parent in path.parents
-            if parent.as_posix() != "."
-        )
+    for listing in listings:
+        for raw in listing.split("\0"):
+            if not raw:
+                continue
+            path = PurePath(raw)
+            if path.is_absolute():
+                continue
+            tracked.add(path.as_posix())
+            tracked.update(
+                parent.as_posix()
+                for parent in path.parents
+                if parent.as_posix() != "."
+            )
     return frozenset(tracked)
 
 

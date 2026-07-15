@@ -812,39 +812,62 @@ class LedgerCheckpointStore:
             event_count=normalized_count,
             head_event_hash=normalized_head_hash,
         )
-        existing = self._load_semantic_retry(
-            run_id=normalized_run_id,
-            head_event_id=normalized_head_event_id,
-            head_event_hash=normalized_head_hash,
-            event_count=normalized_count,
-            event_identity_hash=event_identity_hash,
-            created_at=normalized_created_at,
-            external_anchor_ref=external_anchor_ref,
-            verifier=verifier,
-        )
-        if existing is not None:
-            return existing
-        checkpoints = self.load_all(normalized_run_id)
-        previous_checkpoint_hash = (
-            None
-            if not checkpoints
-            else sha256_hex(
-                canonical_json_bytes(checkpoints[-1].checkpoint)
-            )
-        )
-        checkpoint = create_ledger_checkpoint(
-            run_id=normalized_run_id,
-            head_event_id=normalized_head_event_id,
-            head_event_hash=normalized_head_hash,
-            event_count=normalized_count,
-            event_identity_hash=event_identity_hash,
-            previous_checkpoint_hash=previous_checkpoint_hash,
-            signer_provider_id=signer_provider_id,
-            external_anchor_ref=external_anchor_ref,
-            signer=signer,
-            created_at=normalized_created_at,
-        )
-        return self.append(checkpoint, verifier=verifier)
+        with self._lock, self._run_directory_fd(
+            normalized_run_id,
+            create=True,
+        ) as run_fd:
+            assert run_fd is not None
+            with _append_only_directory_lock(
+                run_fd,
+                error_type=CheckpointIntegrityError,
+                label="ledger checkpoint run directory",
+            ):
+                _recover_append_only_temporary_files_at(
+                    run_fd,
+                    error_type=CheckpointIntegrityError,
+                    label="ledger checkpoint run directory",
+                )
+                checkpoints = self._load_all_from_fd(
+                    run_fd,
+                    expected_run_id=normalized_run_id,
+                )
+                existing = self._load_semantic_retry(
+                    checkpoints=checkpoints,
+                    run_id=normalized_run_id,
+                    head_event_id=normalized_head_event_id,
+                    head_event_hash=normalized_head_hash,
+                    event_count=normalized_count,
+                    event_identity_hash=event_identity_hash,
+                    created_at=normalized_created_at,
+                    external_anchor_ref=external_anchor_ref,
+                    verifier=verifier,
+                )
+                if existing is not None:
+                    return existing
+                previous_checkpoint_hash = (
+                    None
+                    if not checkpoints
+                    else sha256_hex(
+                        canonical_json_bytes(checkpoints[-1].checkpoint)
+                    )
+                )
+                checkpoint = create_ledger_checkpoint(
+                    run_id=normalized_run_id,
+                    head_event_id=normalized_head_event_id,
+                    head_event_hash=normalized_head_hash,
+                    event_count=normalized_count,
+                    event_identity_hash=event_identity_hash,
+                    previous_checkpoint_hash=previous_checkpoint_hash,
+                    signer_provider_id=signer_provider_id,
+                    external_anchor_ref=external_anchor_ref,
+                    signer=signer,
+                    created_at=normalized_created_at,
+                )
+                return self._append_at(
+                    run_fd,
+                    checkpoint,
+                    verifier=verifier,
+                )
 
     def append(
         self,
@@ -853,6 +876,36 @@ class LedgerCheckpointStore:
         verifier: Verifier,
     ) -> PersistedLedgerCheckpoint:
         """Append a verified checkpoint; exact retries are idempotent."""
+        try:
+            parsed = _parse_checkpoint(checkpoint, check_signing_hash=True)
+        except _CheckpointValidationError as exc:
+            raise CheckpointIntegrityError(
+                f"{exc.failure_code}: {exc.detail}"
+            ) from exc
+        with self._lock, self._run_directory_fd(
+            parsed.run_id,
+            create=True,
+        ) as run_fd:
+            assert run_fd is not None
+            with _append_only_directory_lock(
+                run_fd,
+                error_type=CheckpointIntegrityError,
+                label="ledger checkpoint run directory",
+            ):
+                _recover_append_only_temporary_files_at(
+                    run_fd,
+                    error_type=CheckpointIntegrityError,
+                    label="ledger checkpoint run directory",
+                )
+                return self._append_at(run_fd, checkpoint, verifier=verifier)
+
+    def _append_at(
+        self,
+        run_fd: int,
+        checkpoint: Mapping[str, Any],
+        *,
+        verifier: Verifier,
+    ) -> PersistedLedgerCheckpoint:
         try:
             parsed = _parse_checkpoint(checkpoint, check_signing_hash=True)
         except _CheckpointValidationError as exc:
@@ -881,88 +934,73 @@ class LedgerCheckpointStore:
             event_count=parsed.event_count,
             head_event_hash=parsed.head_event_hash,
         )
-        with self._lock, self._run_directory_fd(
-            parsed.run_id,
-            create=True,
-        ) as run_fd:
-            assert run_fd is not None
-            with _append_only_directory_lock(
-                run_fd,
-                error_type=CheckpointIntegrityError,
-                label="ledger checkpoint run directory",
+        history = self._load_all_from_fd(
+            run_fd,
+            expected_run_id=parsed.run_id,
+        )
+        if history:
+            latest_checkpoint = history[-1].checkpoint
+            latest_count = int(
+                latest_checkpoint["predicate"]["event_count"]
+            )
+            if parsed.event_count < latest_count:
+                raise CheckpointIntegrityError(
+                    "checkpoint history already advances beyond the "
+                    "requested stream head"
+                )
+            if (
+                parsed.event_count > latest_count
+                and parsed.previous_checkpoint_hash
+                != sha256_hex(
+                    canonical_json_bytes(latest_checkpoint)
+                )
             ):
-                _recover_append_only_temporary_files_at(
-                    run_fd,
-                    error_type=CheckpointIntegrityError,
-                    label="ledger checkpoint run directory",
+                raise CheckpointIntegrityError(
+                    "checkpoint history link does not match the "
+                    "previous checkpoint"
                 )
-                history = self._load_all_from_fd(
-                    run_fd,
-                    expected_run_id=parsed.run_id,
+        elif parsed.previous_checkpoint_hash is not None:
+            raise CheckpointIntegrityError(
+                "checkpoint history origin is missing"
+            )
+        for filename in sorted(os.listdir(run_fd)):
+            match = _CHECKPOINT_FILENAME.fullmatch(filename)
+            if match is None:
+                raise CheckpointIntegrityError(
+                    "unexpected file in checkpoint store: "
+                    f"{filename!r}"
                 )
-                if history:
-                    latest_checkpoint = history[-1].checkpoint
-                    latest_count = int(
-                        latest_checkpoint["predicate"]["event_count"]
-                    )
-                    if parsed.event_count < latest_count:
-                        raise CheckpointIntegrityError(
-                            "checkpoint history already advances beyond the "
-                            "requested stream head"
-                        )
-                    if (
-                        parsed.event_count > latest_count
-                        and parsed.previous_checkpoint_hash
-                        != sha256_hex(
-                            canonical_json_bytes(latest_checkpoint)
-                        )
-                    ):
-                        raise CheckpointIntegrityError(
-                            "checkpoint history link does not match the "
-                            "previous checkpoint"
-                        )
-                elif parsed.previous_checkpoint_hash is not None:
-                    raise CheckpointIntegrityError(
-                        "checkpoint history origin is missing"
-                    )
-                for filename in sorted(os.listdir(run_fd)):
-                    match = _CHECKPOINT_FILENAME.fullmatch(filename)
-                    if match is None:
-                        raise CheckpointIntegrityError(
-                            "unexpected file in checkpoint store: "
-                            f"{filename!r}"
-                        )
-                    if (
-                        int(match.group("event_count")) == parsed.event_count
-                        and filename != path.name
-                    ):
-                        raise CheckpointIntegrityError(
-                            "checkpoint fork refused at "
-                            f"event_count={parsed.event_count}"
-                        )
-                created, existing = _append_only_file_at(
-                    run_fd,
-                    path.name,
-                    value,
-                    error_type=CheckpointIntegrityError,
-                    label=f"ledger checkpoint {path.name}",
-                    _lock_held=True,
+            if (
+                int(match.group("event_count")) == parsed.event_count
+                and filename != path.name
+            ):
+                raise CheckpointIntegrityError(
+                    "checkpoint fork refused at "
+                    f"event_count={parsed.event_count}"
                 )
-                if not created and existing != value:
-                    existing_checkpoint = self._verified_checkpoint_bytes(
-                        existing,
-                        verifier=verifier,
-                        expected_run_id=parsed.run_id,
-                        expected_external_anchor_ref=expected_ref,
-                    )
-                    if (
-                        checkpoint_signing_payload(existing_checkpoint)
-                        != parsed.signing_payload
-                    ):
-                        raise CheckpointIntegrityError(
-                            "checkpoint is immutable and already exists with "
-                            "different content"
-                        )
+        created, existing = _append_only_file_at(
+            run_fd,
+            path.name,
+            value,
+            error_type=CheckpointIntegrityError,
+            label=f"ledger checkpoint {path.name}",
+            _lock_held=True,
+        )
+        if not created and existing != value:
+            existing_checkpoint = self._verified_checkpoint_bytes(
+                existing,
+                verifier=verifier,
+                expected_run_id=parsed.run_id,
+                expected_external_anchor_ref=expected_ref,
+            )
+            if (
+                checkpoint_signing_payload(existing_checkpoint)
+                != parsed.signing_payload
+            ):
+                raise CheckpointIntegrityError(
+                    "checkpoint is immutable and already exists with "
+                    "different content"
+                )
         stored_value = value if created else existing
         assert stored_value is not None
         stored = json.loads(stored_value.decode("utf-8"))
@@ -975,6 +1013,7 @@ class LedgerCheckpointStore:
     def _load_semantic_retry(
         self,
         *,
+        checkpoints: Sequence[PersistedLedgerCheckpoint],
         run_id: str,
         head_event_id: Any,
         head_event_hash: str,
@@ -984,7 +1023,6 @@ class LedgerCheckpointStore:
         external_anchor_ref: str,
         verifier: Verifier,
     ) -> PersistedLedgerCheckpoint | None:
-        checkpoints = self.load_all(run_id)
         for persisted in checkpoints:
             try:
                 parsed = _parse_checkpoint(

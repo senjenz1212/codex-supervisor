@@ -10,6 +10,7 @@ import os
 import platform as py_platform
 import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -2339,6 +2340,8 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
     )
     work_dir = artifact_root / _safe_fragment(instance_id) / _safe_fragment(candidate_id)
     workspace_dir = work_dir / "workspace"
+    if workspace_dir.exists():
+        shutil.rmtree(workspace_dir)
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
     artifact_paths = {
@@ -2573,6 +2576,30 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             artifact_paths=artifact_paths,
             reason="pro_parser_output_missing",
             attempt_stage="scoring",
+            docker_image=docker_image,
+            docker_platform=docker_platform,
+            pull_command=pull_command,
+            pull_return_code=pull_result.returncode,
+            patch_applied=patch_applied,
+            test_command_return_code=test_command_return_code,
+            source_script_evidence=source_script_evidence,
+            stripped_binary_sections=stripped_binary_sections,
+            applied_patch_sha256=applied_patch_sha256,
+        )
+
+    if run_result.returncode != 0:
+        test_command_return_code = _pro_test_command_return_code(
+            workspace_dir / "test_command.json"
+        )
+        return _pro_adapter_failure(
+            context=context,
+            command=run_command,
+            return_code=run_result.returncode,
+            stdout=run_result.stdout,
+            stderr=run_result.stderr,
+            artifact_paths=artifact_paths,
+            reason="docker_run_failed",
+            attempt_stage="docker",
             docker_image=docker_image,
             docker_platform=docker_platform,
             pull_command=pull_command,
@@ -3466,7 +3493,7 @@ def _strip_binary_hunks(patch: str) -> tuple[str, list[dict[str, Any]]]:
         kept.append(prefix)
     for section in sections[1:]:
         full = "diff --git " + section
-        if "GIT binary patch" in full or "Binary files " in full:
+        if _diff_section_is_binary(full):
             stripped.append({
                 "paths": _diff_section_paths(full),
                 "section_sha256": sha256(full.encode("utf-8")).hexdigest(),
@@ -3474,6 +3501,22 @@ def _strip_binary_hunks(patch: str) -> tuple[str, list[dict[str, Any]]]:
             continue
         kept.append(full)
     return "".join(kept), stripped
+
+
+def _diff_section_is_binary(section: str) -> bool:
+    in_hunk = False
+    for line in section.splitlines():
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if in_hunk and (not line or line[0] in {"+", "-", " ", "\\"}):
+            continue
+        in_hunk = False
+        if line == "GIT binary patch":
+            return True
+        if line.startswith("Binary files ") and line.rstrip().endswith(" differ"):
+            return True
+    return False
 
 
 def _diff_section_paths(section: str) -> list[str]:
