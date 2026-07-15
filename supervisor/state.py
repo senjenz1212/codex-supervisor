@@ -1841,18 +1841,19 @@ class State:
         if page_limit <= 0:
             return []
         cursor = int(after_event_id or 0)
-        rows = self._conn.execute(
-            """SELECT event_id, run_id, event_sequence, ts, source, kind,
-                      payload_json,
-                      previous_event_hash, event_hash,
-                      canonical_payload_hash, artifact_manifest_hash,
-                      ledger_genesis_kind
-               FROM events
-               WHERE run_id=? AND event_id > ?
-               ORDER BY event_id ASC
-               LIMIT ?""",
-            (run_id, cursor, page_limit),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                          payload_json,
+                          previous_event_hash, event_hash,
+                          canonical_payload_hash, artifact_manifest_hash,
+                          ledger_genesis_kind
+                   FROM events
+                   WHERE run_id=? AND event_id > ?
+                   ORDER BY event_id ASC
+                   LIMIT ?""",
+                (run_id, cursor, page_limit),
+            ).fetchall()
         return [
             {
                 "event_id": int(row["event_id"]),

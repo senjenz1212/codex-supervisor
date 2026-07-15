@@ -379,6 +379,13 @@ def register_submitted_workflow(
         _validate_submitted_workflow_registration(
             existing,
             expected=metadata,
+            # A pending resubmission may legitimately carry a new intent for
+            # the same provenance; the sidecar is replaced with it below.
+            volatile_fields=(
+                ("registered_at", "task")
+                if pending
+                else ("registered_at",)
+            ),
         )
         if pending:
             _replace_write_json(registration.registry_path, metadata)
@@ -389,12 +396,13 @@ def _validate_submitted_workflow_registration(
     observed: Mapping[str, Any],
     *,
     expected: Mapping[str, Any],
+    volatile_fields: tuple[str, ...] = ("registered_at",),
 ) -> None:
     """Reject a resubmission that rebinds the sidecar to different provenance."""
     discrepancies = [
         field
         for field in expected
-        if field != "registered_at"
+        if field not in volatile_fields
         and observed.get(field) != expected.get(field)
     ]
     if discrepancies:

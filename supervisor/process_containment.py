@@ -555,7 +555,7 @@ def _unreadable_in_scope(
         known_pids=known_pids,
     ):
         return True
-    return unreadable_scope == "same_user"
+    return unreadable_scope == "same_user" and earliest is not None
 
 
 def _is_structurally_related(

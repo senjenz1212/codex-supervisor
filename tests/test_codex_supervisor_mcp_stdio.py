@@ -3353,8 +3353,8 @@ def test_ensure_workflow_run_registration_accepts_legacy_snapshot(tmp_path):
     assert len(skip_events) == 1
     assert skip_events[0]["skipped_fields"] == [
         "cwd",
-        "task_id",
         "target_kind",
+        "task_id",
         "workflow_run_id",
     ]
     assert skip_events[0]["reason"] == "sparse_config_snapshot"
