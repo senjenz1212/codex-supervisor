@@ -29,6 +29,7 @@ from supervisor.trace_graph import (
     TraceGraphError,
     TraceGraphStore,
     TraceIdentity,
+    TraceLifecycleStage,
     TraceNode,
     TracePlanningArtifactRef,
     TraceWaiver,
@@ -1110,3 +1111,154 @@ def test_trace_graph_store_rejects_update_and_delete(tmp_path: Path):
             with pytest.raises(sqlite3.IntegrityError, match="immutable"):
                 connection.execute(statement)
             connection.rollback()
+
+
+def test_trace_graph_store_does_not_backfill_lifecycle_schema_on_read(
+    tmp_path: Path,
+) -> None:
+    graph, _ = _closed_graph()
+    database = tmp_path / "legacy-trace.db"
+    with TraceGraphStore(database) as store:
+        store.append(graph)
+    with TraceGraphStore(database) as store:
+        assert store.list_lifecycle_revisions() == ()
+        assert store.load().canonical_bytes() == graph.canonical_bytes()
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='trace_lifecycle_revisions'
+            """
+        ).fetchone() is None
+
+
+def test_trace_graph_store_pins_queryable_lifecycle_revisions(
+    tmp_path: Path,
+) -> None:
+    graph, _ = _closed_graph()
+    database = tmp_path / "trace-lifecycle.db"
+    stages = tuple(TraceLifecycleStage)
+
+    with TraceGraphStore(database) as store:
+        revisions = tuple(
+            store.append_lifecycle_revision(
+                stage,
+                graph.lifecycle_revision(stage),
+            )
+            for stage in stages
+        )
+        persisted = store.list_lifecycle_revisions()
+        planning = store.load_lifecycle_revision(
+            TraceLifecycleStage.PLANNING
+        )
+        completed = store.load_lifecycle_revision(
+            TraceLifecycleStage.DECISION
+        )
+
+    assert [revision.stage for revision in persisted] == list(stages)
+    assert persisted == revisions
+    assert revisions[0].parent_revision_hash is None
+    assert [
+        revision.parent_revision_hash for revision in revisions[1:]
+    ] == [
+        revision.revision_hash for revision in revisions[:-1]
+    ]
+    assert planning.canonical_bytes() == graph.lifecycle_revision(
+        TraceLifecycleStage.PLANNING
+    ).canonical_bytes()
+    assert completed.canonical_bytes() == graph.canonical_bytes()
+
+    with sqlite3.connect(database) as connection:
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            connection.execute(
+                """
+                UPDATE trace_lifecycle_revisions
+                   SET graph_sha256=graph_sha256
+                """
+            )
+
+
+def test_trace_graph_lifecycle_preserves_interleaved_record_order(
+    tmp_path: Path,
+) -> None:
+    graph, nodes = _closed_graph()
+    interleaved = TraceGraph(
+        nodes=tuple(
+            nodes[node_type]
+            for node_type in (
+                NodeType.OBJ,
+                NodeType.RUN,
+                NodeType.REQ,
+                NodeType.GRADE,
+                NodeType.TEST,
+                NodeType.ANL,
+                NodeType.ASN,
+                NodeType.DEC,
+                NodeType.ART,
+                NodeType.PROMOTION,
+            )
+        ),
+        edges=tuple(reversed(graph.edges)),
+        decision_grade_validator=graph.decision_grade_validator,
+    )
+    database = tmp_path / "trace-lifecycle-order.db"
+
+    with TraceGraphStore(database) as store:
+        for stage in TraceLifecycleStage:
+            store.append_lifecycle_revision(
+                stage,
+                interleaved.lifecycle_revision(stage),
+            )
+        revisions = store.list_lifecycle_revisions()
+        reloaded = store.load()
+
+        for revision in revisions:
+            expected = interleaved.lifecycle_revision(revision.stage)
+            assert revision.node_keys == tuple(
+                node.identity.canonical_key for node in expected.nodes
+            )
+            assert store.load_lifecycle_revision(
+                revision.stage
+            ).canonical_bytes() == expected.canonical_bytes()
+
+    assert reloaded.canonical_bytes() == interleaved.canonical_bytes()
+
+
+def test_trace_graph_store_refuses_to_invent_a_missing_planning_precommit(
+    tmp_path: Path,
+) -> None:
+    graph, _ = _closed_graph()
+    database = tmp_path / "trace-lifecycle.db"
+
+    with TraceGraphStore(database) as store:
+        with pytest.raises(
+            TraceGraphError,
+            match="planning lifecycle revision must be committed first",
+        ):
+            store.append_lifecycle_revision(
+                TraceLifecycleStage.DECISION,
+                graph,
+            )
+
+        store.append(graph)
+        with pytest.raises(
+            TraceGraphError,
+            match="unversioned trace records",
+        ):
+            store.append_lifecycle_revision(
+                TraceLifecycleStage.PLANNING,
+                graph.lifecycle_revision(TraceLifecycleStage.PLANNING),
+            )
+
+        assert store.list_lifecycle_revisions() == ()
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type='table' AND name='trace_lifecycle_revisions'
+            """
+        ).fetchone() is None

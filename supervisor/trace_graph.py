@@ -21,6 +21,9 @@ from uuid import UUID
 
 TRACE_GRAPH_SCHEMA_VERSION = "supervisor-trace-graph/v1"
 TRACE_GRAPH_STORE_SCHEMA_VERSION = "supervisor-trace-graph-store/v1"
+TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION = (
+    "supervisor-trace-graph-lifecycle/v1"
+)
 TRACE_CLOSURE_BINDING_SCHEMA_VERSION = "supervisor-trace-closure-binding/v1"
 TRACE_CLOSURE_BINDING_ATTRIBUTE = "trace_closure_binding"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -70,6 +73,41 @@ class EdgeType(str, Enum):
     INVALIDATES = "invalidates"
     PROMOTES = "promotes"
     ROLLS_BACK = "rolls_back"
+
+
+class TraceLifecycleStage(str, Enum):
+    """Ordered immutable revisions of one trace evidence lifecycle."""
+
+    PLANNING = "planning"
+    RUNTIME = "runtime"
+    GRADE = "grade"
+    ANALYSIS = "analysis"
+    DECISION = "decision"
+
+
+_TRACE_LIFECYCLE_ORDER = tuple(TraceLifecycleStage)
+_TRACE_LIFECYCLE_INDEX = {
+    stage: index for index, stage in enumerate(_TRACE_LIFECYCLE_ORDER)
+}
+_NODE_LIFECYCLE_STAGE: Mapping[NodeType, TraceLifecycleStage] = {
+    NodeType.OBJ: TraceLifecycleStage.PLANNING,
+    NodeType.REQ: TraceLifecycleStage.PLANNING,
+    NodeType.ADR: TraceLifecycleStage.PLANNING,
+    NodeType.ISSUE: TraceLifecycleStage.PLANNING,
+    NodeType.TEST: TraceLifecycleStage.PLANNING,
+    NodeType.TASK: TraceLifecycleStage.PLANNING,
+    NodeType.EXP: TraceLifecycleStage.PLANNING,
+    NodeType.ASN: TraceLifecycleStage.PLANNING,
+    NodeType.RUN: TraceLifecycleStage.RUNTIME,
+    NodeType.ART: TraceLifecycleStage.RUNTIME,
+    NodeType.GRADE: TraceLifecycleStage.GRADE,
+    NodeType.ANL: TraceLifecycleStage.ANALYSIS,
+    NodeType.CLAIM: TraceLifecycleStage.ANALYSIS,
+    NodeType.DEC: TraceLifecycleStage.DECISION,
+    NodeType.POL: TraceLifecycleStage.DECISION,
+    NodeType.DEP: TraceLifecycleStage.DECISION,
+    NodeType.PROMOTION: TraceLifecycleStage.DECISION,
+}
 
 
 _ALLOWED_EDGE_ENDPOINTS: Mapping[
@@ -829,6 +867,169 @@ class ClosureResult:
         }
 
 
+@dataclass(frozen=True)
+class TraceLifecycleRevision:
+    """One hash-pinned cumulative graph revision in lifecycle order."""
+
+    sequence: int
+    stage: TraceLifecycleStage
+    revision_hash: str
+    parent_revision_hash: str | None
+    graph_sha256: str
+    node_count: int
+    edge_count: int
+    waiver_count: int
+    node_keys: tuple[str, ...]
+    edge_keys: tuple[str, ...]
+    waiver_keys: tuple[str, ...]
+    schema_version: str = TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        try:
+            stage = TraceLifecycleStage(self.stage)
+        except ValueError as exc:
+            raise TraceGraphError(
+                f"unsupported trace lifecycle stage: {self.stage}"
+            ) from exc
+        if self.schema_version != TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION:
+            raise TraceGraphError(
+                "unsupported trace lifecycle schema: "
+                f"{self.schema_version}"
+            )
+        if type(self.sequence) is not int or self.sequence < 1:
+            raise TraceGraphError(
+                "trace lifecycle sequence must be a positive integer"
+            )
+        expected_sequence = _TRACE_LIFECYCLE_INDEX[stage] + 1
+        if self.sequence != expected_sequence:
+            raise TraceGraphError(
+                "trace lifecycle sequence does not match its stage"
+            )
+        revision_hash = str(self.revision_hash)
+        graph_sha256 = str(self.graph_sha256)
+        parent_revision_hash = (
+            None
+            if self.parent_revision_hash is None
+            else str(self.parent_revision_hash)
+        )
+        if not _SHA256_RE.fullmatch(revision_hash):
+            raise TraceGraphError(
+                "trace lifecycle revision_hash must be a canonical sha256"
+            )
+        if not _SHA256_RE.fullmatch(graph_sha256):
+            raise TraceGraphError(
+                "trace lifecycle graph_sha256 must be a canonical sha256"
+            )
+        if self.sequence == 1:
+            if parent_revision_hash is not None:
+                raise TraceGraphError(
+                    "planning lifecycle revision cannot have a parent"
+                )
+        elif not _SHA256_RE.fullmatch(parent_revision_hash or ""):
+            raise TraceGraphError(
+                "non-planning lifecycle revision requires a parent hash"
+            )
+        for field_name in ("node_count", "edge_count", "waiver_count"):
+            value = getattr(self, field_name)
+            if type(value) is not int or value < 0:
+                raise TraceGraphError(
+                    f"trace lifecycle {field_name} must be non-negative"
+                )
+        node_keys = tuple(str(key) for key in self.node_keys)
+        edge_keys = tuple(str(key) for key in self.edge_keys)
+        waiver_keys = tuple(str(key) for key in self.waiver_keys)
+        if (
+            len(node_keys) != self.node_count
+            or len(edge_keys) != self.edge_count
+            or len(waiver_keys) != self.waiver_count
+            or len(set(node_keys)) != len(node_keys)
+            or len(set(edge_keys)) != len(edge_keys)
+            or len(set(waiver_keys)) != len(waiver_keys)
+            or any(not key for key in node_keys)
+            or any(not _SHA256_RE.fullmatch(key) for key in edge_keys)
+            or any(not _SHA256_RE.fullmatch(key) for key in waiver_keys)
+        ):
+            raise TraceGraphError(
+                "trace lifecycle ordered record keys are invalid"
+            )
+        object.__setattr__(self, "stage", stage)
+        object.__setattr__(
+            self,
+            "parent_revision_hash",
+            parent_revision_hash,
+        )
+        object.__setattr__(self, "node_keys", node_keys)
+        object.__setattr__(self, "edge_keys", edge_keys)
+        object.__setattr__(self, "waiver_keys", waiver_keys)
+        if canonical_revision_hash(self._revision_payload()) != revision_hash:
+            raise TraceGraphError("trace lifecycle revision hash mismatch")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        stage: TraceLifecycleStage,
+        graph: "TraceGraph",
+        parent_revision_hash: str | None,
+    ) -> "TraceLifecycleRevision":
+        typed_stage = TraceLifecycleStage(stage)
+        sequence = _TRACE_LIFECYCLE_INDEX[typed_stage] + 1
+        graph_sha256 = sha256(graph.canonical_bytes()).hexdigest()
+        payload = {
+            "schema_version": TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
+            "sequence": sequence,
+            "stage": typed_stage.value,
+            "parent_revision_hash": parent_revision_hash,
+            "graph_sha256": graph_sha256,
+            "node_count": len(graph.nodes),
+            "edge_count": len(graph.edges),
+            "waiver_count": len(graph.waivers),
+            "node_keys": [
+                node.identity.canonical_key for node in graph.nodes
+            ],
+            "edge_keys": [
+                _trace_edge_key(edge) for edge in graph.edges
+            ],
+            "waiver_keys": [
+                _trace_waiver_key(waiver) for waiver in graph.waivers
+            ],
+        }
+        return cls(
+            sequence=sequence,
+            stage=typed_stage,
+            revision_hash=canonical_revision_hash(payload),
+            parent_revision_hash=parent_revision_hash,
+            graph_sha256=graph_sha256,
+            node_count=len(graph.nodes),
+            edge_count=len(graph.edges),
+            waiver_count=len(graph.waivers),
+            node_keys=tuple(payload["node_keys"]),
+            edge_keys=tuple(payload["edge_keys"]),
+            waiver_keys=tuple(payload["waiver_keys"]),
+        )
+
+    def _revision_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "sequence": self.sequence,
+            "stage": self.stage.value,
+            "parent_revision_hash": self.parent_revision_hash,
+            "graph_sha256": self.graph_sha256,
+            "node_count": self.node_count,
+            "edge_count": self.edge_count,
+            "waiver_count": self.waiver_count,
+            "node_keys": list(self.node_keys),
+            "edge_keys": list(self.edge_keys),
+            "waiver_keys": list(self.waiver_keys),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self._revision_payload(),
+            "revision_hash": self.revision_hash,
+        }
+
+
 class TraceGraph:
     """In-memory typed trace graph with deterministic closure queries."""
 
@@ -927,6 +1128,54 @@ class TraceGraph:
     ) -> DecisionGradeValidator | None:
         """Return the injected grade authority attached at composition."""
         return self._decision_grade_validator
+
+    def lifecycle_revision(
+        self,
+        stage: TraceLifecycleStage,
+    ) -> "TraceGraph":
+        """Return the cumulative immutable graph visible at one lifecycle stage."""
+        try:
+            typed_stage = TraceLifecycleStage(stage)
+        except ValueError as exc:
+            raise TraceGraphError(
+                f"unsupported trace lifecycle stage: {stage}"
+            ) from exc
+        stage_index = _TRACE_LIFECYCLE_INDEX[typed_stage]
+        retained_nodes = tuple(
+            node
+            for node in self._nodes
+            if _TRACE_LIFECYCLE_INDEX[
+                _NODE_LIFECYCLE_STAGE[node.identity.node_type]
+            ]
+            <= stage_index
+        )
+        retained_identities = {
+            node.identity for node in retained_nodes
+        }
+        revision = TraceGraph(
+            nodes=retained_nodes,
+            edges=tuple(
+                edge
+                for edge in self._edges
+                if edge.source in retained_identities
+                and edge.target in retained_identities
+            ),
+            # A waiver is decision-time authority, so never backdate it into
+            # the planning or evidentiary revisions merely because its target
+            # node already exists.
+            waivers=(
+                self._waivers
+                if typed_stage is TraceLifecycleStage.DECISION
+                else ()
+            ),
+            decision_grade_validator=self._decision_grade_validator,
+        )
+        if (
+            typed_stage is TraceLifecycleStage.DECISION
+            and self._expected_binding is not None
+        ):
+            revision._expected_binding = self._expected_binding
+        return revision
 
     def bind_validation(
         self,
@@ -1596,6 +1845,59 @@ class TraceGraph:
         return tuple(remaining), tuple(used)
 
 
+def _trace_edge_key(edge: TraceEdge) -> str:
+    return _payload_hash(_canonical_json(edge.to_dict()))
+
+
+def _trace_waiver_key(waiver: TraceWaiver) -> str:
+    return _payload_hash(_canonical_json(waiver.to_dict()))
+
+
+def _trace_graph_record_payloads(
+    graph: TraceGraph,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    return (
+        {
+            node.identity.canonical_key: _canonical_json(node.to_dict())
+            for node in graph.nodes
+        },
+        {
+            _trace_edge_key(edge): _canonical_json(edge.to_dict())
+            for edge in graph.edges
+        },
+        {
+            _trace_waiver_key(waiver): _canonical_json(waiver.to_dict())
+            for waiver in graph.waivers
+        },
+    )
+
+
+def _trace_graph_is_record_extension(
+    *,
+    committed: TraceGraph,
+    live: TraceGraph,
+) -> bool:
+    committed_payloads = _trace_graph_record_payloads(committed)
+    live_payloads = _trace_graph_record_payloads(live)
+    for committed_records, live_records in zip(
+        committed_payloads,
+        live_payloads,
+    ):
+        for key, payload in committed_records.items():
+            if live_records.get(key) != payload:
+                return False
+    return True
+
+
+def _trace_graph_has_same_records(
+    first: TraceGraph,
+    second: TraceGraph,
+) -> bool:
+    return _trace_graph_record_payloads(first) == (
+        _trace_graph_record_payloads(second)
+    )
+
+
 class TraceGraphStore:
     """Append-only SQLite persistence for one incrementally built graph."""
 
@@ -1654,31 +1956,274 @@ class TraceGraphStore:
         """Compatibility alias for callers that prefer an explicit noun."""
         self.append(graph)
 
+    def append_lifecycle_revision(
+        self,
+        stage: TraceLifecycleStage,
+        graph: TraceGraph,
+    ) -> TraceLifecycleRevision:
+        """Append one cumulative stage without inventing missing history."""
+        if not isinstance(graph, TraceGraph):
+            raise TraceGraphError(
+                "TraceGraphStore.append_lifecycle_revision requires a "
+                "TraceGraph"
+            )
+        try:
+            typed_stage = TraceLifecycleStage(stage)
+        except ValueError as exc:
+            raise TraceGraphError(
+                f"unsupported trace lifecycle stage: {stage}"
+            ) from exc
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._list_lifecycle_revisions_unlocked()
+                by_stage = {
+                    revision.stage: revision for revision in existing
+                }
+                persisted = by_stage.get(typed_stage)
+                if persisted is not None:
+                    observed = self._load_lifecycle_revision_unlocked(
+                        persisted
+                    )
+                    if (
+                        observed.canonical_bytes()
+                        != graph.canonical_bytes()
+                    ):
+                        raise TraceGraphError(
+                            "immutable trace lifecycle revision conflict for "
+                            f"{typed_stage.value}"
+                        )
+                    self._conn.execute("COMMIT")
+                    return persisted
+
+                if len(existing) >= len(_TRACE_LIFECYCLE_ORDER):
+                    raise TraceGraphError(
+                        "trace lifecycle already contains every revision"
+                    )
+                expected_stage = _TRACE_LIFECYCLE_ORDER[len(existing)]
+                if typed_stage is not expected_stage:
+                    if not existing:
+                        raise TraceGraphError(
+                            "planning lifecycle revision must be committed first"
+                        )
+                    raise TraceGraphError(
+                        "trace lifecycle revisions must be committed in order: "
+                        f"expected {expected_stage.value}, got "
+                        f"{typed_stage.value}"
+                    )
+
+                live_graph = self._load_graph_unlocked()
+                if existing:
+                    previous = self._load_lifecycle_revision_unlocked(
+                        existing[-1]
+                    )
+                    if not _trace_graph_has_same_records(
+                        live_graph,
+                        previous,
+                    ):
+                        raise TraceGraphError(
+                            "trace store contains unversioned trace records "
+                            "after its latest lifecycle revision"
+                        )
+                    if not _trace_graph_is_record_extension(
+                        committed=previous,
+                        live=graph,
+                    ):
+                        raise TraceGraphError(
+                            "trace lifecycle revision is not an append-only "
+                            "extension of its parent"
+                        )
+                elif (
+                    live_graph.nodes
+                    or live_graph.edges
+                    or live_graph.waivers
+                ):
+                    raise TraceGraphError(
+                        "trace store contains unversioned trace records; "
+                        "refusing to invent a planning precommit"
+                    )
+
+                projected = graph.lifecycle_revision(typed_stage)
+                if (
+                    projected.canonical_bytes()
+                    != graph.canonical_bytes()
+                ):
+                    raise TraceGraphError(
+                        "trace lifecycle revision contains records from a "
+                        f"later stage than {typed_stage.value}"
+                    )
+                if not any(
+                    _NODE_LIFECYCLE_STAGE[node.identity.node_type]
+                    is typed_stage
+                    for node in graph.nodes
+                ):
+                    raise TraceGraphError(
+                        "trace lifecycle revision adds no "
+                        f"{typed_stage.value} nodes"
+                    )
+
+                for node in graph.nodes:
+                    self._append_node(node)
+                for edge in graph.edges:
+                    self._append_edge(edge)
+                for waiver in graph.waivers:
+                    self._append_waiver(waiver)
+                appended_graph = self._load_graph_unlocked()
+                if not _trace_graph_has_same_records(
+                    appended_graph,
+                    graph,
+                ):
+                    raise TraceGraphError(
+                        "trace lifecycle persistence differs from the "
+                        "requested cumulative revision"
+                    )
+
+                revision = TraceLifecycleRevision.create(
+                    stage=typed_stage,
+                    graph=graph,
+                    parent_revision_hash=(
+                        existing[-1].revision_hash
+                        if existing
+                        else None
+                    ),
+                )
+                self._initialise_lifecycle_schema_unlocked()
+                payload_json = _canonical_json(revision.to_dict())
+                payload_hash = _payload_hash(payload_json)
+                self._conn.execute(
+                    """
+                    INSERT INTO trace_lifecycle_revisions(
+                      lifecycle_sequence, stage, revision_hash,
+                      parent_revision_hash, graph_sha256,
+                      node_count, edge_count, waiver_count,
+                      payload_json, payload_hash
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        revision.sequence,
+                        revision.stage.value,
+                        revision.revision_hash,
+                        revision.parent_revision_hash,
+                        revision.graph_sha256,
+                        revision.node_count,
+                        revision.edge_count,
+                        revision.waiver_count,
+                        payload_json,
+                        payload_hash,
+                    ),
+                )
+                self._conn.execute("COMMIT")
+                return revision
+            except sqlite3.DatabaseError as exc:
+                self._conn.execute("ROLLBACK")
+                raise TraceGraphError(
+                    "failed to append immutable trace lifecycle revision: "
+                    f"{exc}"
+                ) from exc
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+
+    def list_lifecycle_revisions(
+        self,
+    ) -> tuple[TraceLifecycleRevision, ...]:
+        """Return hash-verified lifecycle revisions in committed order."""
+        with self._lock:
+            return self._list_lifecycle_revisions_unlocked()
+
+    def load_lifecycle_revision(
+        self,
+        stage: TraceLifecycleStage,
+    ) -> TraceGraph:
+        """Reload the exact graph boundary pinned for one lifecycle stage."""
+        try:
+            typed_stage = TraceLifecycleStage(stage)
+        except ValueError as exc:
+            raise TraceGraphError(
+                f"unsupported trace lifecycle stage: {stage}"
+            ) from exc
+        with self._lock:
+            revision = next(
+                (
+                    item
+                    for item in self._list_lifecycle_revisions_unlocked()
+                    if item.stage is typed_stage
+                ),
+                None,
+            )
+            if revision is None:
+                raise TraceGraphError(
+                    "trace lifecycle revision is missing for "
+                    f"{typed_stage.value}"
+                )
+            return self._load_lifecycle_revision_unlocked(revision)
+
     def load(self) -> TraceGraph:
         """Reload the complete graph in original append order."""
         with self._lock:
-            node_rows = self._conn.execute(
-                """
-                SELECT canonical_key, payload_json, payload_hash
-                FROM trace_nodes
-                ORDER BY node_sequence ASC
-                """
-            ).fetchall()
-            edge_rows = self._conn.execute(
-                """
-                SELECT edge_key, payload_json, payload_hash
-                FROM trace_edges
-                ORDER BY edge_sequence ASC
-                """
-            ).fetchall()
-            waiver_rows = self._conn.execute(
-                """
-                SELECT waiver_key, payload_json, payload_hash
-                FROM trace_waivers
-                ORDER BY waiver_sequence ASC
-                """
-            ).fetchall()
+            revisions = self._list_lifecycle_revisions_unlocked()
+            if not revisions:
+                return self._load_graph_unlocked()
+            latest = revisions[-1]
+            pinned = self._load_lifecycle_revision_unlocked(latest)
+            physical = self._load_graph_unlocked()
+            pinned_nodes = set(latest.node_keys)
+            pinned_edges = set(latest.edge_keys)
+            pinned_waivers = set(latest.waiver_keys)
+            return TraceGraph(
+                nodes=(
+                    *pinned.nodes,
+                    *(
+                        node
+                        for node in physical.nodes
+                        if node.identity.canonical_key not in pinned_nodes
+                    ),
+                ),
+                edges=(
+                    *pinned.edges,
+                    *(
+                        edge
+                        for edge in physical.edges
+                        if _trace_edge_key(edge) not in pinned_edges
+                    ),
+                ),
+                waivers=(
+                    *pinned.waivers,
+                    *(
+                        waiver
+                        for waiver in physical.waivers
+                        if _trace_waiver_key(waiver)
+                        not in pinned_waivers
+                    ),
+                ),
+            )
 
+    def load_graph(self) -> TraceGraph:
+        """Compatibility alias for callers that prefer an explicit noun."""
+        return self.load()
+
+    def _load_graph_unlocked(self) -> TraceGraph:
+        node_rows = self._conn.execute(
+            """
+            SELECT canonical_key, payload_json, payload_hash
+            FROM trace_nodes
+            ORDER BY node_sequence ASC
+            """
+        ).fetchall()
+        edge_rows = self._conn.execute(
+            """
+            SELECT edge_key, payload_json, payload_hash
+            FROM trace_edges
+            ORDER BY edge_sequence ASC
+            """
+        ).fetchall()
+        waiver_rows = self._conn.execute(
+            """
+            SELECT waiver_key, payload_json, payload_hash
+            FROM trace_waivers
+            ORDER BY waiver_sequence ASC
+            """
+        ).fetchall()
         nodes = tuple(
             _trace_node_from_payload(
                 _decode_stored_payload(row, record_kind="node")
@@ -1704,9 +2249,139 @@ class TraceGraphStore:
         )
         return TraceGraph(nodes=nodes, edges=edges, waivers=waivers)
 
-    def load_graph(self) -> TraceGraph:
-        """Compatibility alias for callers that prefer an explicit noun."""
-        return self.load()
+    def _list_lifecycle_revisions_unlocked(
+        self,
+    ) -> tuple[TraceLifecycleRevision, ...]:
+        if not self._lifecycle_schema_exists_unlocked():
+            return ()
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM trace_lifecycle_revisions
+            ORDER BY lifecycle_sequence ASC
+            """
+        ).fetchall()
+        revisions = tuple(
+            _trace_lifecycle_revision_from_row(row)
+            for row in rows
+        )
+        for index, revision in enumerate(revisions):
+            if index >= len(_TRACE_LIFECYCLE_ORDER):
+                raise TraceGraphError(
+                    "trace lifecycle contains too many revisions"
+                )
+            if (
+                revision.sequence != index + 1
+                or revision.stage is not _TRACE_LIFECYCLE_ORDER[index]
+                or revision.parent_revision_hash
+                != (
+                    revisions[index - 1].revision_hash
+                    if index
+                    else None
+                )
+            ):
+                raise TraceGraphError(
+                    "trace lifecycle revision chain is invalid"
+                )
+            self._load_lifecycle_revision_unlocked(revision)
+        return revisions
+
+    def _load_lifecycle_revision_unlocked(
+        self,
+        revision: TraceLifecycleRevision,
+    ) -> TraceGraph:
+        graph = self._load_graph_by_keys_unlocked(
+            node_keys=revision.node_keys,
+            edge_keys=revision.edge_keys,
+            waiver_keys=revision.waiver_keys,
+        )
+        if sha256(graph.canonical_bytes()).hexdigest() != (
+            revision.graph_sha256
+        ):
+            raise TraceGraphError(
+                "trace lifecycle graph hash does not match persistence"
+            )
+        return graph
+
+    def _load_graph_by_keys_unlocked(
+        self,
+        *,
+        node_keys: tuple[str, ...],
+        edge_keys: tuple[str, ...],
+        waiver_keys: tuple[str, ...],
+    ) -> TraceGraph:
+        node_rows = {
+            str(row["canonical_key"]): row
+            for row in self._conn.execute(
+                """
+                SELECT canonical_key, payload_json, payload_hash
+                FROM trace_nodes
+                """
+            ).fetchall()
+        }
+        edge_rows = {
+            str(row["edge_key"]): row
+            for row in self._conn.execute(
+                """
+                SELECT edge_key, payload_json, payload_hash
+                FROM trace_edges
+                """
+            ).fetchall()
+        }
+        waiver_rows = {
+            str(row["waiver_key"]): row
+            for row in self._conn.execute(
+                """
+                SELECT waiver_key, payload_json, payload_hash
+                FROM trace_waivers
+                """
+            ).fetchall()
+        }
+        try:
+            nodes = tuple(
+                _trace_node_from_payload(
+                    _decode_stored_payload(
+                        node_rows[key],
+                        record_kind="node",
+                    )
+                )
+                for key in node_keys
+            )
+        except KeyError as exc:
+            raise TraceGraphError(
+                "trace lifecycle references a missing node: "
+                f"{exc.args[0]}"
+            ) from exc
+        identities = {
+            node.identity.canonical_key: node.identity for node in nodes
+        }
+        try:
+            edges = tuple(
+                _trace_edge_from_payload(
+                    _decode_stored_payload(
+                        edge_rows[key],
+                        record_kind="edge",
+                    ),
+                    identities=identities,
+                )
+                for key in edge_keys
+            )
+            waivers = tuple(
+                _trace_waiver_from_payload(
+                    _decode_stored_payload(
+                        waiver_rows[key],
+                        record_kind="waiver",
+                    ),
+                    identities=identities,
+                )
+                for key in waiver_keys
+            )
+        except KeyError as exc:
+            raise TraceGraphError(
+                "trace lifecycle references a missing immutable record: "
+                f"{exc.args[0]}"
+            ) from exc
+        return TraceGraph(nodes=nodes, edges=edges, waivers=waivers)
 
     def _append_node(self, node: TraceNode) -> None:
         payload_json = _canonical_json(node.to_dict())
@@ -1809,6 +2484,60 @@ class TraceGraphStore:
                 f"immutable trace record conflict in {table}: {key}"
             )
 
+    def _lifecycle_schema_exists_unlocked(self) -> bool:
+        return (
+            self._conn.execute(
+                """
+                SELECT 1
+                FROM sqlite_master
+                WHERE type='table' AND name='trace_lifecycle_revisions'
+                """
+            ).fetchone()
+            is not None
+        )
+
+    def _initialise_lifecycle_schema_unlocked(self) -> None:
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trace_lifecycle_revisions (
+              lifecycle_sequence INTEGER PRIMARY KEY,
+              stage TEXT NOT NULL UNIQUE,
+              revision_hash TEXT NOT NULL UNIQUE,
+              parent_revision_hash TEXT,
+              graph_sha256 TEXT NOT NULL,
+              node_count INTEGER NOT NULL,
+              edge_count INTEGER NOT NULL,
+              waiver_count INTEGER NOT NULL,
+              payload_json TEXT NOT NULL,
+              payload_hash TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trace_lifecycle_revisions_no_update
+            BEFORE UPDATE ON trace_lifecycle_revisions
+            BEGIN
+              SELECT RAISE(
+                ABORT,
+                'trace lifecycle revisions are immutable'
+              );
+            END
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trace_lifecycle_revisions_no_delete
+            BEFORE DELETE ON trace_lifecycle_revisions
+            BEGIN
+              SELECT RAISE(
+                ABORT,
+                'trace lifecycle revisions are immutable'
+              );
+            END
+            """
+        )
+
     def _initialise_schema(self) -> None:
         with self._lock:
             self._conn.executescript(
@@ -1892,8 +2621,75 @@ class TraceGraphStore:
                 BEGIN
                   SELECT RAISE(ABORT, 'trace waivers are immutable');
                 END;
+
                 """
             )
+
+
+def _trace_lifecycle_revision_from_row(
+    row: sqlite3.Row,
+) -> TraceLifecycleRevision:
+    payload = _decode_stored_payload(
+        row,
+        record_kind="lifecycle revision",
+    )
+    try:
+        revision = TraceLifecycleRevision(
+            schema_version=str(payload["schema_version"]),
+            sequence=payload["sequence"],
+            stage=TraceLifecycleStage(str(payload["stage"])),
+            revision_hash=str(payload["revision_hash"]),
+            parent_revision_hash=(
+                str(payload["parent_revision_hash"])
+                if payload.get("parent_revision_hash") is not None
+                else None
+            ),
+            graph_sha256=str(payload["graph_sha256"]),
+            node_count=payload["node_count"],
+            edge_count=payload["edge_count"],
+            waiver_count=payload["waiver_count"],
+            node_keys=tuple(payload["node_keys"]),
+            edge_keys=tuple(payload["edge_keys"]),
+            waiver_keys=tuple(payload["waiver_keys"]),
+        )
+    except KeyError as exc:
+        raise TraceGraphError(
+            "stored trace lifecycle revision is missing "
+            f"{exc.args[0]}"
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        raise TraceGraphError(
+            "stored trace lifecycle revision is invalid"
+        ) from exc
+    expected_columns = (
+        int(row["lifecycle_sequence"]),
+        str(row["stage"]),
+        str(row["revision_hash"]),
+        (
+            str(row["parent_revision_hash"])
+            if row["parent_revision_hash"] is not None
+            else None
+        ),
+        str(row["graph_sha256"]),
+        int(row["node_count"]),
+        int(row["edge_count"]),
+        int(row["waiver_count"]),
+    )
+    observed = (
+        revision.sequence,
+        revision.stage.value,
+        revision.revision_hash,
+        revision.parent_revision_hash,
+        revision.graph_sha256,
+        revision.node_count,
+        revision.edge_count,
+        revision.waiver_count,
+    )
+    if observed != expected_columns:
+        raise TraceGraphError(
+            "stored trace lifecycle columns differ from hashed payload"
+        )
+    return revision
 
 
 def _decode_stored_payload(

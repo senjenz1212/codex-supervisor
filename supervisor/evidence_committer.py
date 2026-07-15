@@ -40,6 +40,7 @@ except ImportError:  # pragma: no cover - secure snapshots fail closed below
     fcntl = None  # type: ignore[assignment]
 
 from .evidence_ledger import (
+    ArtifactIntegrityError,
     ContentAddressedArtifactStore,
     LedgerVerification,
     _absolute_no_follow_path,
@@ -50,6 +51,7 @@ from .evidence_ledger import (
     canonical_json_bytes,
     rebuild_projection,
     sha256_hex,
+    verify_artifact_manifest_attestation,
     verify_event_chain,
 )
 from .claim_gate import ClaimGate, ClaimGateError
@@ -76,6 +78,7 @@ from .ledger_checkpoints import (
 )
 from .state import State, is_postgres_state_dsn
 from .trace_graph import (
+    TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
     ClosureResult,
     EdgeType,
     NodeType,
@@ -83,6 +86,8 @@ from .trace_graph import (
     TraceGraphError,
     TraceGraphStore,
     TraceIdentity,
+    TraceLifecycleRevision,
+    TraceLifecycleStage,
     TraceNode,
 )
 
@@ -289,6 +294,80 @@ def _trace_graph_is_append_extension(
     return True
 
 
+def _manifest_attestation_identity(
+    attestation: Mapping[str, Any],
+) -> dict[str, Any]:
+    predicate = attestation.get("predicate")
+    signatures = attestation.get("signatures")
+    signing_payload_sha256 = str(
+        attestation.get("signing_payload_sha256") or ""
+    )
+    if (
+        not isinstance(predicate, Mapping)
+        or not isinstance(signatures, list)
+        or not signatures
+        or len(signing_payload_sha256) != 64
+    ):
+        raise EvidenceCommitIntegrityError(
+            "artifact manifest attestation identity is invalid"
+        )
+    identity = {
+        "schema_version": str(predicate.get("schema_version") or ""),
+        "manifest_hash": str(predicate.get("manifest_hash") or ""),
+        "signing_payload_sha256": signing_payload_sha256,
+        "signer_provider_id": str(
+            predicate.get("signer_provider_id") or ""
+        ),
+        "signer_key_id": str(predicate.get("signer_key_id") or ""),
+        "signer_algorithm": str(
+            predicate.get("signer_algorithm") or ""
+        ),
+        "created_at": predicate.get("created_at"),
+        "signatures_sha256": sha256_hex(
+            canonical_json_bytes(signatures)
+        ),
+    }
+    if (
+        any(
+            not str(identity[field]).strip()
+            for field in (
+                "schema_version",
+                "manifest_hash",
+                "signer_provider_id",
+                "signer_key_id",
+                "signer_algorithm",
+            )
+        )
+        or len(identity["manifest_hash"]) != 64
+        or type(identity["created_at"]) is not int
+        or int(identity["created_at"]) < 0
+    ):
+        raise EvidenceCommitIntegrityError(
+            "artifact manifest attestation identity is invalid"
+        )
+    return identity
+
+
+def _trace_lifecycle_identity(
+    revisions: Sequence[TraceLifecycleRevision],
+) -> dict[str, Any]:
+    ordered = tuple(revisions)
+    if tuple(revision.stage for revision in ordered) != tuple(
+        TraceLifecycleStage
+    ):
+        raise EvidenceCommitIntegrityError(
+            "trace lifecycle does not contain the exact ordered stages"
+        )
+    return {
+        "schema_version": TRACE_GRAPH_LIFECYCLE_SCHEMA_VERSION,
+        "stages": [revision.stage.value for revision in ordered],
+        "revision_hashes": [
+            revision.revision_hash for revision in ordered
+        ],
+        "head_revision_hash": ordered[-1].revision_hash,
+    }
+
+
 @dataclass(frozen=True)
 class EvidenceCommitRequest:
     """All immutable inputs to one evidence commit."""
@@ -359,6 +438,7 @@ class EvidenceCommitResult:
     projection: Mapping[str, Any]
     projection_sha256: str
     evidence_root: Path
+    artifact_manifest_attestation_identity: Mapping[str, Any] | None = None
 
 
 class HmacCheckpointAuthority:
@@ -629,6 +709,10 @@ class EvidenceCommitter:
                 row["precommit_heads_json"],
                 field="precommit_heads_json",
             )
+            self._persist_planning_skeleton(
+                request,
+                prior_phase=str(row["phase"]),
+            )
             histories = self._verify_grade_histories(request)
             self._advance(
                 request.commit_id,
@@ -641,10 +725,12 @@ class EvidenceCommitter:
                 },
             )
 
-            graph, closure, promotion_trace = self._persist_trace(
-                request,
-                histories,
-            )
+            (
+                graph,
+                closure,
+                promotion_trace,
+                trace_lifecycle_identity,
+            ) = self._persist_trace(request, histories)
             self._advance(
                 request.commit_id,
                 "trace_persisted",
@@ -653,6 +739,7 @@ class EvidenceCommitter:
                     "node_count": len(graph.nodes),
                     "edge_count": len(graph.edges),
                     "closure_status": closure.to_dict()["status"],
+                    "trace_lifecycle": trace_lifecycle_identity,
                 },
             )
 
@@ -663,6 +750,7 @@ class EvidenceCommitter:
                 graph=graph,
                 closure=closure,
                 precommit_heads=precommit_heads,
+                trace_lifecycle_identity=trace_lifecycle_identity,
             )
             manifest_event = self._append_or_verify_manifest_event(
                 request=request,
@@ -675,25 +763,12 @@ class EvidenceCommitter:
                 precommit_heads=precommit_heads,
                 manifest_event=manifest_event,
             )
-            persisted_checkpoints = self._persist_checkpoints(
+            (
+                checkpoint_refs,
+                trusted_checkpoint_pins,
+            ) = self._persist_checkpoint_phase(
                 request,
                 checkpoint_streams,
-            )
-            trusted_checkpoint_pins = self._pin_checkpoints(
-                request,
-                persisted_checkpoints,
-            )
-            checkpoint_refs = {
-                run_id: persisted.external_anchor_ref
-                for run_id, persisted in persisted_checkpoints.items()
-            }
-            self._advance(
-                request.commit_id,
-                "checkpoints_persisted",
-                {
-                    "checkpoint_refs": checkpoint_refs,
-                    "trusted_checkpoint_pins": trusted_checkpoint_pins,
-                },
             )
             verifications, projection = self._verify_authoritatively(
                 request=request,
@@ -709,6 +784,10 @@ class EvidenceCommitter:
                 "artifact_manifest_hash": materialization[
                     "artifact_manifest"
                 ]["manifest_hash"],
+                "artifact_manifest_attestation": materialization[
+                    "artifact_manifest_attestation_identity"
+                ],
+                "trace_lifecycle": materialization["trace_lifecycle"],
                 "manifest_event_id": manifest_event["event_id"],
                 "manifest_event_hash": manifest_event["event_hash"],
                 "checkpoint_refs": checkpoint_refs,
@@ -752,15 +831,42 @@ class EvidenceCommitter:
         histories = self._verify_committed_grade_histories(request)
         try:
             with TraceGraphStore(self.trace_store_path) as store:
+                lifecycle = store.list_lifecycle_revisions()
+                if lifecycle and tuple(
+                    revision.stage for revision in lifecycle
+                ) != tuple(TraceLifecycleStage):
+                    raise EvidenceCommitIntegrityError(
+                        "completed evidence lacks the exact trace lifecycle"
+                    )
+                trace_lifecycle_identity = (
+                    _trace_lifecycle_identity(lifecycle)
+                    if lifecycle
+                    else None
+                )
+                committed_graph = (
+                    store.load_lifecycle_revision(
+                        TraceLifecycleStage.DECISION
+                    )
+                    if lifecycle
+                    else None
+                )
                 live_graph = store.load()
         except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
             raise EvidenceCommitIntegrityError(
-                "completed evidence persisted trace graph is unreadable"
+                "completed evidence persisted trace graph differs or is "
+                "unreadable"
             ) from exc
         graph = request.trace_graph
-        if not _trace_graph_is_append_extension(
-            committed=graph,
-            live=live_graph,
+        if (
+            (
+                committed_graph is not None
+                and committed_graph.canonical_bytes()
+                != graph.canonical_bytes()
+            )
+            or not _trace_graph_is_append_extension(
+                committed=graph,
+                live=live_graph,
+            )
         ):
             raise EvidenceCommitIntegrityError(
                 "completed evidence persisted trace graph differs from "
@@ -792,11 +898,45 @@ class EvidenceCommitter:
             materialization=materialization,
             graph=graph,
             closure=closure,
+            trace_lifecycle_identity=trace_lifecycle_identity,
+            allow_legacy_manifest_attestation=True,
+        )
+        materialized_attestation = materialization.get(
+            "artifact_manifest_attestation_identity"
+        )
+        result_has_attestation = (
+            "artifact_manifest_attestation" in result_summary
+        )
+        attestation_mismatch = (
+            result_has_attestation
+            if materialized_attestation is None
+            else (
+                not result_has_attestation
+                or canonical_json_bytes(
+                    result_summary.get("artifact_manifest_attestation")
+                )
+                != canonical_json_bytes(materialized_attestation)
+            )
+        )
+        materialized_lifecycle = materialization.get("trace_lifecycle")
+        result_has_lifecycle = "trace_lifecycle" in result_summary
+        lifecycle_mismatch = (
+            result_has_lifecycle
+            if materialized_lifecycle is None
+            else (
+                not result_has_lifecycle
+                or canonical_json_bytes(
+                    result_summary.get("trace_lifecycle")
+                )
+                != canonical_json_bytes(materialized_lifecycle)
+            )
         )
         if (
             result_summary.get("request_hash") != request_hash
             or result_summary.get("artifact_manifest_hash")
             != materialization["artifact_manifest"]["manifest_hash"]
+            or attestation_mismatch
+            or lifecycle_mismatch
             or result_summary.get("projection_sha256")
             != materialization["projection_sha256"]
         ):
@@ -899,6 +1039,14 @@ class EvidenceCommitter:
         promotion_trace: tuple[TraceNode, ...],
         projection: Mapping[str, Any],
     ) -> EvidenceCommitResult:
+        raw_attestation_identity = materialization.get(
+            "artifact_manifest_attestation_identity"
+        )
+        attestation_identity = (
+            dict(raw_attestation_identity)
+            if isinstance(raw_attestation_identity, Mapping)
+            else None
+        )
         return EvidenceCommitResult(
             commit_id=request.commit_id,
             request_hash=request_hash,
@@ -916,6 +1064,7 @@ class EvidenceCommitter:
             projection=dict(projection),
             projection_sha256=str(materialization["projection_sha256"]),
             evidence_root=self.root,
+            artifact_manifest_attestation_identity=attestation_identity,
         )
 
     def _validate_request(self, request: EvidenceCommitRequest) -> None:
@@ -1600,17 +1749,76 @@ class EvidenceCommitter:
             source_terminal_commits.append(authority_commit)
         return tuple(source_terminal_commits)
 
+    def _persist_planning_skeleton(
+        self,
+        request: EvidenceCommitRequest,
+        *,
+        prior_phase: str,
+    ) -> TraceLifecycleRevision:
+        """Pin the planning-only trace before consulting terminal grades."""
+        planning = request.trace_graph.lifecycle_revision(
+            TraceLifecycleStage.PLANNING
+        )
+        if not planning.nodes:
+            raise EvidenceCommitIntegrityError(
+                "trace planning skeleton must contain immutable planning nodes"
+            )
+        try:
+            with TraceGraphStore(self.trace_store_path) as store:
+                lifecycle = store.list_lifecycle_revisions()
+                if (
+                    not lifecycle
+                    and _PHASE_INDEX.get(prior_phase, -1)
+                    >= _PHASE_INDEX["grades_verified"]
+                ):
+                    raise TraceGraphError(
+                        "refusing to fabricate a historical planning "
+                        "precommit after terminal grades were verified"
+                    )
+                return store.append_lifecycle_revision(
+                    TraceLifecycleStage.PLANNING,
+                    planning,
+                )
+        except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "trace planning precommit failed closed: "
+                f"{exc}"
+            ) from exc
+
     def _persist_trace(
         self,
         request: EvidenceCommitRequest,
         histories: tuple[EvidenceGradeHistory, ...],
-    ) -> tuple[TraceGraph, ClosureResult, tuple[TraceNode, ...]]:
-        with TraceGraphStore(self.trace_store_path) as store:
-            store.append(request.trace_graph)
-            graph = store.load()
+    ) -> tuple[
+        TraceGraph,
+        ClosureResult,
+        tuple[TraceNode, ...],
+        Mapping[str, Any],
+    ]:
+        try:
+            with TraceGraphStore(self.trace_store_path) as store:
+                for stage in tuple(TraceLifecycleStage)[1:]:
+                    store.append_lifecycle_revision(
+                        stage,
+                        request.trace_graph.lifecycle_revision(stage),
+                    )
+                graph = store.load_lifecycle_revision(
+                    TraceLifecycleStage.DECISION
+                )
+                lifecycle = store.list_lifecycle_revisions()
+                live_graph = store.load()
+        except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "trace lifecycle persistence failed closed: "
+                f"{exc}"
+            ) from exc
         if graph.canonical_bytes() != request.trace_graph.canonical_bytes():
             raise EvidenceCommitIntegrityError(
                 "persisted TraceGraphStore bytes differ from requested graph"
+            )
+        if live_graph.canonical_bytes() != graph.canonical_bytes():
+            raise EvidenceCommitIntegrityError(
+                "persisted TraceGraphStore contains unversioned trace records"
             )
         with GradeBook(self.gradebook_path) as gradebook:
             closure = graph.validate_closure(
@@ -1629,7 +1837,12 @@ class EvidenceCommitter:
             request.promotion,
         )
         promotion_trace = graph.promotion_trace(request.promotion)
-        return graph, closure, promotion_trace
+        return (
+            graph,
+            closure,
+            promotion_trace,
+            _trace_lifecycle_identity(lifecycle),
+        )
 
     def _validate_trace_grade_links(
         self,
@@ -1904,6 +2117,7 @@ class EvidenceCommitter:
         graph: TraceGraph,
         closure: ClosureResult,
         precommit_heads: Mapping[str, Any],
+        trace_lifecycle_identity: Mapping[str, Any],
     ) -> dict[str, Any]:
         row = self._load_commit_row(request.commit_id)
         stored = row["materialization_json"]
@@ -1918,10 +2132,11 @@ class EvidenceCommitter:
                 materialization=materialization,
                 graph=graph,
                 closure=closure,
+                trace_lifecycle_identity=trace_lifecycle_identity,
             )
             return materialization
 
-        self._assert_precommit_streams(
+        self._verify_precommit_streams(
             request=request,
             precommit_heads=precommit_heads,
         )
@@ -1996,6 +2211,7 @@ class EvidenceCommitter:
                 "operational_efficacy_evidence": False,
                 "state_snapshot_cut": "before_artifact_manifest_event",
                 "precommit_heads": dict(precommit_heads),
+                "trace_lifecycle": dict(trace_lifecycle_identity),
                 "artifact_roles": [
                     {
                         "role": descriptor["role"],
@@ -2006,6 +2222,18 @@ class EvidenceCommitter:
             },
         )
         self.artifact_store.verify_manifest(manifest)
+        manifest_attestation = (
+            self.artifact_store.create_manifest_attestation(
+                manifest,
+                signer=self.signer,
+                verifier=self.verifier,
+                created_at=request.checkpoint_created_at,
+                manifest_name="artifacts/artifact-manifest.json",
+            )
+        )
+        manifest_attestation_identity = _manifest_attestation_identity(
+            manifest_attestation
+        )
         projection_descriptor = next(
             descriptor
             for descriptor in descriptors
@@ -2015,6 +2243,11 @@ class EvidenceCommitter:
             "schema_version": EVIDENCE_COMMIT_SCHEMA_VERSION,
             "artifacts": descriptors,
             "artifact_manifest": manifest,
+            "artifact_manifest_attestation": manifest_attestation,
+            "artifact_manifest_attestation_identity": (
+                manifest_attestation_identity
+            ),
+            "trace_lifecycle": dict(trace_lifecycle_identity),
             "projection_ref": projection_descriptor["ref"],
             "projection_sha256": projection_descriptor["digest"]["sha256"],
         }
@@ -2035,6 +2268,11 @@ class EvidenceCommitter:
             self.root,
             "artifacts/artifact-manifest.json",
             canonical_json_bytes(manifest),
+        )
+        _write_evidence_file(
+            self.root,
+            "artifacts/artifact-manifest.attestation.json",
+            canonical_json_bytes(manifest_attestation),
         )
         self._observe_phase("artifacts_staged")
         return materialization
@@ -2215,6 +2453,8 @@ class EvidenceCommitter:
         materialization: Mapping[str, Any],
         graph: TraceGraph,
         closure: ClosureResult,
+        trace_lifecycle_identity: Mapping[str, Any] | None,
+        allow_legacy_manifest_attestation: bool = False,
     ) -> None:
         manifest = materialization.get("artifact_manifest")
         if not isinstance(manifest, Mapping):
@@ -2231,6 +2471,80 @@ class EvidenceCommitter:
                 "persisted artifact manifest identity mismatch"
             )
         self.artifact_store.verify_manifest(manifest)
+        manifest_has_trace_lifecycle = "trace_lifecycle" in metadata
+        manifest_trace_lifecycle = metadata.get("trace_lifecycle")
+        has_trace_lifecycle = "trace_lifecycle" in materialization
+        materialized_trace_lifecycle = materialization.get(
+            "trace_lifecycle"
+        )
+        if trace_lifecycle_identity is None:
+            if has_trace_lifecycle or manifest_has_trace_lifecycle:
+                raise EvidenceCommitIntegrityError(
+                    "persisted trace lifecycle receipts are missing"
+                )
+        elif (
+            not has_trace_lifecycle
+            or not manifest_has_trace_lifecycle
+            or not isinstance(materialized_trace_lifecycle, Mapping)
+            or not isinstance(manifest_trace_lifecycle, Mapping)
+            or canonical_json_bytes(materialized_trace_lifecycle)
+            != canonical_json_bytes(trace_lifecycle_identity)
+            or canonical_json_bytes(manifest_trace_lifecycle)
+            != canonical_json_bytes(trace_lifecycle_identity)
+        ):
+            raise EvidenceCommitIntegrityError(
+                "persisted trace lifecycle identity mismatch"
+            )
+        has_attestation = "artifact_manifest_attestation" in materialization
+        has_attestation_identity = (
+            "artifact_manifest_attestation_identity" in materialization
+        )
+        attestation = materialization.get("artifact_manifest_attestation")
+        recorded_attestation_identity = materialization.get(
+            "artifact_manifest_attestation_identity"
+        )
+        if has_attestation != has_attestation_identity:
+            raise EvidenceCommitIntegrityError(
+                "persisted materialization has incomplete manifest "
+                "attestation evidence"
+            )
+        if has_attestation:
+            if (
+                not isinstance(attestation, Mapping)
+                or not isinstance(recorded_attestation_identity, Mapping)
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "persisted materialization has invalid manifest "
+                    "attestation evidence"
+                )
+            try:
+                verify_artifact_manifest_attestation(
+                    attestation,
+                    manifest=manifest,
+                    verifier=self.verifier,
+                )
+            except (ArtifactIntegrityError, TypeError, ValueError) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "persisted artifact manifest attestation is invalid"
+                ) from exc
+            attestation_identity = _manifest_attestation_identity(
+                attestation
+            )
+            if (
+                canonical_json_bytes(recorded_attestation_identity)
+                != canonical_json_bytes(attestation_identity)
+                or attestation_identity["manifest_hash"]
+                != manifest["manifest_hash"]
+                or attestation_identity["created_at"]
+                != request.checkpoint_created_at
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "persisted artifact manifest attestation identity mismatch"
+                )
+        elif not allow_legacy_manifest_attestation:
+            raise EvidenceCommitIntegrityError(
+                "persisted materialization lacks a manifest attestation"
+            )
         descriptors = materialization.get("artifacts")
         if not isinstance(descriptors, list):
             raise EvidenceCommitIntegrityError(
@@ -2325,6 +2639,18 @@ class EvidenceCommitter:
             raise EvidenceCommitIntegrityError(
                 "materialized artifact manifest differs from outbox"
             ) from exc
+        if isinstance(attestation, Mapping):
+            try:
+                _write_evidence_file(
+                    self.root,
+                    "artifacts/artifact-manifest.attestation.json",
+                    canonical_json_bytes(attestation),
+                )
+            except EvidenceCommitConflict as exc:
+                raise EvidenceCommitIntegrityError(
+                    "materialized artifact manifest attestation differs from "
+                    "outbox"
+                ) from exc
 
     def _append_or_verify_manifest_event(
         self,
@@ -2344,6 +2670,10 @@ class EvidenceCommitter:
             "operational_efficacy_evidence": False,
             "artifact_manifest": manifest,
             "artifact_manifest_hash": manifest["manifest_hash"],
+            "artifact_manifest_attestation": materialization[
+                "artifact_manifest_attestation_identity"
+            ],
+            "trace_lifecycle": materialization["trace_lifecycle"],
             "projection": {
                 "schema_version": TRACER_PROJECTION_SCHEMA_VERSION,
                 "ref": materialization["projection_ref"],
@@ -2399,6 +2729,10 @@ class EvidenceCommitter:
                 "event_id": existing["event_id"],
                 "event_hash": existing["event_hash"],
                 "artifact_manifest_hash": manifest["manifest_hash"],
+                "artifact_manifest_attestation": materialization[
+                    "artifact_manifest_attestation_identity"
+                ],
+                "trace_lifecycle": materialization["trace_lifecycle"],
             }
             self._advance_in_transaction(
                 conn,
@@ -2427,6 +2761,34 @@ class EvidenceCommitter:
                 "artifact-manifest event payload is invalid"
             )
         expected_manifest = materialization["artifact_manifest"]
+        expected_attestation_identity = materialization.get(
+            "artifact_manifest_attestation_identity"
+        )
+        expected_trace_lifecycle = materialization.get("trace_lifecycle")
+        event_has_attestation = (
+            "artifact_manifest_attestation" in payload
+        )
+        attestation_mismatch = (
+            event_has_attestation
+            if expected_attestation_identity is None
+            else (
+                not event_has_attestation
+                or canonical_json_bytes(
+                    payload.get("artifact_manifest_attestation")
+                )
+                != canonical_json_bytes(expected_attestation_identity)
+            )
+        )
+        event_has_lifecycle = "trace_lifecycle" in payload
+        lifecycle_mismatch = (
+            event_has_lifecycle
+            if expected_trace_lifecycle is None
+            else (
+                not event_has_lifecycle
+                or canonical_json_bytes(payload.get("trace_lifecycle"))
+                != canonical_json_bytes(expected_trace_lifecycle)
+            )
+        )
         if (
             event.get("kind") != EVIDENCE_COMMIT_EVENT_KIND
             or payload.get("commit_id") != request.commit_id
@@ -2437,6 +2799,8 @@ class EvidenceCommitter:
             != expected_manifest["manifest_hash"]
             or event.get("artifact_manifest_hash")
             != expected_manifest["manifest_hash"]
+            or attestation_mismatch
+            or lifecycle_mismatch
         ):
             raise EvidenceCommitConflict(
                 "existing artifact-manifest event conflicts with commit input"
@@ -2547,6 +2911,41 @@ class EvidenceCommitter:
             )
             persisted_checkpoints[run_id] = persisted
         return persisted_checkpoints
+
+    def _persist_checkpoint_phase(
+        self,
+        request: EvidenceCommitRequest,
+        event_streams: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+        """Serialize cross-instance checkpoint publication and phase commit."""
+        with self._lock, self._outbox_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                persisted = self._persist_checkpoints(
+                    request,
+                    event_streams,
+                )
+                trusted = self._pin_checkpoints(request, persisted)
+                refs = {
+                    run_id: checkpoint.external_anchor_ref
+                    for run_id, checkpoint in persisted.items()
+                }
+                self._advance_in_transaction(
+                    conn,
+                    commit_id=request.commit_id,
+                    phase="checkpoints_persisted",
+                    detail={
+                        "checkpoint_refs": refs,
+                        "trusted_checkpoint_pins": trusted,
+                    },
+                    now=_now_ms(),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        self._observe_phase("checkpoints_persisted")
+        return refs, trusted
 
     def _pin_checkpoints(
         self,
@@ -2926,6 +3325,37 @@ class EvidenceCommitter:
         for run_id in request.registered_run_ids:
             self._assert_head_matches(run_id, precommit_heads[run_id])
 
+    def _verify_precommit_streams(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        precommit_heads: Mapping[str, Any],
+    ) -> None:
+        """Verify the frozen cut before signing its detached manifest."""
+        self._assert_precommit_streams(
+            request=request,
+            precommit_heads=precommit_heads,
+        )
+        for run_id in request.registered_run_ids:
+            expected = precommit_heads[run_id]
+            events = self._read_all_events(run_id)
+            verification = verify_event_chain(
+                events,
+                expected_head_hash=str(expected["head_event_hash"]),
+                expected_run_id=run_id,
+            )
+            if (
+                not verification.valid
+                or not verification.truncation_checked
+                or verification.event_count != int(expected["event_count"])
+                or verification.head_event_id
+                != int(expected["head_event_id"])
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "frozen evidence stream verification failed for "
+                    f"{run_id}: {verification.to_dict()}"
+                )
+
     def _assert_head_matches(
         self,
         run_id: str,
@@ -2987,6 +3417,10 @@ class EvidenceCommitter:
             "artifact_manifest_hash": materialization[
                 "artifact_manifest"
             ]["manifest_hash"],
+            "artifact_manifest_attestation": materialization[
+                "artifact_manifest_attestation_identity"
+            ],
+            "trace_lifecycle": materialization["trace_lifecycle"],
             "projection_sha256": materialization["projection_sha256"],
         }
         now = _now_ms()

@@ -27,28 +27,36 @@ from supervisor.evidence_committer import (
     HmacCheckpointAuthority,
     _write_evidence_file,
 )
-from supervisor.evidence_ledger import canonical_json_bytes
+from supervisor.evidence_ledger import (
+    canonical_json_bytes,
+    verify_artifact_manifest_attestation,
+)
 from supervisor.experiment_kernel import (
     Arm,
     GradeRevisionRef,
     SqliteExperimentStore,
 )
 from supervisor.grade_revisions import (
+    DecisionGradeCitation,
     GradeBook,
     GradeTerminalCommit,
     RunEnvelopeRef,
 )
 from supervisor.ledger_checkpoints import checkpoint_identity
+from supervisor.planning_validator import validate_planning_artifacts
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
 from supervisor.task_environment import FrozenTaskResult, Grade
 from supervisor.trace_graph import (
+    TRACE_CLOSURE_BINDING_ATTRIBUTE,
     EdgeType,
     NodeType,
     TraceClosureBinding,
     TraceEdge,
     TraceGraph,
+    TraceGraphStore,
     TraceIdentity,
+    TraceLifecycleStage,
     TraceNode,
     TracePlanningArtifactRef,
     canonical_revision_hash,
@@ -563,6 +571,211 @@ def test_evidence_commit_rejects_recommitted_source_terminal_authority(
         )
 
 
+def test_evidence_commit_persists_planning_before_terminal_trace(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    trace_path = fixture.committer_arguments["trace_store_path"]
+    assert isinstance(trace_path, Path)
+    preterminal_stages: list[TraceLifecycleStage] = []
+
+    def observe_phase(phase: str) -> None:
+        if phase == "grades_verified":
+            with TraceGraphStore(trace_path) as store:
+                preterminal_stages.extend(
+                    revision.stage
+                    for revision in store.list_lifecycle_revisions()
+                )
+
+    result = EvidenceCommitter(
+        **fixture.committer_arguments,
+        phase_observer=observe_phase,
+    ).commit(fixture.request)
+
+    with TraceGraphStore(trace_path) as store:
+        lifecycle = store.list_lifecycle_revisions()
+        planning = store.load_lifecycle_revision(
+            TraceLifecycleStage.PLANNING
+        )
+        decision = store.load_lifecycle_revision(
+            TraceLifecycleStage.DECISION
+        )
+
+    assert [revision.stage for revision in lifecycle] == list(
+        TraceLifecycleStage
+    )
+    assert preterminal_stages == [TraceLifecycleStage.PLANNING]
+    assert {
+        node.identity.node_type for node in planning.nodes
+    }.isdisjoint(
+        {
+            NodeType.RUN,
+            NodeType.ART,
+            NodeType.GRADE,
+            NodeType.ANL,
+            NodeType.DEC,
+            NodeType.PROMOTION,
+        }
+    )
+    assert decision.canonical_bytes() == result.trace_graph.canonical_bytes()
+    assert lifecycle[0].sequence < lifecycle[-1].sequence
+    lifecycle_identity = result.artifact_manifest["metadata"][
+        "trace_lifecycle"
+    ]
+    assert lifecycle_identity["stages"] == [
+        stage.value for stage in TraceLifecycleStage
+    ]
+    assert lifecycle_identity["revision_hashes"] == [
+        revision.revision_hash for revision in lifecycle
+    ]
+    [manifest_event] = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+    ]
+    assert manifest_event["payload"]["trace_lifecycle"] == (
+        lifecycle_identity
+    )
+
+
+def test_evidence_commit_refuses_terminal_trace_without_planning_precommit(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    trace_path = fixture.committer_arguments["trace_store_path"]
+    assert isinstance(trace_path, Path)
+    with TraceGraphStore(trace_path) as store:
+        store.append(fixture.request.trace_graph)
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="refusing to invent a planning precommit",
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
+
+    with TraceGraphStore(trace_path) as store:
+        assert store.list_lifecycle_revisions() == ()
+
+
+def test_evidence_commit_refuses_to_backfill_prepatch_verified_grades(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    committer = EvidenceCommitter(**fixture.committer_arguments)
+    request_json = canonical_json_bytes(
+        fixture.request.fingerprint_payload()
+    ).decode("utf-8")
+    request_hash = hashlib.sha256(request_json.encode("utf-8")).hexdigest()
+    committer._begin_or_resume(
+        request=fixture.request,
+        request_json=request_json,
+        request_hash=request_hash,
+    )
+    committer._advance(
+        fixture.request.commit_id,
+        "grades_verified",
+        {
+            "grade_history_count": len(
+                fixture.request.grade_histories
+            ),
+            "grade_revision_count": sum(
+                len(history.revisions)
+                for history in fixture.request.grade_histories
+            ),
+        },
+    )
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="refusing to fabricate a historical planning precommit",
+    ):
+        committer.commit(fixture.request)
+
+    trace_path = fixture.committer_arguments["trace_store_path"]
+    assert isinstance(trace_path, Path)
+    with TraceGraphStore(trace_path) as store:
+        assert store.list_lifecycle_revisions() == ()
+        assert store.load().nodes == ()
+
+
+def test_completed_commit_rejects_removed_lifecycle_receipts(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    committer = EvidenceCommitter(**fixture.committer_arguments)
+    committer.commit(fixture.request)
+    trace_path = fixture.committer_arguments["trace_store_path"]
+    assert isinstance(trace_path, Path)
+    with sqlite3.connect(trace_path) as connection:
+        connection.execute("DROP TABLE trace_lifecycle_revisions")
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="trace lifecycle receipts are missing",
+    ):
+        committer.commit(fixture.request)
+
+
+def test_evidence_commit_exposes_detached_manifest_attestation(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    committer = EvidenceCommitter(**fixture.committer_arguments)
+
+    result = committer.commit(fixture.request)
+
+    attestation_path = (
+        result.evidence_root
+        / "artifacts"
+        / "artifact-manifest.attestation.json"
+    )
+    attestation = json.loads(attestation_path.read_bytes())
+    identity = result.artifact_manifest_attestation_identity
+    assert identity is not None
+    assert identity["manifest_hash"] == result.artifact_manifest[
+        "manifest_hash"
+    ]
+    assert identity["signing_payload_sha256"] == attestation[
+        "signing_payload_sha256"
+    ]
+    assert identity["signer_key_id"] == attestation["predicate"][
+        "signer_key_id"
+    ]
+    assert identity["created_at"] == fixture.request.checkpoint_created_at
+    assert verify_artifact_manifest_attestation(
+        attestation,
+        manifest=result.artifact_manifest,
+        verifier=fixture.committer_arguments["verifier"],
+    )
+
+    [manifest_event] = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+    ]
+    assert manifest_event["payload"][
+        "artifact_manifest_attestation"
+    ] == identity
+
+    replayed = committer.commit(fixture.request)
+    assert replayed.artifact_manifest_attestation_identity == identity
+
+    attestation_path.write_text('{"tampered":true}', encoding="utf-8")
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="manifest attestation differs from outbox",
+    ):
+        committer.commit(fixture.request)
+
+
 def test_evidence_commit_resumes_idempotently_and_fails_closed(
     tmp_path: Path,
 ) -> None:
@@ -1007,7 +1220,7 @@ def test_checkpoint_crash_replay_does_not_resign_existing_randomized_checkpoint(
     tmp_path: Path,
 ) -> None:
     fixture = _build_fixture(tmp_path)
-    authority = _RandomizedCheckpointAuthority(fail_on_sign_call=2)
+    authority = _RandomizedCheckpointAuthority(fail_on_sign_call=3)
     arguments = {
         **fixture.committer_arguments,
         "signer": authority,
@@ -1021,7 +1234,7 @@ def test_checkpoint_crash_replay_does_not_resign_existing_randomized_checkpoint(
     ):
         first.commit(fixture.request)
 
-    assert authority.sign_calls == 2
+    assert authority.sign_calls == 3
     assert len(first.checkpoint_store.load_all("runtime-run")) == 1
     assert first.checkpoint_store.load_all("aggregate-run") == []
 
@@ -1030,7 +1243,7 @@ def test_checkpoint_crash_replay_does_not_resign_existing_randomized_checkpoint(
     result = resumed.commit(fixture.request)
 
     assert result.status == "complete"
-    assert authority.sign_calls == 3
+    assert authority.sign_calls == 4
     assert len(resumed.checkpoint_store.load_all("runtime-run")) == 1
     assert len(resumed.checkpoint_store.load_all("aggregate-run")) == 1
 
@@ -1161,6 +1374,260 @@ def test_completed_commit_replay_survives_post_commit_grade_append(
     assert replayed.manifest_event_hash == completed.manifest_event_hash
     assert replayed.checkpoint_refs == completed.checkpoint_refs
     assert replayed.projection_sha256 == completed.projection_sha256
+
+
+def test_historical_replay_survives_invalidation_while_live_authority_blocks(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    committer = EvidenceCommitter(**fixture.committer_arguments)
+    completed = committer.commit(fixture.request)
+    history = fixture.request.grade_histories[0]
+    invalidated_revision = history.revisions[-1]
+    terminal_commit = history.terminal_commits[-1]
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+
+    replacement_grade = Grade(
+        verifier_id="fixture-hidden-verifier",
+        verifier_version="v3",
+        verifier_hash="3" * 64,
+        frozen_result_hash=history.run.frozen_result_hash,
+        passed=True,
+        score=0.75,
+        evidence={
+            "mode": "hermetic",
+            "operational_verifier": False,
+            "reason": "post-commit correction",
+        },
+    )
+    with GradeBook(gradebook_path) as gradebook:
+        replacement = gradebook.append_grade(
+            run=history.run,
+            grade=replacement_grade,
+            verifier_config_hash="9" * 64,
+            supersedes_grade_id=invalidated_revision.grade_id,
+        )
+        gradebook.commit_terminal_grade(
+            grade_id=replacement.grade_id,
+            revision_hash=replacement.revision_hash,
+            experiment_id=terminal_commit.experiment_id,
+            task_id=terminal_commit.task_id,
+            arm=terminal_commit.arm,
+            terminal_state=terminal_commit.terminal_state,
+            terminal_state_hash=terminal_commit.terminal_state_hash,
+        )
+        invalidations = gradebook.list_invalidations(
+            invalidated_revision.grade_id
+        )
+        assert invalidations
+
+        stale_citation = DecisionGradeCitation(
+            invalidated_revision.grade_id,
+            invalidated_revision.revision_hash,
+        )
+        direct_validation = gradebook.validate_decision(
+            (stale_citation,)
+        )
+        live_closure = fixture.request.trace_graph.validate_closure(
+            now=fixture.request.closure_time,
+            decision_grade_validator=gradebook,
+        )
+        binding = TraceClosureBinding(
+            task_id="fixture-task",
+            run_id="aggregate-run",
+            gate="execution",
+        )
+
+        def bind_for_planning(graph: TraceGraph) -> TraceGraph:
+            graph_decision = next(
+                node
+                for node in graph.nodes
+                if node.identity.node_type is NodeType.DEC
+            )
+            attributes = graph_decision.to_dict()["attributes"]
+            attributes[TRACE_CLOSURE_BINDING_ATTRIBUTE] = (
+                binding.to_dict()
+            )
+            bound_decision = replace(
+                graph_decision,
+                attributes=attributes,
+            )
+            return TraceGraph(
+                nodes=tuple(
+                    bound_decision
+                    if node.identity == graph_decision.identity
+                    else node
+                    for node in graph.nodes
+                ),
+                edges=graph.edges,
+                decision_grade_validator=gradebook,
+            ).bind_validation(
+                expected_binding=binding,
+                decision_grade_validator=gradebook,
+            )
+
+        live_planning = validate_planning_artifacts(
+            (),
+            gate="execution",
+            trace_closure_required=True,
+            trace_graph=bind_for_planning(
+                fixture.request.trace_graph
+            ),
+            trace_now=fixture.request.closure_time,
+            trace_binding=binding,
+            trace_decision_grade_validator=gradebook,
+        )
+
+        revisions = gradebook.list_revisions(history.run)
+        all_invalidations = tuple(
+            item
+            for revision in revisions
+            for item in gradebook.list_invalidations(revision.grade_id)
+        )
+        terminal_commits = tuple(
+            commit
+            for revision in revisions
+            if (
+                commit := gradebook.get_terminal_commit(revision.grade_id)
+            )
+            is not None
+        )
+        current_history = replace(
+            history,
+            revisions=revisions,
+            invalidations=all_invalidations,
+            terminal_commits=terminal_commits,
+        )
+        resolved_graph, _ = _closed_graph(
+            run_envelope_hash=history.run.run_envelope_hash,
+            result_hash=history.run.frozen_result_hash,
+            revisions=revisions,
+            invalidations=all_invalidations,
+        )
+        decision = next(
+            node
+            for node in resolved_graph.nodes
+            if node.identity.node_type is NodeType.DEC
+        )
+        stale_current_decision = replace(
+            decision,
+            attributes={
+                "grade_citations": [
+                    {
+                        "grade_id": invalidated_revision.grade_id,
+                        "revision_hash": (
+                            invalidated_revision.revision_hash
+                        ),
+                        "acknowledged_invalidation_hashes": [],
+                        "resolution_grade_id": None,
+                        "resolution_revision_hash": None,
+                    }
+                ],
+            },
+        )
+        stale_current_graph = TraceGraph(
+            nodes=tuple(
+                stale_current_decision
+                if node.identity == decision.identity
+                else node
+                for node in resolved_graph.nodes
+            ),
+            edges=resolved_graph.edges,
+            decision_grade_validator=gradebook,
+        )
+        resolved_decision = replace(
+            decision,
+            attributes={
+                "grade_citations": [
+                    {
+                        "grade_id": invalidated_revision.grade_id,
+                        "revision_hash": (
+                            invalidated_revision.revision_hash
+                        ),
+                        "acknowledged_invalidation_hashes": [
+                            item.invalidation_hash
+                            for item in invalidations
+                        ],
+                        "resolution_grade_id": replacement.grade_id,
+                        "resolution_revision_hash": (
+                            replacement.revision_hash
+                        ),
+                    }
+                ],
+            },
+        )
+        resolved_graph = TraceGraph(
+            nodes=tuple(
+                resolved_decision
+                if node.identity == decision.identity
+                else node
+                for node in resolved_graph.nodes
+            ),
+            edges=resolved_graph.edges,
+            decision_grade_validator=gradebook,
+        )
+        resolved_citation = DecisionGradeCitation(
+            invalidated_revision.grade_id,
+            invalidated_revision.revision_hash,
+            acknowledged_invalidation_hashes=tuple(
+                item.invalidation_hash for item in invalidations
+            ),
+            resolution_grade_id=replacement.grade_id,
+            resolution_revision_hash=replacement.revision_hash,
+        )
+        resolved_validation = gradebook.validate_decision(
+            (resolved_citation,)
+        )
+        resolved_closure = resolved_graph.validate_closure(
+            now=fixture.request.closure_time,
+            decision_grade_validator=gradebook,
+        )
+        resolved_planning = validate_planning_artifacts(
+            (),
+            gate="execution",
+            trace_closure_required=True,
+            trace_graph=bind_for_planning(resolved_graph),
+            trace_now=fixture.request.closure_time,
+            trace_binding=binding,
+            trace_decision_grade_validator=gradebook,
+        )
+
+    assert direct_validation.accepted is False
+    assert [blocker.code for blocker in direct_validation.blockers] == [
+        "stale_grade_unacknowledged"
+    ]
+    assert live_closure.ok is False
+    assert live_planning.ok is False
+    assert resolved_validation.accepted is True
+    assert resolved_closure.ok, resolved_closure.to_dict()
+    assert resolved_planning.ok
+
+    replayed = committer.commit(fixture.request)
+    assert replayed.manifest_event_hash == completed.manifest_event_hash
+    assert replayed.projection_sha256 == completed.projection_sha256
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match="stale_grade_unacknowledged",
+    ):
+        EvidenceCommitter(
+            **{
+                **fixture.committer_arguments,
+                "root": tmp_path / "fresh-current-authority-evidence",
+                "trace_store_path": (
+                    tmp_path / "fresh-current-authority-trace.db"
+                ),
+                "trusted_checkpoint_pins": _IndependentCheckpointPins(),
+            }
+        ).commit(
+            replace(
+                fixture.request,
+                commit_id="fresh-current-authority-check",
+                grade_histories=(current_history,),
+                trace_graph=stale_current_graph,
+            )
+        )
 
 
 def test_completed_commit_replay_rejects_a_tampered_trace_store(
