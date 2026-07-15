@@ -135,6 +135,23 @@ These are integrity, replay, and process-assurance improvements. They are not
 benchmark evidence that the harness improves coding outcomes. PILOT-001 and
 every higher claim remain blocked by the prerequisites below.
 
+Three later commits landed after this receipt (a retention/orphaned-process
+review fix, a persisted-event authority test alignment, and documentation
+sync). The full suite and the live PostgreSQL conformance lane were re-run on
+July 15, 2026 at the resulting branch head:
+
+```text
+845074cfecda7a25181c99652b38cd4a2be6440f
+uv run pytest -q
+2835 passed, 33 skipped in 1666.13s
+uv run pytest --collect-only -q
+2868 tests collected
+make test-postgres
+48 passed
+```
+
+The claim boundary below is unchanged by that re-run.
+
 Final full-suite command:
 
 ```text

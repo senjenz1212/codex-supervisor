@@ -395,7 +395,7 @@ Current verified result:
 
 ```text
 2868 tests collected
-2834 passed, 33 skipped, 1 timing-sensitive failure that passes when rerun
+2835 passed, 33 skipped
 PostgreSQL conformance: 48 passed
 ```
 
