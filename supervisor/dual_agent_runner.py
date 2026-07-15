@@ -77,6 +77,24 @@ from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 HANDOFF_LOCK_RECLAIM_GRACE_S = 60
 PROJECT_LEAD_SKILL_PATH = Path(".claude") / "skills" / "lead" / "SKILL.md"
+DUAL_AGENT_CANCELLATION_TIMEOUT_S = 60.0
+
+
+class DualAgentCancellationCleanupError(RuntimeError):
+    """Cancellation could not be proven safe before its fixed deadline."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cleanup_quiescent: bool,
+        gate_thread_terminated: bool,
+        phase: str,
+    ) -> None:
+        super().__init__(message)
+        self.cleanup_quiescent = cleanup_quiescent
+        self.gate_thread_terminated = gate_thread_terminated
+        self.phase = phase
 
 
 @dataclass(frozen=True)
@@ -682,6 +700,11 @@ class _GateCancellation:
     def __init__(self) -> None:
         self.cancelled = threading.Event()
         self._gate_token = secrets.token_hex(16)
+        self._path_marker_started_at = time.time()
+        try:
+            self._current_username = psutil.Process().username()
+        except (OSError, psutil.Error):
+            self._current_username = ""
         temp_root = (
             os.environ.get("TMPDIR")
             or os.environ.get("TEMP")
@@ -781,8 +804,12 @@ class _GateCancellation:
         self,
         *,
         timeout_s: float = 60.0,
+        deadline: float | None = None,
     ) -> None:
-        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        started_at = time.monotonic()
+        if deadline is None:
+            deadline = started_at + max(0.0, float(timeout_s))
+        timeout_budget_s = max(0.0, deadline - started_at)
         cancelled_targets: set[int] = set()
         while True:
             active = self._active_snapshot()
@@ -811,7 +838,7 @@ class _GateCancellation:
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     "dual-agent gate cancellation did not reach a quiescent "
-                    f"containment state within {timeout_s:g}s: "
+                    f"containment state within {timeout_budget_s:g}s: "
                     f"active_invocations={len(active)}, "
                     f"processes_quiescent={processes_quiescent}; contained "
                     "gate processes may still be running and were not "
@@ -883,12 +910,9 @@ class _GateCancellation:
             method = getattr(target, method_name, None)
             if not callable(method):
                 continue
-            try:
-                result = method()
-                if inspect.isawaitable(result):
-                    asyncio.run(result)
-            except BaseException:
-                pass
+            result = method()
+            if inspect.isawaitable(result):
+                asyncio.run(result)
             return
 
     def _terminate_gate_processes(
@@ -950,11 +974,36 @@ class _GateCancellation:
                     (containment_id, identity.pid, identity.started_at)
                 ] = (containment_id, identity, process_group_id)
 
-        for process in psutil.process_iter(["pid", "create_time"]):
+        for process in psutil.process_iter([
+            "pid",
+            "create_time",
+            "username",
+        ]):
             try:
                 pid = int(process.info["pid"])
                 if pid == os.getpid():
                     continue
+                started_at = float(
+                    process.info.get("create_time")
+                    or process.create_time()
+                )
+                username = str(process.info.get("username") or "")
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                continue
+            plausible_new_same_user_process = (
+                started_at >= self._path_marker_started_at - 0.001
+                and (
+                    not self._current_username
+                    or not username
+                    or username == self._current_username
+                )
+            )
+            try:
                 environment = process.environ()
                 if (
                     self._path_marker
@@ -966,10 +1015,6 @@ class _GateCancellation:
                 ).strip()
                 if not containment_id:
                     continue
-                started_at = float(
-                    process.info.get("create_time")
-                    or process.create_time()
-                )
                 process_group_id = _process_group_id(pid)
                 if process_group_id is None:
                     continue
@@ -977,11 +1022,16 @@ class _GateCancellation:
                 candidates[
                     (containment_id, identity.pid, identity.started_at)
                 ] = (containment_id, identity, process_group_id)
+            except psutil.AccessDenied:
+                if plausible_new_same_user_process:
+                    scans_complete = False
             except (
                 OSError,
                 TypeError,
                 ValueError,
-                psutil.Error,
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
             ):
                 continue
         return tuple(candidates.values()), scans_complete
@@ -1032,13 +1082,31 @@ class _CancellationGuardedState:
         )
 
 
-async def _await_task_during_cancellation(task: asyncio.Task[Any]) -> Any:
+async def _await_task_during_cancellation(
+    task: asyncio.Task[Any],
+    *,
+    deadline: float,
+) -> None:
     while not task.done():
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0:
+            raise TimeoutError("cancellation join deadline expired")
         try:
-            await asyncio.shield(task)
+            done, _pending = await asyncio.wait(
+                (task,),
+                timeout=remaining_s,
+            )
         except asyncio.CancelledError:
             continue
-    return task.result()
+        if not done:
+            raise TimeoutError("cancellation join deadline expired")
+
+
+def _consume_task_result(task: asyncio.Future[Any]) -> None:
+    try:
+        task.result()
+    except BaseException:
+        pass
 
 
 async def run_dual_agent_gate_with_escalation(
@@ -1061,20 +1129,74 @@ async def run_dual_agent_gate_with_escalation(
     )
     try:
         result = await asyncio.shield(gate_task)
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as cancelled_error:
         cancellation.cancelled.set()
-        cleanup_task = asyncio.create_task(
-            asyncio.to_thread(cancellation.cancel_active_invocations)
+        deadline = (
+            time.monotonic()
+            + max(0.0, float(DUAL_AGENT_CANCELLATION_TIMEOUT_S))
         )
+        cleanup_task = asyncio.create_task(
+            asyncio.to_thread(
+                cancellation.cancel_active_invocations,
+                deadline=deadline,
+            )
+        )
+        cleanup_quiescent = False
+        cleanup_error: BaseException | None = None
         try:
-            await _await_task_during_cancellation(cleanup_task)
-        except BaseException:
-            pass
-        try:
-            await _await_task_during_cancellation(gate_task)
-        except BaseException:
-            pass
-        raise
+            await _await_task_during_cancellation(
+                cleanup_task,
+                deadline=deadline,
+            )
+            cleanup_task.result()
+            cleanup_quiescent = True
+        except BaseException as exc:
+            cleanup_error = exc
+            if not cleanup_task.done():
+                cleanup_task.add_done_callback(_consume_task_result)
+
+        gate_join_error: BaseException | None = None
+        if not gate_task.done():
+            try:
+                await _await_task_during_cancellation(
+                    gate_task,
+                    deadline=deadline,
+                )
+            except BaseException as exc:
+                gate_join_error = exc
+        gate_thread_terminated = gate_task.done()
+        if gate_thread_terminated:
+            _consume_task_result(gate_task)
+        else:
+            gate_task.add_done_callback(_consume_task_result)
+
+        if not cleanup_quiescent or not gate_thread_terminated:
+            primary_error = cleanup_error or gate_join_error
+            phase = (
+                "cleanup_and_gate_thread_join"
+                if cleanup_error is not None and not gate_thread_terminated
+                else "cleanup"
+                if cleanup_error is not None
+                else "gate_thread_join"
+            )
+            detail = (
+                f"{type(primary_error).__name__}: {primary_error}"
+                if primary_error is not None
+                else "cancellation cleanup proof was incomplete"
+            )
+            error = DualAgentCancellationCleanupError(
+                "dual-agent cancellation cleanup failed closed: "
+                f"cleanup_quiescent={cleanup_quiescent}, "
+                f"gate_thread_terminated={gate_thread_terminated}; "
+                f"{detail}",
+                cleanup_quiescent=cleanup_quiescent,
+                gate_thread_terminated=gate_thread_terminated,
+                phase=phase,
+            )
+            if primary_error is not None:
+                raise error from primary_error
+            raise error
+        raise cancelled_error
     if result.status == "accepted" or notifier is None:
         return result
     escalation = await _maybe_request_validation_escalation(

@@ -18,6 +18,7 @@ import pytest
 import supervisor.dual_agent_runner as dual_agent_runner_module
 from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
 from supervisor.dual_agent_runner import (
+    DualAgentCancellationCleanupError,
     DualAgentGateSpec,
     build_lead_replay_stdout,
     run_dual_agent_gate_with_escalation,
@@ -151,6 +152,49 @@ class _ImmediateCancellableRunner:
         self.cancel_called = True
 
 
+class _FailingCleanupRunner(_BlockingCancellableRunner):
+    def __init__(self, stdout: str, cleanup_error: BaseException) -> None:
+        super().__init__(stdout)
+        self.cleanup_error = cleanup_error
+
+    def cancel(self) -> None:
+        self.cancel_called.set()
+        self.release.set()
+        raise self.cleanup_error
+
+
+class _PostInvocationBlockingResult:
+    def __init__(self, stdout: str) -> None:
+        self.returncode = 0
+        self.stderr = ""
+        self._stdout = stdout
+        self.read_started = threading.Event()
+        self.release = threading.Event()
+        self.read_finished = threading.Event()
+
+    @property
+    def stdout(self) -> str:
+        self.read_started.set()
+        try:
+            if not self.release.wait(timeout=10):
+                raise AssertionError("post-invocation gate join was not released")
+            return self._stdout
+        finally:
+            self.read_finished.set()
+
+
+class _PostInvocationBlockingRunner:
+    def __init__(self, stdout: str) -> None:
+        self.result = _PostInvocationBlockingResult(stdout)
+
+    def __call__(
+        self,
+        _argv: list[str],
+        **_kwargs: Any,
+    ) -> _PostInvocationBlockingResult:
+        return self.result
+
+
 def test_incomplete_empty_containment_scan_does_not_report_quiescence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -225,6 +269,183 @@ async def test_cancellation_waits_for_gate_thread_releases_lock_and_blocks_late_
     finally:
         runner.release.set()
         await asyncio.to_thread(runner.exited.wait, 2)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_fails_closed_for_unreadable_new_marker_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_username = psutil.Process().username()
+
+    class UnreadableNewProcess:
+        pid = 3_999_991
+        info = {
+            "pid": pid,
+            "username": current_username,
+            "create_time": time.time() + 60,
+        }
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.05,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableNewProcess()],
+    )
+    runner = _BlockingCancellableRunner(_accepted_stdout("gate-unreadable"))
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-unreadable"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.started.wait, 2)
+    gate_task.cancel()
+
+    with pytest.raises(
+        DualAgentCancellationCleanupError,
+        match="quiescent",
+    ):
+        await gate_task
+    assert runner.exited.is_set()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_surfaces_target_cleanup_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_error = RuntimeError("target cleanup failed")
+    runner = _FailingCleanupRunner(
+        _accepted_stdout("gate-cleanup-error"),
+        cleanup_error,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.5,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [],
+    )
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-cleanup-error"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.started.wait, 2)
+    gate_task.cancel()
+
+    with pytest.raises(
+        DualAgentCancellationCleanupError,
+        match="target cleanup failed",
+    ) as exc_info:
+        await gate_task
+    assert exc_info.value.__cause__ is cleanup_error
+    assert exc_info.value.cleanup_quiescent is False
+    assert exc_info.value.gate_thread_terminated is True
+    assert runner.exited.is_set()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_bounds_post_invocation_gate_thread_join(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _PostInvocationBlockingRunner(
+        _accepted_stdout("gate-post-invocation"),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "DUAL_AGENT_CANCELLATION_TIMEOUT_S",
+        0.05,
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module,
+        "scan_containment",
+        lambda _containment_id: ContainmentSnapshot(
+            processes=(),
+            scan_complete=True,
+        ),
+    )
+    monkeypatch.setattr(
+        dual_agent_runner_module.psutil,
+        "process_iter",
+        lambda _attrs: [],
+    )
+    lock_path = tmp_path / ".handoff" / ".dual-agent.lock"
+    gate_task = asyncio.create_task(
+        run_dual_agent_gate_with_escalation(
+            _spec(tmp_path, "gate-post-invocation"),
+            state=State(str(tmp_path / "state.db")),
+            notifier=_NoEscalationNotifier(),
+            runner=runner,
+        )
+    )
+
+    assert await asyncio.to_thread(runner.result.read_started.wait, 2)
+    assert lock_path.exists()
+    started_at = time.monotonic()
+    gate_task.cancel()
+
+    async def repeat_cancellation() -> None:
+        while not gate_task.done():
+            gate_task.cancel()
+            await asyncio.sleep(0.005)
+
+    repeated_cancellation = asyncio.create_task(repeat_cancellation())
+    try:
+        with pytest.raises(
+            DualAgentCancellationCleanupError,
+            match="gate_thread_terminated=False",
+        ) as exc_info:
+            await gate_task
+        elapsed_s = time.monotonic() - started_at
+        assert elapsed_s < 0.5
+        assert exc_info.value.cleanup_quiescent is True
+        assert exc_info.value.gate_thread_terminated is False
+        assert exc_info.value.phase == "gate_thread_join"
+    finally:
+        runner.result.release.set()
+        await asyncio.to_thread(runner.result.read_finished.wait, 2)
+        await repeated_cancellation
+
+    lock_deadline = time.monotonic() + 2
+    while lock_path.exists() and time.monotonic() < lock_deadline:
+        await asyncio.sleep(0.01)
+    assert not lock_path.exists()
 
 
 _PROCESS_TREE_SCRIPT = """
