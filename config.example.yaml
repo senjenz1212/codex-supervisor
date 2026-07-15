@@ -184,6 +184,7 @@ telegram:
 drift:
   l1_scope_violation_threshold: 3
   l2_similarity_threshold: 0.4
+  l3_timeout_s: 120.0
   nudge_text_template: |
     Pause. Your original task was:
 

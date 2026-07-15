@@ -300,10 +300,16 @@ Run supervisor-owned agentic worker execution and cleanup through
 `supervisor.agentic_workers`. Tests must verify worker stdout, stderr,
 transcript, output, and log refs are written under durable
 `.handoff/agentic-workers/<task>/<worker>/` paths; refs are hashed for replay;
-runtime metadata includes `agent_runtime`, `agent_id`, `permission_mode`,
-`tool_pins`, timeout, and budget; and timeout cleanup preserves the same durable
-log refs. Cleanup tests must inject PID liveness and termination functions so
-unit tests do not kill real processes.
+runtime metadata includes `agent_runtime`, `agent_id`, the granted
+`permission_mode`, `tool_pins`, and `disallowed_tools` alongside
+`requested_permission_mode` and `requested_tool_pins`, timeout, and budget;
+the persisted worker record captures `pid` and `pid_create_time_s`; and
+timeout cleanup preserves the same durable log refs. Cleanup verifies
+recorded-vs-observed PID create time before signalling, escalates
+SIGTERM-then-SIGKILL, and confirms exit (`terminated`,
+`termination_unconfirmed`, overall `cleanup_incomplete`). Cleanup tests must
+inject PID liveness, process-create-time, and termination functions so unit
+tests do not kill real processes.
 
 ## agentic_eval_report
 

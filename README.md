@@ -394,8 +394,8 @@ make test-projection-registry
 Current verified result:
 
 ```text
-2708 tests collected
-2675 passed, 33 skipped
+2868 tests collected
+2834 passed, 33 skipped, 1 timing-sensitive failure that passes when rerun
 PostgreSQL conformance: 48 passed
 ```
 

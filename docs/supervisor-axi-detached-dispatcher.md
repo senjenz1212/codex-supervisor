@@ -36,7 +36,8 @@ Agent-facing calls must stay non-blocking:
   worker, or calls `WorkflowJobDispatcher.run_once`.
 - `catch-up` reads the event tail for the caller-owned cursor.
 - The dispatcher claims `reserved` or `request_written` jobs, writes requests,
-  spawns workers, heartbeats leases, and reaps stale leases.
+  durably records spawn ownership (`spawn_prepared`) before spawning workers,
+  heartbeats leases, and reaps stale leases.
 
 Useful operator commands (JSON is the default automation surface; TOON-lite
 remains the human-readable default when `--json` is omitted):
