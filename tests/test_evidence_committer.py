@@ -954,6 +954,108 @@ def test_evidence_commit_resumes_idempotently_and_fails_closed(
         resumed.commit(fixture.request)
 
 
+def test_materialized_commit_recovers_after_append_only_authority_suffixes(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_staging(phase: str) -> None:
+        if phase == "artifacts_staged":
+            raise SimulatedCrash("power loss after durable artifact staging")
+
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        EvidenceCommitter(
+            **arguments,
+            phase_observer=crash_after_staging,
+        ).commit(fixture.request)
+
+    _append_grade_suffix(fixture, marker="after-staging")
+    _append_trace_suffix(fixture, marker="after-staging")
+    _append_event_suffixes(fixture, marker="after-staging")
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    aggregate_events = fixture.state.read_events_since(
+        fixture.request.aggregate_run_id,
+        limit=100,
+    )
+    suffix_event = next(
+        event
+        for event in aggregate_events
+        if event["kind"] == "post.materialization.after-staging"
+    )
+    assert recovered.status == "complete"
+    assert suffix_event["event_id"] < recovered.manifest_event_id
+    assert authority.sign_calls == 3
+
+
+@pytest.mark.parametrize(
+    "crash_phase",
+    ("checkpoints_persisted", "authoritatively_verified"),
+)
+def test_checkpointed_recovery_uses_pinned_cut_without_resigning(
+    tmp_path: Path,
+    crash_phase: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_checkpointed_phase(phase: str) -> None:
+        if phase == crash_phase:
+            raise SimulatedCrash(f"power loss after {crash_phase}")
+
+    crashed = EvidenceCommitter(
+        **arguments,
+        phase_observer=crash_after_checkpointed_phase,
+    )
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    _append_grade_suffix(fixture, marker=crash_phase)
+    _append_trace_suffix(fixture, marker=crash_phase)
+    _append_event_suffixes(fixture, marker=crash_phase)
+    pin_store = fixture.committer_arguments["trusted_checkpoint_pins"]
+    assert isinstance(pin_store, _IndependentCheckpointPins)
+    for index, run_id in enumerate(fixture.request.registered_run_ids):
+        events = fixture.state.read_events_since(
+            run_id,
+            after_event_id=0,
+            limit=100,
+        )
+        head = events[-1]
+        persisted = crashed.checkpoint_store.append_signed_head(
+            run_id=run_id,
+            head_event_id=head["event_id"],
+            head_event_hash=head["event_hash"],
+            event_count=len(events),
+            signer=authority,
+            verifier=authority,
+            created_at=600 + index,
+        )
+        pin_store.pin(checkpoint_identity(persisted.checkpoint))
+    sign_calls_before_recovery = authority.sign_calls
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert recovered.status == "complete"
+    assert authority.sign_calls == sign_calls_before_recovery
+    assert recovered.checkpoint_refs == {
+        run_id: crashed.checkpoint_store.load_all(run_id)[0].external_anchor_ref
+        for run_id in fixture.request.registered_run_ids
+    }
+
+
 def test_evidence_commit_event_kind_is_reserved_from_generic_writers(
     tmp_path: Path,
 ) -> None:
@@ -1398,6 +1500,263 @@ def test_crash_after_manifest_append_is_reconciled_without_orphan(
     assert resumed.manifest_event_id == before_resume[0]["event_id"]
     assert resumed.manifest_event_hash == before_resume[0]["event_hash"]
     assert resumed.status == "complete"
+
+
+def test_orphan_manifest_recovery_accepts_append_only_authority_suffixes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+    original_write_event = fixture.state.write_evidence_commit_event
+    crashed = False
+
+    def append_then_crash(**kwargs: Any) -> int:
+        nonlocal crashed
+        event_id = original_write_event(**kwargs)
+        if not crashed:
+            crashed = True
+            raise SimulatedCrash("power loss after orphan manifest append")
+        return event_id
+
+    monkeypatch.setattr(
+        fixture.state,
+        "write_evidence_commit_event",
+        append_then_crash,
+    )
+    with pytest.raises(SimulatedCrash, match="orphan manifest"):
+        EvidenceCommitter(**arguments).commit(fixture.request)
+
+    [orphan] = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+    ]
+    _append_grade_suffix(fixture, marker="orphan-manifest")
+    _append_trace_suffix(fixture, marker="orphan-manifest")
+    _append_event_suffixes(fixture, marker="orphan-manifest")
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert recovered.status == "complete"
+    assert recovered.manifest_event_id == orphan["event_id"]
+    assert recovered.manifest_event_hash == orphan["event_hash"]
+    assert authority.sign_calls == 3
+
+
+def test_manifest_appended_recovery_accepts_append_only_authority_suffixes(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    authority = _CountingCheckpointAuthority()
+    arguments = {
+        **fixture.committer_arguments,
+        "signer": authority,
+        "verifier": authority,
+    }
+
+    def crash_after_manifest_phase(phase: str) -> None:
+        if phase == "manifest_appended":
+            raise SimulatedCrash("power loss after manifest phase")
+
+    with pytest.raises(SimulatedCrash, match="manifest phase"):
+        EvidenceCommitter(
+            **arguments,
+            phase_observer=crash_after_manifest_phase,
+        ).commit(fixture.request)
+
+    [manifest] = [
+        event
+        for event in fixture.state.read_events_since(
+            fixture.request.aggregate_run_id,
+            limit=100,
+        )
+        if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
+    ]
+    _append_grade_suffix(fixture, marker="manifest-appended")
+    _append_trace_suffix(fixture, marker="manifest-appended")
+    _append_event_suffixes(fixture, marker="manifest-appended")
+
+    recovered = EvidenceCommitter(**arguments).commit(fixture.request)
+
+    assert recovered.status == "complete"
+    assert recovered.manifest_event_id == manifest["event_id"]
+    assert recovered.manifest_event_hash == manifest["event_hash"]
+    assert authority.sign_calls == 3
+
+
+@pytest.mark.parametrize(
+    "condition",
+    (
+        "grade_prefix",
+        "trace_prefix",
+        "event_prefix",
+        "checkpoint_phase",
+        "before_materialization",
+    ),
+)
+def test_immutable_prefix_recovery_fails_closed_on_tamper_or_early_crash(
+    tmp_path: Path,
+    condition: str,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    crashed = EvidenceCommitter(**fixture.committer_arguments)
+
+    if condition == "before_materialization":
+        def crash_before_store(*args: Any, **kwargs: Any) -> None:
+            raise SimulatedCrash("power loss before materialization durability")
+
+        crashed._store_materialization = (  # type: ignore[method-assign]
+            crash_before_store
+        )
+        expected_error = "terminal commit"
+    elif condition == "checkpoint_phase":
+        def crash_after_checkpoints(phase: str) -> None:
+            if phase == "checkpoints_persisted":
+                raise SimulatedCrash("power loss after checkpoint phase")
+
+        crashed.phase_observer = crash_after_checkpoints
+        expected_error = "immutable recovery cut"
+    else:
+        def crash_after_staging(phase: str) -> None:
+            if phase == "artifacts_staged":
+                raise SimulatedCrash(
+                    "power loss after durable artifact staging"
+                )
+
+        crashed.phase_observer = crash_after_staging
+        expected_error = {
+            "grade_prefix": "GradeBook history",
+            "trace_prefix": "persisted trace graph differs",
+            "event_prefix": "immutable prefix changed",
+        }[condition]
+
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    if condition == "grade_prefix":
+        original = fixture.request.grade_histories[0].terminal_commits[0]
+        _recommit_terminal_authority(
+            fixture.committer_arguments["gradebook_path"],
+            original,
+        )
+    elif condition == "trace_prefix":
+        trace_path = fixture.committer_arguments["trace_store_path"]
+        assert isinstance(trace_path, Path)
+        with sqlite3.connect(trace_path) as connection:
+            connection.execute("DROP TRIGGER trace_edges_no_delete")
+            connection.execute(
+                """
+                DELETE FROM trace_edges
+                WHERE edge_sequence = (
+                  SELECT MAX(edge_sequence) FROM trace_edges
+                )
+                """
+            )
+    elif condition == "event_prefix":
+        fixture.state._conn.execute("DROP TRIGGER events_no_update")
+        fixture.state._conn.execute(
+            """
+            UPDATE events
+               SET event_hash=?
+             WHERE run_id=? AND event_id=(
+               SELECT MAX(event_id) FROM events WHERE run_id=?
+             )
+            """,
+            (
+                "0" * 64,
+                fixture.request.aggregate_run_id,
+                fixture.request.aggregate_run_id,
+            ),
+        )
+        fixture.state._conn.commit()
+    elif condition == "checkpoint_phase":
+        runtime_run_id = next(
+            run_id
+            for run_id in fixture.request.registered_run_ids
+            if run_id != fixture.request.aggregate_run_id
+        )
+        fixture.state.write_event(
+            run_id=runtime_run_id,
+            source="test",
+            kind="post.checkpoint.tamper",
+            payload={"run_id": runtime_run_id},
+            ts=700,
+        )
+        events = fixture.state.read_events_since(
+            runtime_run_id,
+            after_event_id=0,
+            limit=100,
+        )
+        head = events[-1]
+        newer = crashed.checkpoint_store.append_signed_head(
+            run_id=runtime_run_id,
+            head_event_id=head["event_id"],
+            head_event_hash=head["event_hash"],
+            event_count=len(events),
+            signer=crashed.signer,
+            verifier=crashed.verifier,
+            created_at=701,
+        )
+        newer_identity = checkpoint_identity(newer.checkpoint)
+        pin_store = fixture.committer_arguments["trusted_checkpoint_pins"]
+        assert isinstance(pin_store, _IndependentCheckpointPins)
+        pin_store.pin(newer_identity)
+        with sqlite3.connect(crashed.outbox_path) as connection:
+            [detail_json] = connection.execute(
+                """
+                SELECT detail_json
+                  FROM evidence_commit_phases
+                 WHERE commit_id=? AND phase='checkpoints_persisted'
+                """,
+                (fixture.request.commit_id,),
+            ).fetchone()
+            detail = json.loads(detail_json)
+            detail["checkpoint_refs"][runtime_run_id] = (
+                newer.external_anchor_ref
+            )
+            detail["trusted_checkpoint_pins"][runtime_run_id] = (
+                newer_identity
+            )
+            connection.execute(
+                """
+                UPDATE evidence_commit_phases
+                   SET detail_json=?
+                 WHERE commit_id=? AND phase='checkpoints_persisted'
+                """,
+                (
+                    canonical_json_bytes(detail).decode("utf-8"),
+                    fixture.request.commit_id,
+                ),
+            )
+    else:
+        with sqlite3.connect(crashed.outbox_path) as connection:
+            [materialization_json] = connection.execute(
+                """
+                SELECT materialization_json
+                  FROM evidence_commits
+                 WHERE commit_id=?
+                """,
+                (fixture.request.commit_id,),
+            ).fetchone()
+        assert materialization_json is None
+        _append_grade_suffix(fixture, marker="before-materialization")
+
+    with pytest.raises(
+        EvidenceCommitIntegrityError,
+        match=expected_error,
+    ):
+        EvidenceCommitter(**fixture.committer_arguments).commit(
+            fixture.request
+        )
 
 
 @pytest.mark.parametrize("swapped_level", (0, 1))
@@ -2575,6 +2934,66 @@ def _json_artifact(
         relative_path=relative_path,
         content=canonical_json_bytes(payload),
     )
+
+
+def _append_grade_suffix(fixture: _Fixture, *, marker: str) -> None:
+    history = fixture.request.grade_histories[0]
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+    with GradeBook(gradebook_path) as gradebook:
+        gradebook.append_grade(
+            run=history.run,
+            grade=Grade(
+                verifier_id="fixture-hidden-verifier",
+                verifier_version=f"suffix-{marker}",
+                verifier_hash="6" * 64,
+                frozen_result_hash=history.run.frozen_result_hash,
+                passed=True,
+                score=0.75,
+                evidence={
+                    "mode": "hermetic",
+                    "operational_verifier": False,
+                    "marker": marker,
+                },
+            ),
+            verifier_config_hash="7" * 64,
+            supersedes_grade_id=history.revisions[-1].grade_id,
+        )
+
+
+def _append_trace_suffix(fixture: _Fixture, *, marker: str) -> None:
+    trace_path = fixture.committer_arguments["trace_store_path"]
+    assert isinstance(trace_path, Path)
+    node = _node(
+        NodeType.OBJ,
+        f"POST-MATERIALIZATION-{marker}",
+        {"marker": marker},
+    )
+    payload = canonical_json_bytes(node.to_dict())
+    with sqlite3.connect(trace_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO trace_nodes(
+              canonical_key, payload_json, payload_hash
+            ) VALUES(?, ?, ?)
+            """,
+            (
+                node.identity.canonical_key,
+                payload.decode("utf-8"),
+                hashlib.sha256(payload).hexdigest(),
+            ),
+        )
+
+
+def _append_event_suffixes(fixture: _Fixture, *, marker: str) -> None:
+    for index, run_id in enumerate(fixture.request.registered_run_ids):
+        fixture.state.write_event(
+            run_id=run_id,
+            source="test",
+            kind=f"post.materialization.{marker}",
+            payload={"marker": marker, "run_id": run_id},
+            ts=400 + index,
+        )
 
 
 def _tamper_experiment_terminal_authority(

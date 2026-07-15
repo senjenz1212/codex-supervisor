@@ -714,6 +714,12 @@ class EvidenceCommitter:
                     request_hash=request_hash,
                     row=row,
                 )
+            if row["materialization_json"] is not None:
+                return self._resume_materialized_commit(
+                    request=request,
+                    request_hash=request_hash,
+                    row=row,
+                )
             precommit_heads = _decode_json_object(
                 row["precommit_heads_json"],
                 field="precommit_heads_json",
@@ -822,6 +828,105 @@ class EvidenceCommitter:
                 self._mark_failed(request.commit_id, exc)
             raise
 
+    def _resume_materialized_commit(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        request_hash: str,
+        row: sqlite3.Row,
+    ) -> EvidenceCommitResult:
+        """Resume from the immutable cut established by materialization."""
+        materialization = _decode_json_object(
+            row["materialization_json"],
+            field="materialization_json",
+        )
+        precommit_heads = _decode_json_object(
+            row["precommit_heads_json"],
+            field="precommit_heads_json",
+        )
+        graph, closure, promotion_trace = (
+            self._load_materialized_authority(
+                request=request,
+                request_hash=request_hash,
+                materialization=materialization,
+            )
+        )
+        manifest_event = self._append_or_verify_manifest_event(
+            request=request,
+            request_hash=request_hash,
+            materialization=materialization,
+            precommit_heads=precommit_heads,
+            allow_append_suffix=True,
+        )
+        checkpoint_detail = self._load_phase_detail(
+            request.commit_id,
+            "checkpoints_persisted",
+        )
+        checkpoint_streams = self._verify_recovery_checkpoint_streams(
+            request=request,
+            precommit_heads=precommit_heads,
+            manifest_event=manifest_event,
+        )
+        if checkpoint_detail is None:
+            (
+                checkpoint_refs,
+                trusted_checkpoint_pins,
+            ) = self._persist_checkpoint_phase(
+                request,
+                checkpoint_streams,
+            )
+            require_local_latest = True
+        else:
+            (
+                checkpoint_refs,
+                trusted_checkpoint_pins,
+                checkpoint_streams,
+            ) = self._load_checkpointed_recovery(
+                request=request,
+                detail=checkpoint_detail,
+                expected_streams=checkpoint_streams,
+            )
+            require_local_latest = False
+        verifications, projection = self._verify_authoritatively(
+            request=request,
+            materialization=materialization,
+            graph=graph,
+            closure=closure,
+            manifest_event=manifest_event,
+            event_streams=checkpoint_streams,
+            trusted_checkpoint_pins=trusted_checkpoint_pins,
+            require_local_latest=require_local_latest,
+        )
+        result_summary = {
+            "schema_version": EVIDENCE_COMMIT_SCHEMA_VERSION,
+            "request_hash": request_hash,
+            "artifact_manifest_hash": materialization[
+                "artifact_manifest"
+            ]["manifest_hash"],
+            "artifact_manifest_attestation": materialization[
+                "artifact_manifest_attestation_identity"
+            ],
+            "trace_lifecycle": materialization["trace_lifecycle"],
+            "manifest_event_id": manifest_event["event_id"],
+            "manifest_event_hash": manifest_event["event_hash"],
+            "checkpoint_refs": checkpoint_refs,
+            "trusted_checkpoint_pins": trusted_checkpoint_pins,
+            "projection_sha256": materialization["projection_sha256"],
+        }
+        self._complete(request.commit_id, result_summary)
+        return self._result(
+            request=request,
+            request_hash=request_hash,
+            materialization=materialization,
+            manifest_event=manifest_event,
+            checkpoint_refs=checkpoint_refs,
+            verifications=verifications,
+            graph=graph,
+            closure=closure,
+            promotion_trace=promotion_trace,
+            projection=projection,
+        )
+
     def _load_completed_result(
         self,
         *,
@@ -838,71 +943,12 @@ class EvidenceCommitter:
             row["result_json"],
             field="result_json",
         )
-        histories = self._verify_committed_grade_histories(request)
-        try:
-            with TraceGraphStore(self.trace_store_path) as store:
-                lifecycle = store.list_lifecycle_revisions()
-                if tuple(
-                    revision.stage for revision in lifecycle
-                ) != tuple(TraceLifecycleStage):
-                    raise EvidenceCommitIntegrityError(
-                        "completed evidence lacks the exact trace lifecycle"
-                    )
-                trace_lifecycle_identity = _trace_lifecycle_identity(
-                    lifecycle
-                )
-                committed_graph = store.load_lifecycle_revision(
-                    TraceLifecycleStage.DECISION
-                )
-                live_graph = store.load()
-        except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
-            raise EvidenceCommitIntegrityError(
-                "completed evidence persisted trace graph differs or is "
-                "unreadable"
-            ) from exc
-        graph = request.trace_graph
-        if (
-            (
-                committed_graph is not None
-                and committed_graph.canonical_bytes()
-                != graph.canonical_bytes()
+        graph, closure, promotion_trace = (
+            self._load_materialized_authority(
+                request=request,
+                request_hash=request_hash,
+                materialization=materialization,
             )
-            or not _trace_graph_is_append_extension(
-                committed=graph,
-                live=live_graph,
-            )
-        ):
-            raise EvidenceCommitIntegrityError(
-                "completed evidence persisted trace graph differs from "
-                "the immutable request"
-            )
-        committed_gradebook = _CommittedGradeBookView(histories)
-        closure = graph.validate_closure(
-            now=request.closure_time,
-            expected_binding=request.trace_graph.expected_binding,
-            decision_grade_validator=committed_gradebook,
-        )
-        if not closure.ok:
-            raise EvidenceCommitIntegrityError(
-                "completed evidence trace graph no longer closes"
-            )
-        self._validate_trace_grade_links(
-            graph,
-            histories,
-        )
-        self._validate_trace_grade_decisions(
-            graph,
-            request.promotion,
-            grade_authority=committed_gradebook,
-        )
-        promotion_trace = graph.promotion_trace(request.promotion)
-        self._verify_materialization(
-            request=request,
-            request_hash=request_hash,
-            materialization=materialization,
-            graph=graph,
-            closure=closure,
-            trace_lifecycle_identity=trace_lifecycle_identity,
         )
         materialized_attestation = materialization.get(
             "artifact_manifest_attestation_identity"
@@ -1029,6 +1075,82 @@ class EvidenceCommitter:
             promotion_trace=promotion_trace,
             projection=projection,
         )
+
+    def _load_materialized_authority(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        request_hash: str,
+        materialization: Mapping[str, Any],
+    ) -> tuple[TraceGraph, ClosureResult, tuple[TraceNode, ...]]:
+        """Verify the immutable grade and trace prefixes bound into artifacts."""
+        histories = self._verify_committed_grade_histories(request)
+        try:
+            with TraceGraphStore(self.trace_store_path) as store:
+                lifecycle = store.list_lifecycle_revisions()
+                if tuple(
+                    revision.stage for revision in lifecycle
+                ) != tuple(TraceLifecycleStage):
+                    raise EvidenceCommitIntegrityError(
+                        "completed evidence lacks the exact trace lifecycle"
+                    )
+                trace_lifecycle_identity = _trace_lifecycle_identity(
+                    lifecycle
+                )
+                committed_graph = store.load_lifecycle_revision(
+                    TraceLifecycleStage.DECISION
+                )
+                live_graph = store.load()
+        except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
+            raise EvidenceCommitIntegrityError(
+                "completed evidence persisted trace graph differs or is "
+                "unreadable"
+            ) from exc
+        graph = request.trace_graph
+        if (
+            (
+                committed_graph is not None
+                and committed_graph.canonical_bytes()
+                != graph.canonical_bytes()
+            )
+            or not _trace_graph_is_append_extension(
+                committed=graph,
+                live=live_graph,
+            )
+        ):
+            raise EvidenceCommitIntegrityError(
+                "completed evidence persisted trace graph differs from "
+                "the immutable request"
+            )
+        committed_gradebook = _CommittedGradeBookView(histories)
+        closure = graph.validate_closure(
+            now=request.closure_time,
+            expected_binding=request.trace_graph.expected_binding,
+            decision_grade_validator=committed_gradebook,
+        )
+        if not closure.ok:
+            raise EvidenceCommitIntegrityError(
+                "completed evidence trace graph no longer closes"
+            )
+        self._validate_trace_grade_links(
+            graph,
+            histories,
+        )
+        self._validate_trace_grade_decisions(
+            graph,
+            request.promotion,
+            grade_authority=committed_gradebook,
+        )
+        promotion_trace = graph.promotion_trace(request.promotion)
+        self._verify_materialization(
+            request=request,
+            request_hash=request_hash,
+            materialization=materialization,
+            graph=graph,
+            closure=closure,
+            trace_lifecycle_identity=trace_lifecycle_identity,
+        )
+        return graph, closure, promotion_trace
 
     def _result(
         self,
@@ -2711,6 +2833,7 @@ class EvidenceCommitter:
         request_hash: str,
         materialization: Mapping[str, Any],
         precommit_heads: Mapping[str, Any],
+        allow_append_suffix: bool = False,
     ) -> dict[str, Any]:
         manifest = materialization["artifact_manifest"]
         payload = self._manifest_event_payload(
@@ -2729,10 +2852,16 @@ class EvidenceCommitter:
             _begin_outbox_transaction(conn)
             observed = self._find_manifest_event(request)
             if observed is None:
-                self._assert_precommit_streams(
-                    request=request,
-                    precommit_heads=precommit_heads,
-                )
+                if allow_append_suffix:
+                    self._verify_append_only_event_suffixes(
+                        request=request,
+                        precommit_heads=precommit_heads,
+                    )
+                else:
+                    self._assert_precommit_streams(
+                        request=request,
+                        precommit_heads=precommit_heads,
+                    )
                 event_id = self.state.write_evidence_commit_event(
                     run_id=request.aggregate_run_id,
                     payload=payload,
@@ -2760,6 +2889,7 @@ class EvidenceCommitter:
                 event=existing,
                 materialization=materialization,
                 precommit_heads=precommit_heads,
+                require_frozen_heads=not allow_append_suffix,
             )
             detail = {
                 "event_id": existing["event_id"],
@@ -2898,6 +3028,59 @@ class EvidenceCommitter:
                     f"{run_id}: {verification.to_dict()}"
                 )
             streams[run_id] = events
+        return streams
+
+    def _verify_recovery_checkpoint_streams(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        precommit_heads: Mapping[str, Any],
+        manifest_event: Mapping[str, Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Recover the immutable event cuts while ignoring later valid tails."""
+        streams: dict[str, list[dict[str, Any]]] = {}
+        manifest_event_id = int(manifest_event["event_id"])
+        manifest_event_hash = str(manifest_event["event_hash"])
+        for run_id in request.registered_run_ids:
+            events = self._read_all_events(run_id)
+            prefix = self._verify_event_prefix(
+                run_id=run_id,
+                events=events,
+                expected=precommit_heads[run_id],
+            )
+            if run_id != request.aggregate_run_id:
+                streams[run_id] = prefix
+                continue
+            manifest_index = next(
+                (
+                    index
+                    for index, event in enumerate(events)
+                    if int(event["event_id"]) == manifest_event_id
+                ),
+                None,
+            )
+            if manifest_index is None or manifest_index < len(prefix):
+                raise EvidenceCommitIntegrityError(
+                    "artifact-manifest event does not extend the immutable "
+                    "aggregate prefix"
+                )
+            committed = events[: manifest_index + 1]
+            verification = verify_event_chain(
+                committed,
+                expected_head_hash=manifest_event_hash,
+                expected_run_id=run_id,
+            )
+            if (
+                not verification.valid
+                or not verification.truncation_checked
+                or verification.event_count != len(committed)
+                or verification.head_event_id != manifest_event_id
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "artifact-manifest recovery stream verification failed: "
+                    f"{verification.to_dict()}"
+                )
+            streams[run_id] = committed
         return streams
 
     def _persist_checkpoints(
@@ -3059,6 +3242,73 @@ class EvidenceCommitter:
                 )
             pins[run_id] = normalized
         return pins
+
+    def _load_checkpointed_recovery(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        detail: Mapping[str, Any],
+        expected_streams: Mapping[
+            str,
+            Sequence[Mapping[str, Any]],
+        ],
+    ) -> tuple[
+        dict[str, str],
+        dict[str, dict[str, Any]],
+        dict[str, list[dict[str, Any]]],
+    ]:
+        """Reload an already-published checkpoint cut without re-signing it."""
+        trusted_checkpoint_pins = self._checkpoint_pin_mapping(
+            detail.get("trusted_checkpoint_pins"),
+            run_ids=request.registered_run_ids,
+        )
+        trusted_checkpoint_pins = self._load_trusted_checkpoint_pins(
+            trusted_checkpoint_pins
+        )
+        for run_id in request.registered_run_ids:
+            events = list(expected_streams[run_id])
+            if not events:
+                raise EvidenceCommitIntegrityError(
+                    f"checkpointed evidence stream is empty for {run_id}"
+                )
+            head = events[-1]
+            identity = trusted_checkpoint_pins[run_id]
+            if (
+                int(identity["event_count"]) != len(events)
+                or int(identity["head_event_id"]) != int(head["event_id"])
+                or str(identity["head_event_hash"])
+                != str(head["event_hash"])
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "checkpointed evidence pin differs from the immutable "
+                    f"recovery cut for {run_id}"
+                )
+        checkpoint_refs = self._checkpoint_ref_mapping(
+            detail.get("checkpoint_refs"),
+            run_ids=request.registered_run_ids,
+        )
+        expected_refs = {
+            run_id: str(identity["external_anchor_ref"])
+            for run_id, identity in trusted_checkpoint_pins.items()
+        }
+        if checkpoint_refs != expected_refs:
+            raise EvidenceCommitIntegrityError(
+                "checkpointed evidence refs differ from trusted pins"
+            )
+        trusted_latest_checkpoint_pins = (
+            self._load_latest_trusted_checkpoint_pins(
+                run_ids=request.registered_run_ids,
+                committed=trusted_checkpoint_pins,
+            )
+        )
+        self._verify_trusted_latest_checkpoint_cuts(
+            trusted_latest_checkpoint_pins
+        )
+        return (
+            checkpoint_refs,
+            trusted_checkpoint_pins,
+            self._read_pinned_event_streams(trusted_checkpoint_pins),
+        )
 
     def _load_latest_trusted_checkpoint_pins(
         self,
@@ -3374,6 +3624,79 @@ class EvidenceCommitter:
                     f"{run_id}: {verification.to_dict()}"
                 )
 
+    def _verify_append_only_event_suffixes(
+        self,
+        *,
+        request: EvidenceCommitRequest,
+        precommit_heads: Mapping[str, Any],
+    ) -> None:
+        """Require every live stream to preserve and extend its frozen prefix."""
+        for run_id in request.registered_run_ids:
+            events = self._read_all_events(run_id)
+            self._verify_event_prefix(
+                run_id=run_id,
+                events=events,
+                expected=precommit_heads[run_id],
+            )
+            verification = verify_event_chain(
+                events,
+                expected_head_hash=str(events[-1]["event_hash"]),
+                expected_run_id=run_id,
+            )
+            if (
+                not verification.valid
+                or not verification.truncation_checked
+                or verification.event_count != len(events)
+                or verification.head_event_id != int(events[-1]["event_id"])
+            ):
+                raise EvidenceCommitIntegrityError(
+                    "append-only evidence suffix verification failed for "
+                    f"{run_id}: {verification.to_dict()}"
+                )
+
+    def _verify_event_prefix(
+        self,
+        *,
+        run_id: str,
+        events: Sequence[Mapping[str, Any]],
+        expected: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        event_count = int(expected["event_count"])
+        if len(events) < event_count:
+            raise EvidenceCommitIntegrityError(
+                f"evidence stream rolled back below its immutable prefix: "
+                f"{run_id}"
+            )
+        prefix = [dict(event) for event in events[:event_count]]
+        if not prefix:
+            raise EvidenceCommitIntegrityError(
+                f"evidence stream disappeared: {run_id}"
+            )
+        head = prefix[-1]
+        if (
+            int(head["event_id"]) != int(expected["head_event_id"])
+            or str(head["event_hash"]) != str(expected["head_event_hash"])
+        ):
+            raise EvidenceCommitIntegrityError(
+                f"evidence stream immutable prefix changed: {run_id}"
+            )
+        verification = verify_event_chain(
+            prefix,
+            expected_head_hash=str(expected["head_event_hash"]),
+            expected_run_id=run_id,
+        )
+        if (
+            not verification.valid
+            or not verification.truncation_checked
+            or verification.event_count != event_count
+            or verification.head_event_id != int(expected["head_event_id"])
+        ):
+            raise EvidenceCommitIntegrityError(
+                "immutable evidence prefix verification failed for "
+                f"{run_id}: {verification.to_dict()}"
+            )
+        return prefix
+
     def _assert_head_matches(
         self,
         run_id: str,
@@ -3646,6 +3969,27 @@ class EvidenceCommitter:
                 (commit_id,),
             ).fetchall()
         return tuple(str(row["phase"]) for row in rows)
+
+    def _load_phase_detail(
+        self,
+        commit_id: str,
+        phase: str,
+    ) -> dict[str, Any] | None:
+        with self._outbox_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT detail_json
+                  FROM evidence_commit_phases
+                 WHERE commit_id=? AND phase=?
+                """,
+                (commit_id, phase),
+            ).fetchone()
+        if row is None:
+            return None
+        return _decode_json_object(
+            row["detail_json"],
+            field=f"evidence_commit_phases[{phase!r}].detail_json",
+        )
 
     def _load_commit_row(self, commit_id: str) -> sqlite3.Row:
         with self._outbox_connection() as conn:
