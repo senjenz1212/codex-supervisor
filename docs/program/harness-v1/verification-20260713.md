@@ -1,4 +1,4 @@
-# Harness v1 Verification — July 13-14, 2026
+# Harness v1 Verification — July 13-15, 2026
 
 ## Verdict
 
@@ -31,6 +31,45 @@ pinned by implementation commit:
 
 The follow-up receipt commit only records this immutable implementation
 identity; it does not change the tested implementation.
+
+The final ownership/recovery hardening tree is pinned by:
+
+```text
+26fbec7438a44011332856223ecb7c40ef54c01e
+```
+
+The following verification ran against the exact content committed at that
+identity immediately before the commit was created; creating the commit did
+not alter the tree:
+
+```text
+uv run --extra dev python -m pytest -q
+2779 passed, 33 skipped in 2033.79s
+
+uv run --extra dev python -m pytest --collect-only -q
+2812 tests collected
+
+make test-projection-registry
+7 exact hermetic projection proofs passed
+48 PostgreSQL conformance tests passed
+6 registered PostgreSQL projection proofs were present in the exact manifest
+
+uv run --extra dev python -m compileall -q supervisor mcp_tools scripts tests
+git diff --check
+both passed
+```
+
+The ordinary-suite PostgreSQL skips are not counted as release proof. The
+separate projection-registry command applied the real Alembic migration chain
+through `20260715_0002` against the pinned PostgreSQL 16 image and executed all
+48 manifest entries without skips.
+
+The final hardening adds four fail-closed boundaries: workflow runtime sessions
+must inherit the authoritative parent task and exact binding event; evidence
+recovery cannot publish behind a newer trusted checkpoint; historical
+executions use persisted owner generations and heartbeats before side effects
+or terminal publication; and dispatcher cancellation/recovery cannot trust an
+unverified PID generation or a stale result file.
 
 Two later fix commits landed after this receipt (review-finding fixes and
 workflow-resubmission/containment/read-lock regression fixes). The full suite
