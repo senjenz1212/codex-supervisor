@@ -450,12 +450,21 @@ representative coding benchmarks.
   root detects later substitution only when obtained from an independent
   channel; it is not a signed external ledger anchor and does not raise the
   L1/L2 claim ceiling.
-- The durable SWE-bench backend-run guard prevents replay, but it is not yet a
-  crash-recoverable grade journal. A crash after durable consumption can be
-  retried only as a fresh nonce-bound backend execution; a stable reused
-  backend run fails closed. Operational grading remains blocked until a
-  durable verification-attempt key, nonce, canonical grade, and completion
-  state can be recovered atomically.
+- The local SWE-bench backend-run authority now persists PREPARED and COMPLETED
+  verification attempts, including nonce-bound request identity, canonical
+  grade, completion hash, and recovery context. Experiment resume requires the
+  exact completed journal authority and rejects stripped, substituted, or
+  missing lineage, including for already committed recoverable grades.
+- This remains local L1 process evidence. Restoring both the journal database
+  and its colocated authority anchor to the same older snapshot defeats local
+  rollback detection; production requires a rollback-independent external
+  checkpoint that pins authority ID, generation, and state hash. A `SIGKILL`
+  during first-time provisioning can also leave partial files that require
+  operator cleanup.
+- Operational grading remains blocked until a live resumable official-harness
+  bridge produces and retains an official grade under independently controlled
+  verifier authority. The generic regrade API rejects recoverable operational
+  outcomes until a distinct durable regrade workflow exists.
 
 Focused public-export verification:
 
@@ -504,9 +513,67 @@ PILOT-001 remains blocked until the program has:
 5. production signing keys and an external ledger anchor;
 6. named runtime, credential, and budget authorization; and
 7. a commit-pinned execution tree; and
-8. a crash-recoverable verification-attempt journal integrated with
-   experiment resume.
+8. a live resumable official-harness bridge and retained grade using the local
+   crash-recoverable verification journal; and
+9. a rollback-independent external checkpoint for the journal authority.
 
 The pilot must estimate discordance, verifier flake, infrastructure failure,
 latency, and cost. Confirmation sample size and ROI remain undefined until
 those estimates exist.
+
+## July 15, 2026 — Recoverable Verification Authority
+
+Code checkpoint:
+`69d3b397c80380a5f710cdc8af587dd0207295a1`.
+
+Implemented local authority:
+
+- durable PREPARED and COMPLETED verification attempts;
+- nonce, execution-policy, backend, canonical-grade, and completion binding;
+- private database, sidecars, and authority-anchor permissions;
+- generation/state hashing and stale database-snapshot detection;
+- crash recovery without repeating a completed paid verification;
+- experiment recovery authority persisted before the observed event;
+- immutable attempt/grade/completion lineage in terminal outcomes and the
+  GradeBook run envelope;
+- startup revalidation for both committed and uncommitted recoverable grades;
+- rejection of coherently stripped or substituted recovery lineage; and
+- rejection of generic regrade for operational outcomes until regrade has its
+  own durable authority workflow.
+
+Observed verification:
+
+```text
+uv run pytest -q tests/test_experiment_kernel.py \
+  tests/test_verification_attempt_journal.py \
+  tests/test_swe_bench_official_oracle_authority.py \
+  tests/test_task_environment.py
+326 passed in 13.86s
+
+uv run pytest -q
+2920 passed, 33 skipped in 1998.84s (0:33:18)
+
+uv run pytest --collect-only -q
+2953 tests collected in 0.93s
+
+make test-projection-registry
+7 hermetic projection proofs passed in 5.07s
+48 PostgreSQL conformance tests passed in 7.15s
+6 exact PostgreSQL projection entries present
+
+make test-postgres
+48 passed in 8.90s
+
+uv run python -m compileall -q supervisor mcp_tools scripts tests
+exit 0
+
+git diff --check
+exit 0
+```
+
+The local journal closes a process-crash recovery gap; it does not produce an
+official benchmark result. There is still no retained live official
+SWE-bench grade, no rollback-independent journal checkpoint, and no
+independently controlled operational verifier receipt. The claim ceiling
+therefore remains L1. No benchmark-improvement, causal, portability, ROI, or
+auto-improvement claim is supported.

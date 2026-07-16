@@ -394,8 +394,9 @@ make test-projection-registry
 Current verified result:
 
 ```text
-2853 passed, 33 skipped
+2920 passed, 33 skipped
 PostgreSQL conformance: 48 passed
+Projection registry: 7 hermetic proofs and 6 exact PostgreSQL entries
 ```
 
 `make test-postgres` uses `CODEX_SUPERVISOR_POSTGRES_TEST_DSN` when supplied.
@@ -403,8 +404,8 @@ Otherwise it starts and removes an isolated, digest-pinned
 `postgres:16-alpine` container (override the image with
 `CODEX_SUPERVISOR_POSTGRES_TEST_IMAGE`) on an ephemeral localhost port, so the
 PostgreSQL lane does not silently remain skipped during release verification.
-These results were observed on July 15, 2026 at the post-audit hardening
-checkpoint `4c3a885`; see
+These results were observed on July 15, 2026 at the recoverable-verification
+code checkpoint `69d3b397`; see
 `docs/program/harness-v1/verification-20260713.md` for the exact commands,
 later focused re-runs, and claim boundary.
 
@@ -437,9 +438,14 @@ claims are made.
 
 Completed evidence commits use schema v2 and require both the full trace
 lifecycle projection and a directly signed artifact-manifest attestation.
-Operational SWE-bench grading remains blocked: the current backend-run guard
-prevents replay but does not yet atomically journal a recoverable grade across
-a process crash.
+The local backend-run authority now journals PREPARED and COMPLETED
+verification attempts, recovers the canonical grade after a process crash,
+and binds the exact attempt/grade/completion lineage into experiment terminal
+authority. Operational SWE-bench grading is still blocked because no live
+resumable official-harness bridge or retained official grade has been produced,
+and production still needs a rollback-independent external authority
+checkpoint. Recoverable operational outcomes also fail closed on the generic
+regrade path until a separate durable regrade workflow exists.
 
 Two related config blocks under `supervisor:` are documented in
 `config.example.yaml`:

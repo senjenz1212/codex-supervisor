@@ -15,6 +15,7 @@ operational pilot, efficacy result, ROI result, or auto-improvement result.
 | PAH-002 | `ThreadPoolExecutor` workers remain joined by Python at interpreter exit, so an uncooperative runtime could defeat bounded KeyboardInterrupt cleanup. | The synchronous bridge now uses a dedicated daemon thread, propagates normal results and exceptions, requests bounded cancellation, and can abandon an uncooperative worker without blocking interpreter exit. | `777d20e65a13a65ef6812fde43cb3b927cb4693b` | `tests/test_runtime_execution.py`: 3 passed |
 | PAH-003 | Untimed tool calls at the same list position in distinct envelopes could receive the same synthesized ID and be merged in run-wide totals. | Untimed synthesized IDs now include a deterministic envelope scope. Replaying the same envelope is stable; distinct envelopes differ; explicit or timed logical-call IDs remain unchanged. | `e6790dea900e1231475f04c4fa62895d491a3145` | focused trace-envelope tests: 5 passed |
 | PAH-004 | Terminal runtime generations could be evicted before the owner harvested their result. | Runtime and transport retention now evict only successfully collected terminal generations. Resume clears harvest authority until the resumed generation is collected. Same-ID Claude SDK replacement is blocked until collection. | `4c3a88522bb84f9cc817690abef1696115be9110` | `tests/test_agent_runtime.py`: 68 passed; `tests/test_claude_sdk_runtime.py`: 17 passed |
+| PAH-005 | Operational verification lacked one crash-recoverable PREPARED/COMPLETED grade authority. Adversarial restart paths could also strip both experiment lineage markers, omit journal revalidation after terminal commit, or issue a generic regrade under the old operational run authority. | A private SQLite verification-attempt journal now binds nonce, policy, backend, canonical grade, and completion hashes to a generation-chained local authority anchor. The experiment persists recovery authority before observation, resumes without a paid rerun, binds exact lineage into the GradeBook run envelope, revalidates every recoverable terminal on startup, and rejects generic regrade until a distinct durable workflow exists. | `69d3b397c80380a5f710cdc8af587dd0207295a1` | experiment + journal + oracle + task-environment suites: 326 passed |
 
 ## Merge-Hygiene Repairs
 
@@ -42,6 +43,21 @@ The no-mistakes review of this hardening landed one follow-up commit,
 
 Focused proof at that commit: `tests/test_claude_sdk_runtime.py` plus
 `tests/test_agentic_workers.py`, 36 passed.
+
+## Residual Authority Limitations
+
+PAH-005 is local crash recovery, not production exact-once authority:
+
+- Restoring both the SQLite journal and its colocated authority anchor to one
+  matching older snapshot defeats local rollback detection. Production needs
+  a rollback-independent external checkpoint containing authority ID,
+  generation, and state hash.
+- `SIGKILL` during first-time provisioning between database initialization and
+  initial anchor creation can leave partial files requiring operator cleanup
+  or a future atomic provisioning stage.
+- No live resumable official SWE-bench bridge or retained official grade was
+  produced. Recoverable operational outcomes intentionally cannot use the
+  generic regrade API until regrade has its own durable authority workflow.
 
 ## Claim Boundary
 
@@ -85,3 +101,37 @@ exit 0
 The no-mistakes receipt is recorded after these documentation and hygiene
 changes are committed. None of these integration checks raises the claim
 ceiling above L1.
+
+PAH-005 verification at
+`69d3b397c80380a5f710cdc8af587dd0207295a1`:
+
+```text
+uv run pytest -q
+2920 passed, 33 skipped in 1998.84s (0:33:18)
+
+uv run pytest -q tests/test_experiment_kernel.py \
+  tests/test_verification_attempt_journal.py \
+  tests/test_swe_bench_official_oracle_authority.py \
+  tests/test_task_environment.py
+326 passed in 13.86s
+
+make test-projection-registry
+7 hermetic projection proofs passed in 5.07s
+48 PostgreSQL conformance tests passed in 7.15s
+6 exact PostgreSQL projection entries present
+9 existing Alembic deprecation warnings
+
+make test-postgres
+48 passed, 9 existing Alembic deprecation warnings in 8.90s
+
+uv run python -m compileall -q supervisor mcp_tools scripts tests
+exit 0
+
+git diff --check
+exit 0
+```
+
+Independent adversarial re-review closed the committed-grade journal bypass,
+the generic operational-regrade authority reuse, and the double-lineage
+stripping path. The separate Standards review found no hard violations. The
+Spec review found only the stale documentation corrected by this update.
