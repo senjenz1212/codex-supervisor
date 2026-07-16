@@ -1070,14 +1070,14 @@ def test_consume_failed_receipt_repairs_missing_binding_event(
         "cwd": tmp_path,
         "now": 6_201,
     }
-    real_write_event = state.write_event
+    real_write_event_once = state.write_event_once
 
     def fail_binding_event(*, kind, **kwargs):
         if kind == "workflow_target_session_bound":
             raise RuntimeError("simulated binding-event crash")
-        return real_write_event(kind=kind, **kwargs)
+        return real_write_event_once(kind=kind, **kwargs)
 
-    monkeypatch.setattr(state, "write_event", fail_binding_event)
+    monkeypatch.setattr(state, "write_event_once", fail_binding_event)
     with pytest.raises(RuntimeError, match="simulated binding-event crash"):
         consume_launch_receipt(**consume_kwargs)
 
@@ -1095,7 +1095,7 @@ def test_consume_failed_receipt_repairs_missing_binding_event(
         (workflow_run_id,),
     ).fetchone()[0] == 0
 
-    monkeypatch.setattr(state, "write_event", real_write_event)
+    monkeypatch.setattr(state, "write_event_once", real_write_event_once)
     consume_kwargs["now"] = 6_500
     consume_launch_receipt(**consume_kwargs)
 
@@ -1702,3 +1702,80 @@ def test_release_launch_receipt_still_rejects_consumed_receipt(tmp_path):
             nonce=receipt.nonce,
             now=102,
         )
+
+
+def test_binding_event_write_is_single_under_scan_race(tmp_path, monkeypatch):
+    state = State(str(tmp_path / "state.db"))
+    workflow_run_id = "workflow-binding-race"
+    metadata = {
+        "workflow_run_id": workflow_run_id,
+        "target_session_id": "session-binding-race",
+        "registry_path": str(tmp_path / "registry" / "session.json"),
+        "task_id": "task-binding-race",
+        "target_kind": "codex",
+    }
+    monkeypatch.setattr(
+        state,
+        "read_events_since",
+        lambda *args, **kwargs: [],
+    )
+    for _ in range(2):
+        run_registry._ensure_workflow_target_session_binding_event(
+            state=state,
+            metadata=metadata,
+            source="runtime_result",
+            launch_id="launch-binding-race",
+            runtime_run_id="runtime-binding-race",
+            runtime_result_hash="a" * 64,
+        )
+    monkeypatch.undo()
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        (workflow_run_id,),
+    ).fetchone()[0] == 1
+
+
+def test_binding_event_scan_race_rejects_conflicting_payload(
+    tmp_path,
+    monkeypatch,
+):
+    state = State(str(tmp_path / "state.db"))
+    workflow_run_id = "workflow-binding-race-conflict"
+    metadata = {
+        "workflow_run_id": workflow_run_id,
+        "target_session_id": "session-binding-race-conflict",
+        "registry_path": str(tmp_path / "registry" / "session.json"),
+        "task_id": "task-binding-race-conflict",
+        "target_kind": "codex",
+    }
+    monkeypatch.setattr(
+        state,
+        "read_events_since",
+        lambda *args, **kwargs: [],
+    )
+    run_registry._ensure_workflow_target_session_binding_event(
+        state=state,
+        metadata=metadata,
+        source="runtime_result",
+        launch_id="launch-binding-race-conflict",
+        runtime_run_id="runtime-binding-race-conflict",
+        runtime_result_hash="a" * 64,
+    )
+    with pytest.raises(RuntimeError, match="idempotency key was reused"):
+        run_registry._ensure_workflow_target_session_binding_event(
+            state=state,
+            metadata=metadata,
+            source="runtime_result",
+            launch_id="launch-binding-race-conflict",
+            runtime_run_id="runtime-binding-race-conflict",
+            runtime_result_hash="b" * 64,
+        )
+    monkeypatch.undo()
+    assert state._conn.execute(
+        """SELECT COUNT(*) FROM events
+             WHERE run_id=?
+               AND kind='workflow_target_session_bound'""",
+        (workflow_run_id,),
+    ).fetchone()[0] == 1

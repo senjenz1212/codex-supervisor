@@ -604,6 +604,85 @@ def test_ledger_migration_rejects_forged_prepopulated_hashes(tmp_path):
     }
 
 
+def test_prepopulated_ledger_verification_over_bound_punts_to_offline(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             event_sequence INTEGER,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL,
+             previous_event_hash TEXT,
+             event_hash TEXT,
+             canonical_payload_hash TEXT,
+             artifact_manifest_hash TEXT,
+             ledger_genesis_kind TEXT
+           )"""
+    )
+    fields = build_ledger_fields(
+        run_id="v2-run",
+        event_sequence=1,
+        ts=101,
+        source="test",
+        kind="event_msg",
+        payload={"value": 1},
+        previous_event_hash=None,
+        ledger_genesis_kind=NATIVE_GENESIS,
+        event_hash_schema_version=LEGACY_EVENT_HASH_SCHEMA_VERSION,
+    )
+    conn.execute(
+        """INSERT INTO events(
+             run_id, event_sequence, ts, source, kind, payload_json,
+             previous_event_hash, event_hash, canonical_payload_hash,
+             artifact_manifest_hash, ledger_genesis_kind)
+           VALUES(
+             'v2-run', 1, 101, 'test', 'event_msg', '{"value":1}',
+             NULL, ?, ?, ?, ?
+           )""",
+        (
+            fields.event_hash,
+            fields.canonical_payload_hash,
+            fields.artifact_manifest_hash,
+            fields.ledger_genesis_kind,
+        ),
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        schema_migrations,
+        "MAX_STARTUP_LEGACY_EVENT_BACKFILL",
+        0,
+    )
+
+    with pytest.raises(
+        LegacyEventLedgerBackfillRequired,
+        match="migrate_legacy_event_ledger_offline",
+    ):
+        run_forward_migrations(conn)
+    conn.close()
+
+    migrate_legacy_event_ledger_offline(db_path)
+
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    [event] = migrated.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events"""
+    ).fetchall()
+    assert event["event_hash"] == fields.event_hash
+    assert applied_migrations(migrated) == EXPECTED_MIGRATIONS
+
+
 def test_ledger_migration_preserves_valid_prepopulated_v2_hashes(tmp_path):
     conn = sqlite3.connect(tmp_path / "state.db")
     conn.row_factory = sqlite3.Row

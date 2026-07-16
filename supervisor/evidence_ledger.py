@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover - secure filesystem writes are POSIX-only
     fcntl = None  # type: ignore[assignment]
 
-from .redaction import redact, redact_v1, redact_v2
+from .redaction import redact_v1, redact_v2
 from .run_manifest import capture_acceptance_evidence
 from .trace_envelope import stamp_trace_envelope
 
@@ -406,15 +406,17 @@ def build_artifact_manifest(
     artifacts: Sequence[Mapping[str, Any]],
     *,
     metadata: Mapping[str, Any] | None = None,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
 ) -> dict[str, Any]:
-    normalized = [redact(dict(artifact)) for artifact in artifacts]
+    redactor = _redactor_for_event_hash_schema(event_hash_schema_version)
+    normalized = [redactor(dict(artifact)) for artifact in artifacts]
     normalized.sort(key=canonical_json_text)
     body: dict[str, Any] = {
         "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
         "artifacts": normalized,
     }
     if metadata:
-        body["metadata"] = redact(dict(metadata))
+        body["metadata"] = redactor(dict(metadata))
     return {
         **body,
         "manifest_hash": artifact_manifest_hash(body),
@@ -699,7 +701,11 @@ EMPTY_ARTIFACT_MANIFEST = build_artifact_manifest(())
 EMPTY_ARTIFACT_MANIFEST_HASH = str(EMPTY_ARTIFACT_MANIFEST["manifest_hash"])
 
 
-def artifact_manifest_hash_for_payload(payload: Mapping[str, Any]) -> str:
+def artifact_manifest_hash_for_payload(
+    payload: Mapping[str, Any],
+    *,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
+) -> str:
     explicit = payload.get("artifact_manifest_hash")
     manifest = payload.get("artifact_manifest")
     computed: str | None = None
@@ -715,7 +721,12 @@ def artifact_manifest_hash_for_payload(payload: Mapping[str, Any]) -> str:
         envelope = payload.get("trace_envelope")
         artifacts = envelope.get("artifacts") if isinstance(envelope, Mapping) else None
         if isinstance(artifacts, list) and artifacts:
-            computed = str(build_artifact_manifest(artifacts)["manifest_hash"])
+            computed = str(
+                build_artifact_manifest(
+                    artifacts,
+                    event_hash_schema_version=event_hash_schema_version,
+                )["manifest_hash"]
+            )
     if explicit is not None:
         explicit_hash = _require_canonical_sha256(explicit)
         if computed is not None and explicit_hash != computed:
@@ -811,7 +822,10 @@ def build_ledger_fields(
 ) -> LedgerFields:
     sequence = _normalize_event_sequence(event_sequence)
     payload_hash = canonical_payload_hash(payload)
-    manifest_hash = artifact_manifest_hash_for_payload(payload)
+    manifest_hash = artifact_manifest_hash_for_payload(
+        payload,
+        event_hash_schema_version=event_hash_schema_version,
+    )
     event_hash = compute_event_hash(
         run_id=run_id,
         event_sequence=sequence,
@@ -859,7 +873,10 @@ def build_legacy_import_ledger_fields(
         )
     sequence = _normalize_event_sequence(event_sequence)
     payload_hash = canonical_payload_hash(payload)
-    semantic_manifest_hash = artifact_manifest_hash_for_payload(payload)
+    semantic_manifest_hash = artifact_manifest_hash_for_payload(
+        payload,
+        event_hash_schema_version=event_hash_schema_version,
+    )
     manifest_hash = legacy_raw_payload_manifest_hash(
         raw_payload_json,
         semantic_artifact_manifest_hash=semantic_manifest_hash,
@@ -1146,21 +1163,40 @@ def _verify_event_chain(
                     f"observed={observed_payload_hash}"
                 ),
             )
-        try:
-            semantic_manifest_hash = artifact_manifest_hash_for_payload(payload)
-        except (TypeError, ValueError) as exc:
+        semantic_manifest_hash_by_schema: dict[str, str] = {}
+        manifest_hash_error: Exception | None = None
+        for schema_version in _supported_event_hash_schema_versions():
+            try:
+                semantic_manifest_hash_by_schema[schema_version] = (
+                    artifact_manifest_hash_for_payload(
+                        payload,
+                        event_hash_schema_version=schema_version,
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                manifest_hash_error = exc
+        if not semantic_manifest_hash_by_schema:
             return failure(
                 "invalid_artifact_manifest_hash",
                 event_id=event_id,
-                detail=str(exc),
+                detail=str(manifest_hash_error),
             )
-        computed_manifest_hash = semantic_manifest_hash
+        computed_manifest_hash_by_schema: dict[str, str] = {}
+        commitment_mode_by_schema: dict[str, str] = {}
         if payload_commitment_mode == "legacy":
             # Every imported row uses the raw commitment. The first canonical
             # row with the ordinary manifest hash closes the import epoch, so
             # later native rows cannot fall back to legacy encoding rules.
             if decoded_payload.raw_json_bytes is None:
-                if observed_manifest_hash != semantic_manifest_hash:
+                for schema_version, semantic_manifest_hash in (
+                    semantic_manifest_hash_by_schema.items()
+                ):
+                    if observed_manifest_hash == semantic_manifest_hash:
+                        computed_manifest_hash_by_schema[schema_version] = (
+                            semantic_manifest_hash
+                        )
+                        commitment_mode_by_schema[schema_version] = "native"
+                if not computed_manifest_hash_by_schema:
                     return failure(
                         "legacy_raw_payload_commitment_missing",
                         event_id=event_id,
@@ -1169,20 +1205,28 @@ def _verify_event_chain(
                             "does not use the canonical native commitment"
                         ),
                     )
-                payload_commitment_mode = "native"
             else:
-                legacy_manifest_hash = legacy_raw_payload_manifest_hash(
-                    decoded_payload.raw_json_bytes,
-                    semantic_artifact_manifest_hash=semantic_manifest_hash,
-                )
-                if observed_manifest_hash == legacy_manifest_hash:
-                    computed_manifest_hash = legacy_manifest_hash
-                elif (
-                    decoded_payload.canonical_encoding
-                    and observed_manifest_hash == semantic_manifest_hash
+                for schema_version, semantic_manifest_hash in (
+                    semantic_manifest_hash_by_schema.items()
                 ):
-                    payload_commitment_mode = "native"
-                else:
+                    legacy_manifest_hash = legacy_raw_payload_manifest_hash(
+                        decoded_payload.raw_json_bytes,
+                        semantic_artifact_manifest_hash=semantic_manifest_hash,
+                    )
+                    if observed_manifest_hash == legacy_manifest_hash:
+                        computed_manifest_hash_by_schema[schema_version] = (
+                            legacy_manifest_hash
+                        )
+                        commitment_mode_by_schema[schema_version] = "legacy"
+                    elif (
+                        decoded_payload.canonical_encoding
+                        and observed_manifest_hash == semantic_manifest_hash
+                    ):
+                        computed_manifest_hash_by_schema[schema_version] = (
+                            semantic_manifest_hash
+                        )
+                        commitment_mode_by_schema[schema_version] = "native"
+                if not computed_manifest_hash_by_schema:
                     return failure(
                         "legacy_raw_payload_commitment_mismatch",
                         event_id=event_id,
@@ -1191,17 +1235,30 @@ def _verify_event_chain(
                             "the stored versioned commitment"
                         ),
                     )
-        elif observed_manifest_hash != semantic_manifest_hash:
-            return failure(
-                "artifact_manifest_hash_mismatch",
-                event_id=event_id,
-                detail=(
-                    f"expected artifact_manifest_hash={semantic_manifest_hash}, "
-                    f"observed={observed_manifest_hash}"
-                ),
-            )
+        else:
+            for schema_version, semantic_manifest_hash in (
+                semantic_manifest_hash_by_schema.items()
+            ):
+                if observed_manifest_hash == semantic_manifest_hash:
+                    computed_manifest_hash_by_schema[schema_version] = (
+                        semantic_manifest_hash
+                    )
+            if not computed_manifest_hash_by_schema:
+                expected_hashes = ", ".join(
+                    dict.fromkeys(semantic_manifest_hash_by_schema.values())
+                )
+                return failure(
+                    "artifact_manifest_hash_mismatch",
+                    event_id=event_id,
+                    detail=(
+                        f"expected artifact_manifest_hash={expected_hashes}, "
+                        f"observed={observed_manifest_hash}"
+                    ),
+                )
         matching_event_hashes: dict[str, str] = {}
-        for schema_version in _supported_event_hash_schema_versions():
+        for schema_version, computed_manifest_hash in (
+            computed_manifest_hash_by_schema.items()
+        ):
             try:
                 candidate_hash = compute_event_hash(
                     run_id=run_id or "",
@@ -1236,6 +1293,10 @@ def _verify_event_chain(
         event_hash_schema_version, computed_event_hash = next(
             iter(matching_event_hashes.items())
         )
+        if payload_commitment_mode == "legacy":
+            payload_commitment_mode = commitment_mode_by_schema[
+                event_hash_schema_version
+            ]
         if previous_event_hash_schema_version is not None:
             if not event_hash_schema_transition_allowed(
                 previous_event_hash_schema_version,

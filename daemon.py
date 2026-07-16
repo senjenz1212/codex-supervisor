@@ -232,7 +232,7 @@ async def main() -> int:
         embedding_client=OpenAIEmbeddingClient(oai) if oai is not None else None,
     )
     autoresearch_runner = AutoResearchRunnerTask(cfg, state, repo_root=HERE)
-    weekly_p11_audit = WeeklyP11AuditTask(cfg, state)
+    weekly_p11_audit = WeeklyP11AuditTask(cfg, state, repo_root=HERE)
 
     process_monitor = None
     if target_kind == "codex":

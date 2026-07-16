@@ -645,7 +645,7 @@ def test_source_artifact_hashes_fall_back_when_read_fails(
         },
     )
 
-    assert hashes == {"prd": declared}
+    assert hashes == {"prd": f"declared-unverified:{declared}"}
 
 
 def test_workspace_overlay_entry_degrades_on_unreadable_path(tmp_path):
@@ -703,3 +703,34 @@ def test_acceptance_evidence_degrades_when_snapshot_capture_fails(
     assert degraded is not None
     assert degraded["status"] == "incomplete"
     assert degraded["snapshot_ref"] is not None
+
+
+def test_acceptance_evidence_hash_matches_stored_content_for_non_utf8(
+    tmp_path,
+):
+    import json
+    from hashlib import sha256
+    from pathlib import Path
+
+    from supervisor import run_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handoff = repo / "handoff.json"
+    raw = json.dumps({"cwd": str(repo)}).encode("utf-8") + b"\xff\xfe"
+    handoff.write_bytes(raw)
+    payload = {
+        "status": "accepted",
+        "task_id": "task-1",
+        "handoff_packet_path": str(handoff),
+    }
+
+    evidence = run_manifest.capture_acceptance_evidence(dict(payload))
+
+    assert evidence is not None
+    snapshot = json.loads(Path(evidence["snapshot_ref"]).read_bytes())
+    packet = snapshot["handoff_packet"]
+    assert packet["sha256"] == sha256(
+        packet["content"].encode("utf-8")
+    ).hexdigest()
+    assert evidence["handoff_packet_sha256"] == packet["sha256"]

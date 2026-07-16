@@ -448,6 +448,24 @@ def validate_agentic_worker_roster(
         if required and required not in role_keys:
             findings.append({"reason": "missing_required_roster_role", "role": required})
 
+    seen_worker_ids: set[str] = set()
+    seen_segments: dict[str, str] = {}
+    for item in roster:
+        worker_id = str(item.worker_id).strip()
+        if worker_id in seen_worker_ids:
+            findings.append({"reason": "duplicate_roster_worker_id", "worker_id": worker_id})
+        else:
+            seen_worker_ids.add(worker_id)
+        segment = _safe_segment(worker_id)
+        if segment in seen_segments and seen_segments[segment] != worker_id:
+            findings.append({
+                "reason": "duplicate_roster_worker_dir_segment",
+                "worker_id": worker_id,
+                "segment": segment,
+                "conflicts_with": seen_segments[segment],
+            })
+        seen_segments.setdefault(segment, worker_id)
+
     per_worker_budget_cap = float(budget_usd) if budget_usd > 0 else 0.0
     for item in roster:
         mode = _permission_key(item.permission_mode)

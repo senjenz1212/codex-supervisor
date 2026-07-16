@@ -4330,7 +4330,10 @@ def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, st
         if path.exists() and path.is_file() and not _excluded_snapshot_path(path, root):
             hashes[kind] = sha256(path.read_bytes()).hexdigest()
         elif _clean_text(artifact.get("sha256")):
-            hashes[kind] = _clean_text(artifact.get("sha256"))
+            hashes[kind] = (
+                "declared-unverified:"
+                + _clean_text(artifact.get("sha256"))
+            )
     return hashes
 
 

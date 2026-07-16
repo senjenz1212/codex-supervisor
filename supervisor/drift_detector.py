@@ -395,18 +395,34 @@ class DriftDetector:
             )
         else:
             t0 = time.monotonic()
-            sim = await embed_similarity(
-                task,
-                messages,
-                self.cfg,
-                self.embedding_client,
-            )
-            self.state.write_verdict(
-                run_id=run_id, phase="drift", layer="L2",
-                model=self.cfg.models.embedding_model,
-                output={"similarity": sim},
-                latency_ms=int((time.monotonic() - t0) * 1000),
-            )
+            try:
+                sim = await embed_similarity(
+                    task,
+                    messages,
+                    self.cfg,
+                    self.embedding_client,
+                )
+            except Exception as e:
+                log.warning(
+                    "drift L2 embedding check failed for run %s: %s", run_id, e
+                )
+                self.state.write_verdict(
+                    run_id=run_id, phase="drift", layer="L2",
+                    model=self.cfg.models.embedding_model,
+                    output={
+                        "skipped": True,
+                        "reason": "embedding_check_failed",
+                        "error": str(e),
+                    },
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                )
+            else:
+                self.state.write_verdict(
+                    run_id=run_id, phase="drift", layer="L2",
+                    model=self.cfg.models.embedding_model,
+                    output={"similarity": sim},
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                )
         similarity_triggered = (
             sim is not None
             and sim < self.cfg.drift.l2_similarity_threshold
@@ -441,14 +457,26 @@ class DriftDetector:
             )
         elif should_run_l3:
             t0 = time.monotonic()
-            plan_check = await plan_progress_check(
-                task,
-                plan,
-                recent,
-                self.cfg,
-                self.model_client,
-                timeout_s=self.cfg.drift.l3_timeout_s,
-            )
+            try:
+                plan_check = await plan_progress_check(
+                    task,
+                    plan,
+                    recent,
+                    self.cfg,
+                    self.model_client,
+                    timeout_s=self.cfg.drift.l3_timeout_s,
+                )
+            except Exception as e:
+                log.warning(
+                    "drift L3 plan-progress check failed for run %s: %s",
+                    run_id, e,
+                )
+                plan_check = {
+                    "skipped": True,
+                    "reason": "plan_progress_check_failed",
+                    "error": str(e),
+                    "plan_status": None,
+                }
             self.state.write_verdict(
                 run_id=run_id, phase="drift", layer="L3",
                 model=self.cfg.models.drift_l3_model,

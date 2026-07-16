@@ -1601,6 +1601,8 @@ def _validate_strata_replication_analysis(
             and declared_families == family_optimizer_visibility
             and result_families == family_optimizer_visibility
         )
+    except ClaimGateError:
+        raise
     except (KeyError, TypeError, ValueError):
         return False
 

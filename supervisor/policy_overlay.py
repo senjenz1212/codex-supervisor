@@ -1042,6 +1042,7 @@ def draft_policy_regression_rollback_if_needed(
     run_id: str,
     proposal_id: str,
     rollback_pointer: Mapping[str, Any],
+    repo_root: str | Path,
     task_class: str | None = None,
     gate: str | None = None,
     min_runs: int = 3,
@@ -1054,7 +1055,7 @@ def draft_policy_regression_rollback_if_needed(
     proposal = str(proposal_id or "").strip()
     if not proposal:
         raise PolicyOverlayError("proposal_id is required for regression verification")
-    _validate_rollback_pointer_targets(rollback_pointer)
+    _validate_rollback_pointer_targets(rollback_pointer, repo_root=repo_root)
     rows = state.list_quality_trend_rows(task_class=task_class, gate=gate)
     before = [row for row in rows if str(row.get("policy_proposal_id") or "") != proposal]
     after = [row for row in rows if str(row.get("policy_proposal_id") or "") == proposal]
@@ -1156,6 +1157,7 @@ def draft_policy_regression_rollbacks_for_trend_rows(
     *,
     run_id: str,
     trend_rows: list[Mapping[str, Any]],
+    repo_root: str | Path,
     min_runs: int = 3,
     first_pass_drop_threshold: float = 0.05,
     false_accept_increase_threshold: float = 0.01,
@@ -1192,6 +1194,7 @@ def draft_policy_regression_rollbacks_for_trend_rows(
             run_id=run_id,
             proposal_id=proposal_id,
             rollback_pointer=rollback_pointer,
+            repo_root=repo_root,
             task_class=task_class or None,
             gate=gate or None,
             min_runs=min_runs,
@@ -1289,14 +1292,18 @@ def _latest_rollback_pointer_for_proposal(state: Any, *, proposal_id: str) -> di
     return None
 
 
-def _validate_rollback_pointer_targets(rollback_pointer: Mapping[str, Any]) -> None:
+def _validate_rollback_pointer_targets(
+    rollback_pointer: Mapping[str, Any],
+    *,
+    repo_root: str | Path,
+) -> None:
     files = rollback_pointer.get("files") if isinstance(rollback_pointer.get("files"), list) else []
     if not files:
         raise PolicyOverlayError("rollback pointer has no files")
     for item in files:
         if not isinstance(item, Mapping):
             raise PolicyOverlayError("rollback file entry must be an object")
-        normalise_overlay_target(str(item.get("target_path") or ""), repo_root=Path.cwd())
+        normalise_overlay_target(str(item.get("target_path") or ""), repo_root=repo_root)
 
 
 def _compare_windows(*, before: list[Mapping[str, Any]], after: list[Mapping[str, Any]]) -> dict[str, Any]:

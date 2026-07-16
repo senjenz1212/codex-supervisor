@@ -180,23 +180,18 @@ def ensure_tool_call_timing(
     duration = _int_or_none(record.get("duration_ms"))
     duration_us = _int_or_none(record.get("duration_us"))
     ended = _int_or_none(record.get("ended_at_ms"))
-    untimed = (
-        started is None
-        and duration is None
-        and duration_us is None
-        and ended is None
-    )
+    if duration is None and duration_us is not None:
+        duration = duration_us // 1_000
     if started is None and ended is not None and duration is not None:
         started = max(0, ended - duration)
+    has_real_start = started is not None
     if started is None:
         started = (
             _current_time_ms()
             if fallback_started_at_ms is None
             else int(fallback_started_at_ms)
         )
-    if duration is None and duration_us is not None:
-        duration = duration_us // 1_000
-    if duration is None and ended is not None:
+    if duration is None and ended is not None and has_real_start:
         duration = max(0, ended - started)
     if duration is None:
         duration = 0
@@ -212,8 +207,8 @@ def ensure_tool_call_timing(
         "tool_call_id",
         _default_tool_call_id(
             record,
-            ordinal=ordinal if untimed else None,
-            envelope_scope=envelope_scope if untimed else None,
+            ordinal=ordinal if not has_real_start else None,
+            envelope_scope=envelope_scope if not has_real_start else None,
         ),
     )
     return record

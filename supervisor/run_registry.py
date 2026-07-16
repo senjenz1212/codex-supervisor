@@ -501,6 +501,17 @@ def _validate_workflow_runtime_session_authority(
     )
 
 
+def _workflow_target_session_binding_idempotency_key(
+    *,
+    workflow_run_id: str,
+    target_session_id: str,
+) -> str:
+    digest = hashlib.sha256(
+        "\x1f".join((workflow_run_id, target_session_id)).encode("utf-8")
+    ).hexdigest()
+    return f"workflow-target-session-bound:{digest}"
+
+
 def _validate_workflow_target_session_binding_event(
     *,
     state: State,
@@ -1256,11 +1267,15 @@ def _ensure_runtime_session_state_binding(
             + ", ".join(discrepancies)
         )
     if not binding_exists:
-        state.write_event(
+        state.write_event_once(
             run_id=workflow_run_id,
             source="supervisor",
             kind="workflow_target_session_bound",
             payload=binding_payload,
+            idempotency_key=_workflow_target_session_binding_idempotency_key(
+                workflow_run_id=workflow_run_id,
+                target_session_id=target_session_id,
+            ),
         )
     _validate_workflow_target_session_binding_event(
         state=state,
@@ -2050,7 +2065,7 @@ def _ensure_workflow_target_session_binding_event(
                 )
             return
         after_event_id = max(int(event["event_id"]) for event in events)
-    state.write_event(
+    state.write_event_once(
         run_id=workflow_run_id,
         source="supervisor",
         kind="workflow_target_session_bound",
@@ -2059,6 +2074,10 @@ def _ensure_workflow_target_session_binding_event(
             for field, value in expected_payload.items()
             if value
         },
+        idempotency_key=_workflow_target_session_binding_idempotency_key(
+            workflow_run_id=workflow_run_id,
+            target_session_id=target_session_id,
+        ),
     )
 
 

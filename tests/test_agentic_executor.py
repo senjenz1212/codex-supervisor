@@ -376,6 +376,68 @@ def test_agentic_roster_validation_rejects_writable_or_missing_required_roles():
     assert any(finding.get("role") == "independent_reviewer" for finding in findings)
 
 
+def test_agentic_roster_validation_rejects_duplicate_worker_ids():
+    findings = validate_agentic_worker_roster(
+        [
+            AgenticWorkerRosterItem(
+                worker_id="audit-1",
+                role="codebase_audit",
+                prompt="Inspect implementation boundaries.",
+                timeout_s=30,
+                budget_usd=0.1,
+            ),
+            AgenticWorkerRosterItem(
+                worker_id="audit-1",
+                role="independent_reviewer",
+                prompt="Review the fanout receipts.",
+                timeout_s=30,
+                budget_usd=0.1,
+            ),
+        ],
+        min_subagents=1,
+        required_roles=[],
+        timeout_s=60,
+        budget_usd=0.25,
+    )
+
+    duplicates = [finding for finding in findings if finding["reason"] == "duplicate_roster_worker_id"]
+    assert len(duplicates) == 1
+    assert duplicates[0]["worker_id"] == "audit-1"
+    assert not any(finding["reason"] == "duplicate_roster_worker_dir_segment" for finding in findings)
+
+
+def test_agentic_roster_validation_rejects_colliding_sanitized_worker_dir_segments():
+    findings = validate_agentic_worker_roster(
+        [
+            AgenticWorkerRosterItem(
+                worker_id="a/b",
+                role="codebase_audit",
+                prompt="Inspect implementation boundaries.",
+                timeout_s=30,
+                budget_usd=0.1,
+            ),
+            AgenticWorkerRosterItem(
+                worker_id="a-b",
+                role="independent_reviewer",
+                prompt="Review the fanout receipts.",
+                timeout_s=30,
+                budget_usd=0.1,
+            ),
+        ],
+        min_subagents=1,
+        required_roles=[],
+        timeout_s=60,
+        budget_usd=0.25,
+    )
+
+    collisions = [finding for finding in findings if finding["reason"] == "duplicate_roster_worker_dir_segment"]
+    assert len(collisions) == 1
+    assert collisions[0]["worker_id"] == "a-b"
+    assert collisions[0]["segment"] == "a-b"
+    assert collisions[0]["conflicts_with"] == "a/b"
+    assert not any(finding["reason"] == "duplicate_roster_worker_id" for finding in findings)
+
+
 def test_agentic_worker_timeout_cleanup_runs_after_fanout_timeout(tmp_path: Path):
     roster = {
         "workers": [

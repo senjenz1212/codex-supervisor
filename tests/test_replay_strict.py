@@ -462,6 +462,7 @@ def test_weekly_p11_audit_preserves_incompatible_status_without_recorded_checkou
     audit = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         now=10_000,
     )

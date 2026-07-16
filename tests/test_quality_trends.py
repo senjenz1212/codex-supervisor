@@ -1334,6 +1334,7 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     first = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_000,
@@ -1341,6 +1342,7 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     second = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_001,
@@ -1366,6 +1368,57 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     assert scheduled["payload"]["observational_only"] is True
     [summary] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
     assert summary["false_accept_count"] == 1
+
+
+def test_weekly_p11_audit_skips_when_cadence_slot_already_claimed(
+    tmp_path, monkeypatch
+):
+    state = State(str(tmp_path / "state.db"))
+    cadence_s = 7 * 24 * 60 * 60
+    now = 10_000
+    state.write_event_once(
+        run_id="trend-run",
+        source="supervisor",
+        kind="supervisor_p11_audit_claimed",
+        payload={
+            "schema_version": "supervisor-p11-audit-claim/v1",
+            "scheduled_at": now - 1,
+            "cadence_period": now // cadence_s,
+            "claim_token": "other-daemon",
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        },
+        idempotency_key=f"supervisor-p11-audit:{now // cadence_s}:0",
+    )
+
+    def _fail_audit(*args, **kwargs):
+        raise AssertionError(
+            "expensive audit must not run when the cadence slot is claimed"
+        )
+
+    monkeypatch.setattr(
+        quality_trends_module,
+        "run_sampled_p11_false_accept_audit",
+        _fail_audit,
+    )
+
+    result = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        repo_root=tmp_path,
+        sample_size=1,
+        test_timeout_s=1,
+        now=now,
+    )
+
+    assert result["status"] == "not_due"
+    assert result["reason"] == "cadence_slot_claimed"
+    assert result["gate_authority"] == "unchanged"
+    assert result["observational_only"] is True
+    events = state.read_events_since("trend-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == [
+        "supervisor_p11_audit_claimed"
+    ]
 
 
 def test_quality_trends_query_filters_by_task_class_and_gate_without_writes(tmp_path):
@@ -1676,6 +1729,7 @@ def test_weekly_p11_audit_incompatible_run_does_not_consume_cadence_window(tmp_p
     first = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_000,
@@ -1706,6 +1760,7 @@ def test_weekly_p11_audit_incompatible_run_does_not_consume_cadence_window(tmp_p
     second = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_001,
@@ -1713,6 +1768,7 @@ def test_weekly_p11_audit_incompatible_run_does_not_consume_cadence_window(tmp_p
     third = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_002,

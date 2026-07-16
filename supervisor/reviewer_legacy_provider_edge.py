@@ -128,16 +128,19 @@ class CodexCliReviewer:
             raw_stderr = completed.stderr or ""
             safe_stderr = redact(raw_stderr)
             metadata = _parse_codex_cli_jsonl(raw_stdout)
-            transcript = "\n\n".join(
-                item
-                for item in (
-                    raw_stdout,
-                    f"[stderr]\n{safe_stderr}" if safe_stderr else "",
-                    "[agent_messages]\n" + "\n".join(metadata["agent_messages"])
-                    if metadata["agent_messages"]
-                    else "",
+            transcript = redact(
+                "\n\n".join(
+                    item
+                    for item in (
+                        raw_stdout,
+                        f"[stderr]\n{safe_stderr}" if safe_stderr else "",
+                        "[agent_messages]\n"
+                        + "\n".join(metadata["agent_messages"])
+                        if metadata["agent_messages"]
+                        else "",
+                    )
+                    if item
                 )
-                if item
             )
             if completed.returncode != 0:
                 reason = "codex_cli_nonzero_exit"
@@ -221,7 +224,7 @@ class CodexCliReviewer:
                     if metadata["command_executions"]
                     else "self_reported"
                 ),
-                diagnostics={
+                diagnostics=redact({
                     "codex_cli": {
                         "thread_id": metadata.get("thread_id"),
                         "command_executions": metadata["command_executions"],
@@ -242,7 +245,7 @@ class CodexCliReviewer:
                         attempts=failed_attempts,
                         backoff_s=retry_backoff_s,
                     ),
-                },
+                }),
                 failure_classification="reviewer_contract_unmet",
                 recoverable=True,
                 attempts=attempt,
@@ -270,7 +273,7 @@ class CodexCliReviewer:
                 if metadata["command_executions"]
                 else "self_reported"
             ),
-            diagnostics={
+            diagnostics=redact({
                 "codex_cli": {
                     "thread_id": metadata.get("thread_id"),
                     "command_executions": metadata["command_executions"],
@@ -291,7 +294,7 @@ class CodexCliReviewer:
                     attempts=failed_attempts,
                     backoff_s=retry_backoff_s,
                 ),
-            },
+            }),
             attempts=attempt,
             retry_reasons=tuple(retry_reasons),
         )
@@ -489,9 +492,10 @@ def _codex_cli_infrastructure_result(
     retry_reasons: tuple[str, ...] | None = None,
     retry_diagnostics: dict[str, Any] | None = None,
 ) -> CursorInvocationResult:
-    diagnostics = {"codex_cli": {"reason": reason, **details}}
+    safe_details = redact(details)
+    diagnostics = {"codex_cli": {"reason": reason, **safe_details}}
     if retry_diagnostics is not None:
-        diagnostics["infrastructure_retries"] = retry_diagnostics
+        diagnostics["infrastructure_retries"] = redact(retry_diagnostics)
     return CursorInvocationResult(
         probe=ProbeResult(
             "CODEX_REVIEWER",
@@ -500,11 +504,11 @@ def _codex_cli_infrastructure_result(
             {
                 "original_reason": reason,
                 "recoverable": True,
-                **details,
+                **safe_details,
             },
         ),
         outcome=None,
-        transcript=transcript,
+        transcript=redact(transcript),
         status="failed",
         model=model,
         reviewer_runtime="codex_cli",

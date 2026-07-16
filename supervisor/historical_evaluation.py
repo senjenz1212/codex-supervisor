@@ -616,7 +616,6 @@ class HistoricalEvaluationService:
         self._claim_stale_after_s = claim_stale_after_s
         self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
         self._locks_guard = threading.Lock()
-        self._preflight_failed_operations: set[str] = set()
 
     async def rerun(
         self,
@@ -694,11 +693,7 @@ class HistoricalEvaluationService:
                     claim=claim,
                     requested_event_id=prior_requested_event_id,
                 )
-            recoverable = (
-                request.operation_id in self._preflight_failed_operations
-                or preflight_released
-            )
-            if not recoverable:
+            if not preflight_released:
                 stale_preflight_recovery = (
                     self._state.historical_operation_preflight_claim_is_stale(
                         operation_id=request.operation_id,
@@ -722,38 +717,33 @@ class HistoricalEvaluationService:
                         "historical operation is already running in another "
                         "process"
                     )
-        self._preflight_failed_operations.discard(request.operation_id)
         try:
             self._verify_source(request.source)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            released_event_id = (
-                self._state.release_historical_operation_preflight(
-                    operation_id=request.operation_id,
-                    request_hash=request.request_hash,
-                    operation=request.operation.value,
-                    expected_claim_updated_at=claim.get("updated_at"),
-                    expected_execution_owner_token=claim.get(
-                        "execution_owner_token"
-                    ),
-                    expected_execution_generation=claim.get(
-                        "execution_generation"
-                    ),
-                    expected_execution_heartbeat_at=claim.get(
-                        "execution_heartbeat_at"
-                    ),
-                    payload={
-                        "operation_id": request.operation_id,
-                        "request_hash": request.request_hash,
-                        "operation": request.operation.value,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    },
-                )
+            self._state.release_historical_operation_preflight(
+                operation_id=request.operation_id,
+                request_hash=request.request_hash,
+                operation=request.operation.value,
+                expected_claim_updated_at=claim.get("updated_at"),
+                expected_execution_owner_token=claim.get(
+                    "execution_owner_token"
+                ),
+                expected_execution_generation=claim.get(
+                    "execution_generation"
+                ),
+                expected_execution_heartbeat_at=claim.get(
+                    "execution_heartbeat_at"
+                ),
+                payload={
+                    "operation_id": request.operation_id,
+                    "request_hash": request.request_hash,
+                    "operation": request.operation.value,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
             )
-            if released_event_id is not None:
-                self._preflight_failed_operations.add(request.operation_id)
             raise
         execution_owner_token = uuid.uuid4().hex
         execution_claim, requested_event_id, execution_claimed = (

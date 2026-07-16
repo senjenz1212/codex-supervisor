@@ -1052,20 +1052,22 @@ class State:
     # --- legacy run helpers (kept for v0.2 callers; new code uses register_run) ---
     def upsert_run(self, *, run_id: str, session_id: str, rollout_path: str,
                    task: str | None, scope_hints: list[str] | None) -> None:
-        self._conn.execute(
-            """INSERT OR IGNORE INTO runs(run_id, session_id, rollout_path, task, scope_hints, started_at, status)
-               VALUES(?, ?, ?, ?, ?, ?, 'running')""",
-            (run_id, session_id, rollout_path, task,
-             json.dumps(scope_hints or []), int(time.time())),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT OR IGNORE INTO runs(run_id, session_id, rollout_path, task, scope_hints, started_at, status)
+                   VALUES(?, ?, ?, ?, ?, ?, 'running')""",
+                (run_id, session_id, rollout_path, task,
+                 json.dumps(scope_hints or []), int(time.time())),
+            )
+            self._conn.commit()
 
     def end_run(self, run_id: str, status: str) -> None:
-        self._conn.execute(
-            "UPDATE runs SET ended_at=?, status=? WHERE run_id=?",
-            (int(time.time()), status, run_id),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                "UPDATE runs SET ended_at=?, status=? WHERE run_id=?",
+                (int(time.time()), status, run_id),
+            )
+            self._conn.commit()
 
     def active_runs(self) -> list[sqlite3.Row]:
         return list(self._conn.execute("SELECT * FROM runs WHERE status='running'"))
@@ -3046,17 +3048,18 @@ class State:
     ) -> int:
         now = int(time.time())
         start_event_id = self.latest_event_id(run_id) if last_event_id is None else int(last_event_id)
-        self._conn.execute(
-            """INSERT INTO run_watches(
-                   chat_id, run_id, status, last_event_id,
-                   last_notified_at, created_at, updated_at)
-               VALUES(?, ?, ?, ?, NULL, ?, ?)
-               ON CONFLICT(chat_id, run_id) DO UPDATE SET
-                   status=excluded.status,
-                   updated_at=excluded.updated_at""",
-            (chat_id, run_id, status, start_event_id, now, now),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO run_watches(
+                       chat_id, run_id, status, last_event_id,
+                       last_notified_at, created_at, updated_at)
+                   VALUES(?, ?, ?, ?, NULL, ?, ?)
+                   ON CONFLICT(chat_id, run_id) DO UPDATE SET
+                       status=excluded.status,
+                       updated_at=excluded.updated_at""",
+                (chat_id, run_id, status, start_event_id, now, now),
+            )
+            self._conn.commit()
         row = self._conn.execute(
             "SELECT id FROM run_watches WHERE chat_id=? AND run_id=?",
             (chat_id, run_id),
@@ -3092,13 +3095,14 @@ class State:
         ))
 
     def mark_run_watch_notified(self, *, watch_id: int, event_id: int) -> None:
-        self._conn.execute(
-            """UPDATE run_watches
-                  SET last_event_id=?, last_notified_at=?, updated_at=?
-                WHERE id=?""",
-            (int(event_id), int(time.time()), int(time.time()), watch_id),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """UPDATE run_watches
+                      SET last_event_id=?, last_notified_at=?, updated_at=?
+                    WHERE id=?""",
+                (int(event_id), int(time.time()), int(time.time()), watch_id),
+            )
+            self._conn.commit()
 
     # --- dual-agent workflow state ---
     def upsert_dual_agent_workflow(
@@ -3114,33 +3118,34 @@ class State:
         user_facing: bool,
     ) -> None:
         now = int(time.time())
-        self._conn.execute(
-            """INSERT INTO dual_agent_workflows(
-                   run_id, task_id, cwd, intent, current_gate, status,
-                   max_rounds_per_gate, user_facing, created_at, updated_at)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(run_id, task_id) DO UPDATE SET
-                   cwd=excluded.cwd,
-                   intent=excluded.intent,
-                   current_gate=excluded.current_gate,
-                   status=excluded.status,
-                   max_rounds_per_gate=excluded.max_rounds_per_gate,
-                   user_facing=excluded.user_facing,
-                   updated_at=excluded.updated_at""",
-            (
-                run_id,
-                task_id,
-                cwd,
-                intent,
-                current_gate,
-                status,
-                int(max_rounds_per_gate),
-                1 if user_facing else 0,
-                now,
-                now,
-            ),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO dual_agent_workflows(
+                       run_id, task_id, cwd, intent, current_gate, status,
+                       max_rounds_per_gate, user_facing, created_at, updated_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(run_id, task_id) DO UPDATE SET
+                       cwd=excluded.cwd,
+                       intent=excluded.intent,
+                       current_gate=excluded.current_gate,
+                       status=excluded.status,
+                       max_rounds_per_gate=excluded.max_rounds_per_gate,
+                       user_facing=excluded.user_facing,
+                       updated_at=excluded.updated_at""",
+                (
+                    run_id,
+                    task_id,
+                    cwd,
+                    intent,
+                    current_gate,
+                    status,
+                    int(max_rounds_per_gate),
+                    1 if user_facing else 0,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
 
     def update_dual_agent_workflow(
         self,
@@ -3159,13 +3164,14 @@ class State:
             assignments.append("current_gate=?")
             params.append(current_gate)
         params.extend([run_id, task_id])
-        self._conn.execute(
-            f"""UPDATE dual_agent_workflows
-                   SET {", ".join(assignments)}
-                 WHERE run_id=? AND task_id=?""",
-            params,
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                f"""UPDATE dual_agent_workflows
+                       SET {", ".join(assignments)}
+                     WHERE run_id=? AND task_id=?""",
+                params,
+            )
+            self._conn.commit()
 
     def get_dual_agent_workflow(self, *, run_id: str, task_id: str) -> sqlite3.Row | None:
         return self._conn.execute(
@@ -3185,28 +3191,29 @@ class State:
         latest_event_id: int | None = None,
     ) -> None:
         now = int(time.time())
-        self._conn.execute(
-            """INSERT INTO dual_agent_workflow_steps(
-                   run_id, task_id, gate, status, attempt_count,
-                   latest_event_id, created_at, updated_at)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(run_id, task_id, gate) DO UPDATE SET
-                   status=excluded.status,
-                   attempt_count=excluded.attempt_count,
-                   latest_event_id=excluded.latest_event_id,
-                   updated_at=excluded.updated_at""",
-            (
-                run_id,
-                task_id,
-                gate,
-                status,
-                int(attempt_count),
-                latest_event_id,
-                now,
-                now,
-            ),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO dual_agent_workflow_steps(
+                       run_id, task_id, gate, status, attempt_count,
+                       latest_event_id, created_at, updated_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(run_id, task_id, gate) DO UPDATE SET
+                       status=excluded.status,
+                       attempt_count=excluded.attempt_count,
+                       latest_event_id=excluded.latest_event_id,
+                       updated_at=excluded.updated_at""",
+                (
+                    run_id,
+                    task_id,
+                    gate,
+                    status,
+                    int(attempt_count),
+                    latest_event_id,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
 
     def list_dual_agent_workflow_steps(
         self,
@@ -5751,14 +5758,15 @@ class State:
                       mode: str | None = None,
                       event_id: int | None = None) -> int:
         safe = redact(output)
-        cur = self._conn.execute(
-            """INSERT INTO verdicts(run_id, event_id, phase, layer, model, output_json, latency_ms, mode, created_at)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, event_id, phase, layer, model, json.dumps(safe),
-             latency_ms, mode, int(time.time())),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO verdicts(run_id, event_id, phase, layer, model, output_json, latency_ms, mode, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, event_id, phase, layer, model, json.dumps(safe),
+                 latency_ms, mode, int(time.time())),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     def commit_decision_verdict(
         self,
@@ -5865,49 +5873,52 @@ class State:
                             response: dict, latency_ms: int, mode: str) -> int:
         safe_payload = redact(payload)
         safe_response = redact(response)
-        cur = self._conn.execute(
-            """INSERT INTO hook_requests
-               (run_id, hook_event, tool_name, payload_json, response_json,
-                latency_ms, mode, created_at)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, hook_event, tool_name, json.dumps(safe_payload),
-             json.dumps(safe_response), latency_ms, mode, int(time.time())),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO hook_requests
+                   (run_id, hook_event, tool_name, payload_json, response_json,
+                    latency_ms, mode, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, hook_event, tool_name, json.dumps(safe_payload),
+                 json.dumps(safe_response), latency_ms, mode, int(time.time())),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     # --- actions ledger ---
     def record_action(self, *, run_id: str, action_type: str,
                        requested_by: str, payload: dict,
                        status: str = "pending") -> int:
         safe = redact(payload)
-        cur = self._conn.execute(
-            """INSERT INTO actions(run_id, action_type, requested_by, status, payload_json, created_at)
-               VALUES(?, ?, ?, ?, ?, ?)""",
-            (run_id, action_type, requested_by, status,
-             json.dumps(safe), int(time.time())),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO actions(run_id, action_type, requested_by, status, payload_json, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?)""",
+                (run_id, action_type, requested_by, status,
+                 json.dumps(safe), int(time.time())),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     def complete_action(self, action_id: int, status: str,
                          payload_update: dict | None = None) -> None:
-        if payload_update is not None:
-            row = self._conn.execute(
-                "SELECT payload_json FROM actions WHERE id=?", (action_id,)
-            ).fetchone()
-            existing = json.loads(row["payload_json"]) if row else {}
-            existing.update(redact(payload_update))
-            self._conn.execute(
-                "UPDATE actions SET status=?, payload_json=?, completed_at=? WHERE id=?",
-                (status, json.dumps(existing), int(time.time()), action_id),
-            )
-        else:
-            self._conn.execute(
-                "UPDATE actions SET status=?, completed_at=? WHERE id=?",
-                (status, int(time.time()), action_id),
-            )
-        self._conn.commit()
+        with self._write_lock:
+            if payload_update is not None:
+                row = self._conn.execute(
+                    "SELECT payload_json FROM actions WHERE id=?", (action_id,)
+                ).fetchone()
+                existing = json.loads(row["payload_json"]) if row else {}
+                existing.update(redact(payload_update))
+                self._conn.execute(
+                    "UPDATE actions SET status=?, payload_json=?, completed_at=? WHERE id=?",
+                    (status, json.dumps(existing), int(time.time()), action_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE actions SET status=?, completed_at=? WHERE id=?",
+                    (status, int(time.time()), action_id),
+                )
+            self._conn.commit()
 
     def mark_action_resume_requested(
         self,
@@ -5915,23 +5926,24 @@ class State:
         *,
         payload_update: dict | None = None,
     ) -> None:
-        row = self._conn.execute(
-            "SELECT payload_json FROM actions WHERE id=?", (action_id,)
-        ).fetchone()
-        existing = json.loads(row["payload_json"]) if row else {}
-        if payload_update is not None:
-            existing.update(redact(payload_update))
-        now = int(time.time())
-        self._conn.execute(
-            """UPDATE actions
-                  SET status='continue_requested',
-                      payload_json=?,
-                      resume_requested_at=?,
-                      completed_at=NULL
-                WHERE id=?""",
-            (json.dumps(existing), now, action_id),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT payload_json FROM actions WHERE id=?", (action_id,)
+            ).fetchone()
+            existing = json.loads(row["payload_json"]) if row else {}
+            if payload_update is not None:
+                existing.update(redact(payload_update))
+            now = int(time.time())
+            self._conn.execute(
+                """UPDATE actions
+                      SET status='continue_requested',
+                          payload_json=?,
+                          resume_requested_at=?,
+                          completed_at=NULL
+                    WHERE id=?""",
+                (json.dumps(existing), now, action_id),
+            )
+            self._conn.commit()
 
     def claim_resume_signal(
         self,
@@ -5940,36 +5952,37 @@ class State:
         task_id: str,
         action_type: str = "dual_agent_gate_deadlock",
     ) -> dict[str, Any] | None:
-        rows = self._conn.execute(
-            """SELECT * FROM actions
-               WHERE run_id=? AND action_type=? AND status='continue_requested'
-               ORDER BY resume_requested_at ASC, id ASC""",
-            (run_id, action_type),
-        ).fetchall()
-        for row in rows:
-            payload = json.loads(row["payload_json"] or "{}")
-            if str(payload.get("task_id") or "") != task_id:
-                continue
-            payload["resumed_at"] = int(time.time())
-            cur = self._conn.execute(
-                """UPDATE actions
-                      SET status='resumed',
-                          payload_json=?,
-                          completed_at=?
-                    WHERE id=? AND status='continue_requested'""",
-                (json.dumps(redact(payload)), int(time.time()), row["id"]),
-            )
-            if cur.rowcount:
-                self._conn.commit()
-                return {
-                    "id": row["id"],
-                    "run_id": row["run_id"],
-                    "action_type": row["action_type"],
-                    "status": "resumed",
-                    "payload": payload,
-                }
-        self._conn.commit()
-        return None
+        with self._write_lock:
+            rows = self._conn.execute(
+                """SELECT * FROM actions
+                   WHERE run_id=? AND action_type=? AND status='continue_requested'
+                   ORDER BY resume_requested_at ASC, id ASC""",
+                (run_id, action_type),
+            ).fetchall()
+            for row in rows:
+                payload = json.loads(row["payload_json"] or "{}")
+                if str(payload.get("task_id") or "") != task_id:
+                    continue
+                payload["resumed_at"] = int(time.time())
+                cur = self._conn.execute(
+                    """UPDATE actions
+                          SET status='resumed',
+                              payload_json=?,
+                              completed_at=?
+                        WHERE id=? AND status='continue_requested'""",
+                    (json.dumps(redact(payload)), int(time.time()), row["id"]),
+                )
+                if cur.rowcount:
+                    self._conn.commit()
+                    return {
+                        "id": row["id"],
+                        "run_id": row["run_id"],
+                        "action_type": row["action_type"],
+                        "status": "resumed",
+                        "payload": payload,
+                    }
+            self._conn.commit()
+            return None
 
     def claim_retry_signal(
         self,
@@ -5978,36 +5991,37 @@ class State:
         task_id: str,
         action_type: str = "dual_agent_validation_failure",
     ) -> dict[str, Any] | None:
-        rows = self._conn.execute(
-            """SELECT * FROM actions
-               WHERE run_id=? AND action_type=? AND status='retry_requested'
-               ORDER BY completed_at ASC, id ASC""",
-            (run_id, action_type),
-        ).fetchall()
-        for row in rows:
-            payload = json.loads(row["payload_json"] or "{}")
-            if str(payload.get("task_id") or "") != task_id:
-                continue
-            payload["retried_at"] = int(time.time())
-            cur = self._conn.execute(
-                """UPDATE actions
-                      SET status='retried',
-                          payload_json=?,
-                          completed_at=?
-                    WHERE id=? AND status='retry_requested'""",
-                (json.dumps(redact(payload)), int(time.time()), row["id"]),
-            )
-            if cur.rowcount:
-                self._conn.commit()
-                return {
-                    "id": row["id"],
-                    "run_id": row["run_id"],
-                    "action_type": row["action_type"],
-                    "status": "retried",
-                    "payload": payload,
-                }
-        self._conn.commit()
-        return None
+        with self._write_lock:
+            rows = self._conn.execute(
+                """SELECT * FROM actions
+                   WHERE run_id=? AND action_type=? AND status='retry_requested'
+                   ORDER BY completed_at ASC, id ASC""",
+                (run_id, action_type),
+            ).fetchall()
+            for row in rows:
+                payload = json.loads(row["payload_json"] or "{}")
+                if str(payload.get("task_id") or "") != task_id:
+                    continue
+                payload["retried_at"] = int(time.time())
+                cur = self._conn.execute(
+                    """UPDATE actions
+                          SET status='retried',
+                              payload_json=?,
+                              completed_at=?
+                        WHERE id=? AND status='retry_requested'""",
+                    (json.dumps(redact(payload)), int(time.time()), row["id"]),
+                )
+                if cur.rowcount:
+                    self._conn.commit()
+                    return {
+                        "id": row["id"],
+                        "run_id": row["run_id"],
+                        "action_type": row["action_type"],
+                        "status": "retried",
+                        "payload": payload,
+                    }
+            self._conn.commit()
+            return None
 
     def stale_paused_dual_agent_actions(
         self,
@@ -6045,61 +6059,65 @@ class State:
         *,
         sent_at: int | None = None,
     ) -> None:
-        row = self._conn.execute(
-            "SELECT payload_json FROM actions WHERE id=?", (action_id,)
-        ).fetchone()
-        existing = json.loads(row["payload_json"]) if row else {}
-        existing["paused_digest_sent_at"] = int(
-            sent_at if sent_at is not None else time.time()
-        )
-        self._conn.execute(
-            "UPDATE actions SET payload_json=? WHERE id=?",
-            (json.dumps(redact(existing)), action_id),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT payload_json FROM actions WHERE id=?", (action_id,)
+            ).fetchone()
+            existing = json.loads(row["payload_json"]) if row else {}
+            existing["paused_digest_sent_at"] = int(
+                sent_at if sent_at is not None else time.time()
+            )
+            self._conn.execute(
+                "UPDATE actions SET payload_json=? WHERE id=?",
+                (json.dumps(redact(existing)), action_id),
+            )
+            self._conn.commit()
 
     # --- decision labels ---
     def label_decision(self, *, verdict_id: int, label: str, source: str,
                         notes: str | None = None) -> None:
-        self._conn.execute(
-            """INSERT INTO decision_labels(verdict_id, label, source, notes, created_at)
-               VALUES(?, ?, ?, ?, ?)""",
-            (verdict_id, label, source, notes, int(time.time())),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO decision_labels(verdict_id, label, source, notes, created_at)
+                   VALUES(?, ?, ?, ?, ?)""",
+                (verdict_id, label, source, notes, int(time.time())),
+            )
+            self._conn.commit()
 
     # --- telegram asks ---
     def create_ask(self, run_id: str, question: str, options: list[str],
                     nonce: str | None = None, expires_at: int | None = None) -> int:
-        cur = self._conn.execute(
-            """INSERT INTO telegram_asks(run_id, question, options_json, status, nonce, asked_at, expires_at)
-               VALUES(?, ?, ?, 'pending', ?, ?, ?)""",
-            (run_id, question, json.dumps(options), nonce,
-             int(time.time()), expires_at),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO telegram_asks(run_id, question, options_json, status, nonce, asked_at, expires_at)
+                   VALUES(?, ?, ?, 'pending', ?, ?, ?)""",
+                (run_id, question, json.dumps(options), nonce,
+                 int(time.time()), expires_at),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     def answer_ask(self, ask_id: int, answer: str, nonce: str | None = None) -> bool:
         """Returns True if answered, False on nonce mismatch / expired."""
-        row = self._conn.execute(
-            "SELECT * FROM telegram_asks WHERE ask_id=?", (ask_id,)
-        ).fetchone()
-        if not row or row["status"] != "pending":
-            return False
-        if row["nonce"] and (nonce is None or row["nonce"] != nonce):
-            return False
-        if row["expires_at"] is not None and int(time.time()) > row["expires_at"]:
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT * FROM telegram_asks WHERE ask_id=?", (ask_id,)
+            ).fetchone()
+            if not row or row["status"] != "pending":
+                return False
+            if row["nonce"] and (nonce is None or row["nonce"] != nonce):
+                return False
+            if row["expires_at"] is not None and int(time.time()) > row["expires_at"]:
+                self._conn.execute(
+                    "UPDATE telegram_asks SET status='expired' WHERE ask_id=?", (ask_id,))
+                self._conn.commit()
+                return False
             self._conn.execute(
-                "UPDATE telegram_asks SET status='expired' WHERE ask_id=?", (ask_id,))
+                "UPDATE telegram_asks SET status='answered', answer=?, answered_at=? WHERE ask_id=?",
+                (answer, int(time.time()), ask_id),
+            )
             self._conn.commit()
-            return False
-        self._conn.execute(
-            "UPDATE telegram_asks SET status='answered', answer=?, answered_at=? WHERE ask_id=?",
-            (answer, int(time.time()), ask_id),
-        )
-        self._conn.commit()
-        return True
+            return True
 
     def get_ask(self, ask_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
@@ -6124,15 +6142,16 @@ class State:
                                model: str | None = None) -> int:
         safe_message = redact(message_text)
         safe_request = redact(request or {})
-        cur = self._conn.execute(
-            """INSERT INTO supervisor_turns(
-                chat_id, message_text, request_json, response_text, status,
-                model, tool_outputs_json, proposed_actions_json, created_at)
-               VALUES(?, ?, ?, NULL, 'running', ?, '[]', '[]', ?)""",
-            (chat_id, safe_message, json.dumps(safe_request), model, int(time.time())),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO supervisor_turns(
+                    chat_id, message_text, request_json, response_text, status,
+                    model, tool_outputs_json, proposed_actions_json, created_at)
+                   VALUES(?, ?, ?, NULL, 'running', ?, '[]', '[]', ?)""",
+                (chat_id, safe_message, json.dumps(safe_request), model, int(time.time())),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     def record_supervisor_notification(
         self,
@@ -6153,26 +6172,27 @@ class State:
         supervisor turn.
         """
         safe_request = redact(request or {})
-        cur = self._conn.execute(
-            """INSERT INTO supervisor_turns(
-                chat_id, message_text, request_json, response_text, status,
-                model, tool_outputs_json, proposed_actions_json, created_at,
-                completed_at)
-               VALUES(?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)""",
-            (
-                chat_id,
-                redact(message_text),
-                json.dumps(safe_request),
-                redact(response_text),
-                model,
-                json.dumps(redact(tool_outputs or [])),
-                json.dumps(redact(proposed_actions or [])),
-                int(time.time()),
-                int(time.time()),
-            ),
-        )
-        self._conn.commit()
-        return cur.lastrowid or 0
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT INTO supervisor_turns(
+                    chat_id, message_text, request_json, response_text, status,
+                    model, tool_outputs_json, proposed_actions_json, created_at,
+                    completed_at)
+                   VALUES(?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)""",
+                (
+                    chat_id,
+                    redact(message_text),
+                    json.dumps(safe_request),
+                    redact(response_text),
+                    model,
+                    json.dumps(redact(tool_outputs or [])),
+                    json.dumps(redact(proposed_actions or [])),
+                    int(time.time()),
+                    int(time.time()),
+                ),
+            )
+            self._conn.commit()
+            return cur.lastrowid or 0
 
     def find_supervisor_notification(
         self,
@@ -6202,22 +6222,23 @@ class State:
                                  status: str, model: str | None = None,
                                  tool_outputs: list[dict] | None = None,
                                  proposed_actions: list[dict] | None = None) -> None:
-        self._conn.execute(
-            """UPDATE supervisor_turns
-               SET response_text=?, status=?, model=?, tool_outputs_json=?,
-                   proposed_actions_json=?, completed_at=?
-               WHERE id=?""",
-            (
-                redact(response_text),
-                status,
-                model,
-                json.dumps(redact(tool_outputs or [])),
-                json.dumps(redact(proposed_actions or [])),
-                int(time.time()),
-                turn_id,
-            ),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """UPDATE supervisor_turns
+                   SET response_text=?, status=?, model=?, tool_outputs_json=?,
+                       proposed_actions_json=?, completed_at=?
+                   WHERE id=?""",
+                (
+                    redact(response_text),
+                    status,
+                    model,
+                    json.dumps(redact(tool_outputs or [])),
+                    json.dumps(redact(proposed_actions or [])),
+                    int(time.time()),
+                    turn_id,
+                ),
+            )
+            self._conn.commit()
 
     def get_supervisor_turn(self, turn_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
@@ -6282,59 +6303,60 @@ class State:
         increment_turn_count: bool = False,
     ) -> None:
         now = int(time.time())
-        existing = self.get_supervisor_conversation(chat_id)
-        if existing is None:
-            self._conn.execute(
-                """INSERT INTO supervisor_conversations(
-                       chat_id, claude_session_id, summary, active_run_id,
-                       turn_count, created_at, updated_at)
-                   VALUES(?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    chat_id,
-                    claude_session_id,
-                    redact(summary or ""),
-                    active_run_id,
-                    self._supervisor_turn_count(chat_id) if increment_turn_count else 0,
-                    now,
-                    now,
-                ),
-            )
-        else:
-            next_session = (
-                claude_session_id
-                if claude_session_id is not None
-                else existing["claude_session_id"]
-            )
-            next_summary = (
-                redact(summary)
-                if summary is not None
-                else existing["summary"]
-            )
-            next_active_run = (
-                active_run_id
-                if active_run_id is not None
-                else existing["active_run_id"]
-            )
-            next_count = int(existing["turn_count"] or 0) + (
-                1 if increment_turn_count else 0
-            )
-            if increment_turn_count:
-                next_count = max(next_count, self._supervisor_turn_count(chat_id))
-            self._conn.execute(
-                """UPDATE supervisor_conversations
-                      SET claude_session_id=?, summary=?, active_run_id=?,
-                          turn_count=?, updated_at=?
-                    WHERE chat_id=?""",
-                (
-                    next_session,
-                    next_summary,
-                    next_active_run,
-                    next_count,
-                    now,
-                    chat_id,
-                ),
-            )
-        self._conn.commit()
+        with self._write_lock:
+            existing = self.get_supervisor_conversation(chat_id)
+            if existing is None:
+                self._conn.execute(
+                    """INSERT INTO supervisor_conversations(
+                           chat_id, claude_session_id, summary, active_run_id,
+                           turn_count, created_at, updated_at)
+                       VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        chat_id,
+                        claude_session_id,
+                        redact(summary or ""),
+                        active_run_id,
+                        self._supervisor_turn_count(chat_id) if increment_turn_count else 0,
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                next_session = (
+                    claude_session_id
+                    if claude_session_id is not None
+                    else existing["claude_session_id"]
+                )
+                next_summary = (
+                    redact(summary)
+                    if summary is not None
+                    else existing["summary"]
+                )
+                next_active_run = (
+                    active_run_id
+                    if active_run_id is not None
+                    else existing["active_run_id"]
+                )
+                next_count = int(existing["turn_count"] or 0) + (
+                    1 if increment_turn_count else 0
+                )
+                if increment_turn_count:
+                    next_count = max(next_count, self._supervisor_turn_count(chat_id))
+                self._conn.execute(
+                    """UPDATE supervisor_conversations
+                          SET claude_session_id=?, summary=?, active_run_id=?,
+                              turn_count=?, updated_at=?
+                        WHERE chat_id=?""",
+                    (
+                        next_session,
+                        next_summary,
+                        next_active_run,
+                        next_count,
+                        now,
+                        chat_id,
+                    ),
+                )
+            self._conn.commit()
 
     def _supervisor_turn_count(self, chat_id: str) -> int:
         row = self._conn.execute(

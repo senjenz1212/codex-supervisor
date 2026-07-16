@@ -970,6 +970,65 @@ def test_decision_validation_requires_exact_stale_grade_acknowledgement(
     assert current.accepted is True
 
 
+def test_decision_validation_checks_resolution_even_without_invalidations(
+    tmp_path: Path,
+) -> None:
+    frozen = _frozen_result()
+    run = RunEnvelopeRef.from_frozen_result(
+        run_id="run-1",
+        run_envelope_hash=_hash("run-envelope"),
+        frozen_result=frozen,
+    )
+
+    with GradeBook(tmp_path / "grades.db") as gradebook:
+        revision = gradebook.append_grade(
+            run=run,
+            grade=_grade(
+                frozen,
+                version="1.0",
+                score=1.0,
+                evidence={"tests": "passed"},
+            ),
+            verifier_config_hash=_hash("config-1.0"),
+        )
+        _commit_completed(gradebook, revision, label="current")
+
+        unknown_resolution = gradebook.validate_decision([
+            DecisionGradeCitation(
+                revision.grade_id,
+                revision.revision_hash,
+                resolution_grade_id="grade-that-does-not-exist",
+                resolution_revision_hash=_hash("missing-resolution"),
+            )
+        ])
+        mismatched_resolution = gradebook.validate_decision([
+            DecisionGradeCitation(
+                revision.grade_id,
+                revision.revision_hash,
+                resolution_grade_id=revision.grade_id,
+                resolution_revision_hash=_hash("wrong-resolution-hash"),
+            )
+        ])
+        self_resolution = gradebook.validate_decision([
+            DecisionGradeCitation(
+                revision.grade_id,
+                revision.revision_hash,
+                resolution_grade_id=revision.grade_id,
+                resolution_revision_hash=revision.revision_hash,
+            )
+        ])
+
+    assert unknown_resolution.accepted is False
+    assert [blocker.code for blocker in unknown_resolution.blockers] == [
+        "unknown_grade_resolution"
+    ]
+    assert mismatched_resolution.accepted is False
+    assert [blocker.code for blocker in mismatched_resolution.blockers] == [
+        "grade_resolution_hash_mismatch"
+    ]
+    assert self_resolution.accepted is True
+
+
 def test_explicit_invalidation_is_append_only_and_blocks_unacknowledged_use(
     tmp_path: Path,
 ) -> None:

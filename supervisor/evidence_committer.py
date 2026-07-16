@@ -524,7 +524,7 @@ def reduce_tracer_evidence_projection(
     lets the projection itself live inside that manifest without a recursive
     self-hash, while authoritative replay still consumes the complete chain.
     """
-    current = json.loads(canonical_json_bytes(projection).decode("utf-8"))
+    current = dict(projection)
     run_id = str(event.get("run_id") or "")
     if run_id != current.get("aggregate_run_id"):
         raise EvidenceCommitIntegrityError(
@@ -572,6 +572,7 @@ def reduce_tracer_evidence_projection(
                 "tracer assignment projection lacks canonical identity"
             )
         key = "|".join(key_parts)
+        current["assignments"] = dict(current["assignments"])
         _insert_projection_record(
             current["assignments"],
             key,
@@ -589,6 +590,7 @@ def reduce_tracer_evidence_projection(
         )
     elif kind == "tracer.execution.joined":
         execution_id = str(payload.get("execution_id") or "")
+        current["executions"] = dict(current["executions"])
         _insert_projection_record(
             current["executions"],
             execution_id,
@@ -658,8 +660,11 @@ def reduce_tracer_evidence_projection(
         raise EvidenceCommitIntegrityError(
             f"tracer projection event {kind!r} lacks an event hash"
         )
-    current["recognized_event_count"] += 1
-    current["recognized_event_hashes"].append(event_hash)
+    current["recognized_event_count"] = current["recognized_event_count"] + 1
+    current["recognized_event_hashes"] = [
+        *current["recognized_event_hashes"],
+        event_hash,
+    ]
     return current
 
 
@@ -891,7 +896,6 @@ class EvidenceCommitter:
                 request,
                 checkpoint_streams,
             )
-            require_local_latest = False
         else:
             (
                 checkpoint_refs,
@@ -902,7 +906,7 @@ class EvidenceCommitter:
                 detail=checkpoint_detail,
                 expected_streams=checkpoint_streams,
             )
-            require_local_latest = False
+        require_local_latest = False
         verifications, projection = self._verify_authoritatively(
             request=request,
             materialization=materialization,
@@ -2274,13 +2278,11 @@ class EvidenceCommitter:
             )
             return materialization
 
-        self._verify_precommit_streams(
+        precommit_streams = self._verify_precommit_streams(
             request=request,
             precommit_heads=precommit_heads,
         )
-        aggregate_events = self._read_all_events(
-            request.aggregate_run_id
-        )
+        aggregate_events = precommit_streams[request.aggregate_run_id]
         aggregate_head = precommit_heads[request.aggregate_run_id]
         projection = rebuild_projection(
             aggregate_events,
@@ -4228,28 +4230,43 @@ class EvidenceCommitter:
         *,
         request: EvidenceCommitRequest,
         precommit_heads: Mapping[str, Any],
-    ) -> None:
-        if self._find_manifest_event(request) is not None:
+    ) -> dict[str, list[dict[str, Any]]]:
+        streams = {
+            run_id: self._read_all_events(run_id)
+            for run_id in request.registered_run_ids
+        }
+        if (
+            self._find_manifest_event_in(
+                streams[request.aggregate_run_id],
+                request,
+            )
+            is not None
+        ):
             raise EvidenceCommitIntegrityError(
                 "manifest event exists before the manifest phase was reconciled"
             )
         for run_id in request.registered_run_ids:
-            self._assert_head_matches(run_id, precommit_heads[run_id])
+            self._assert_head_matches_events(
+                run_id,
+                streams[run_id],
+                precommit_heads[run_id],
+            )
+        return streams
 
     def _verify_precommit_streams(
         self,
         *,
         request: EvidenceCommitRequest,
         precommit_heads: Mapping[str, Any],
-    ) -> None:
+    ) -> dict[str, list[dict[str, Any]]]:
         """Verify the frozen cut before signing its detached manifest."""
-        self._assert_precommit_streams(
+        streams = self._assert_precommit_streams(
             request=request,
             precommit_heads=precommit_heads,
         )
         for run_id in request.registered_run_ids:
             expected = precommit_heads[run_id]
-            events = self._read_all_events(run_id)
+            events = streams[run_id]
             verification = verify_event_chain(
                 events,
                 expected_head_hash=str(expected["head_event_hash"]),
@@ -4266,6 +4283,7 @@ class EvidenceCommitter:
                     "frozen evidence stream verification failed for "
                     f"{run_id}: {verification.to_dict()}"
                 )
+        return streams
 
     def _verify_append_only_event_suffixes(
         self,
@@ -4345,7 +4363,18 @@ class EvidenceCommitter:
         run_id: str,
         expected: Mapping[str, Any],
     ) -> None:
-        events = self._read_all_events(run_id)
+        self._assert_head_matches_events(
+            run_id,
+            self._read_all_events(run_id),
+            expected,
+        )
+
+    def _assert_head_matches_events(
+        self,
+        run_id: str,
+        events: Sequence[Mapping[str, Any]],
+        expected: Mapping[str, Any],
+    ) -> None:
         if not events:
             raise EvidenceCommitIntegrityError(
                 f"evidence stream disappeared: {run_id}"
@@ -4364,9 +4393,19 @@ class EvidenceCommitter:
         self,
         request: EvidenceCommitRequest,
     ) -> dict[str, Any] | None:
+        return self._find_manifest_event_in(
+            self._read_all_events(request.aggregate_run_id),
+            request,
+        )
+
+    def _find_manifest_event_in(
+        self,
+        events: Sequence[Mapping[str, Any]],
+        request: EvidenceCommitRequest,
+    ) -> dict[str, Any] | None:
         matches = [
             event
-            for event in self._read_all_events(request.aggregate_run_id)
+            for event in events
             if event["kind"] == EVIDENCE_COMMIT_EVENT_KIND
             and isinstance(event.get("payload"), Mapping)
             and event["payload"].get("commit_id") == request.commit_id

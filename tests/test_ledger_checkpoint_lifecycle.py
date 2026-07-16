@@ -609,3 +609,122 @@ def test_unconfigured_state_is_explicitly_diagnostic_only(tmp_path):
 def test_checkpoint_policy_requires_a_bounded_positive_interval(interval):
     with pytest.raises(ValueError, match="max_events_between_checkpoints"):
         LedgerCheckpointPolicy(max_events_between_checkpoints=interval)
+
+
+class _RacingTrustedPins(_IndependentTrustedPins):
+    def __init__(self) -> None:
+        super().__init__()
+        self.before_pin = None
+
+    def pin(self, identity: Mapping[str, Any]) -> None:
+        hook, self.before_pin = self.before_pin, None
+        if hook is not None:
+            hook()
+        super().pin(identity)
+
+
+def _racing_ledger(tmp_path):
+    ledger = State(str(tmp_path / "ledger.db"))
+    for index in range(3):
+        ledger.write_event(
+            run_id="race-run",
+            source="test",
+            kind="event_msg",
+            payload={"index": index},
+            ts=400 + index,
+        )
+    return ledger._event_ledger_rows("race-run")
+
+
+def test_lagging_writer_tolerates_newer_covering_trusted_pin(tmp_path):
+    rows = _racing_ledger(tmp_path)
+    key = _ExternallyManagedTestKey()
+    store = LedgerCheckpointStore(tmp_path / "external-checkpoints")
+    pins = _RacingTrustedPins()
+    lagging = LedgerCheckpointCoordinator(
+        signer=key,
+        verifier=key,
+        checkpoint_store=store,
+        trusted_pin_store=pins,
+        policy=LedgerCheckpointPolicy(max_events_between_checkpoints=1),
+    )
+    concurrent = LedgerCheckpointCoordinator(
+        signer=key,
+        verifier=key,
+        checkpoint_store=store,
+        trusted_pin_store=pins,
+        policy=LedgerCheckpointPolicy(max_events_between_checkpoints=1),
+    )
+
+    def concurrent_publication():
+        concurrent.coordinate_event(
+            run_id="race-run",
+            event_id=rows[2]["event_id"],
+            event_count=3,
+            event_kind="event_msg",
+            events_loader=lambda: rows,
+        )
+
+    pins.before_pin = concurrent_publication
+    persisted = lagging.coordinate_event(
+        run_id="race-run",
+        event_id=rows[1]["event_id"],
+        event_count=2,
+        event_kind="event_msg",
+        events_loader=lambda: rows[:2],
+    )
+
+    assert persisted is not None
+    assert persisted.checkpoint["predicate"]["event_count"] == 2
+    latest = pins.latest("race-run")
+    assert latest is not None
+    assert latest["event_count"] == 3
+    verification = lagging.verify(rows, expected_run_id="race-run")
+    assert verification.valid is True
+    assert verification.authoritative_head_verified is True
+
+
+def test_lagging_writer_rejects_newer_pin_missing_from_checkpoint_store(
+    tmp_path,
+):
+    rows = _racing_ledger(tmp_path)
+    key = _ExternallyManagedTestKey()
+    store = LedgerCheckpointStore(tmp_path / "external-checkpoints")
+    pins = _RacingTrustedPins()
+    lagging = LedgerCheckpointCoordinator(
+        signer=key,
+        verifier=key,
+        checkpoint_store=store,
+        trusted_pin_store=pins,
+        policy=LedgerCheckpointPolicy(max_events_between_checkpoints=1),
+    )
+    foreign_store = LedgerCheckpointStore(tmp_path / "foreign-checkpoints")
+    foreign = LedgerCheckpointCoordinator(
+        signer=key,
+        verifier=key,
+        checkpoint_store=foreign_store,
+        trusted_pin_store=pins,
+        policy=LedgerCheckpointPolicy(max_events_between_checkpoints=1),
+    )
+
+    def foreign_publication():
+        foreign.coordinate_event(
+            run_id="race-run",
+            event_id=rows[2]["event_id"],
+            event_count=3,
+            event_kind="event_msg",
+            events_loader=lambda: rows,
+        )
+
+    pins.before_pin = foreign_publication
+    with pytest.raises(
+        CheckpointPersistenceError,
+        match="trusted_pin_persistence",
+    ):
+        lagging.coordinate_event(
+            run_id="race-run",
+            event_id=rows[1]["event_id"],
+            event_count=2,
+            event_kind="event_msg",
+            events_loader=lambda: rows[:2],
+        )

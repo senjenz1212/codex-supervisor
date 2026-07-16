@@ -496,3 +496,49 @@ def test_trace_envelope_assigns_stable_tool_call_ids_for_duplicate_references():
     second_call = second["trace_envelope"]["tool_calls"][0]
     assert first_call["duration_us"] == 0
     assert first_call["tool_call_id"] == second_call["tool_call_id"]
+
+
+def test_trace_envelope_disambiguates_duration_only_tool_calls():
+    stamped = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "tool_calls": [
+                {"name": "run_probe", "status": "recorded", "duration_ms": 5},
+                {"name": "run_probe", "status": "recorded", "duration_ms": 5},
+            ],
+        },
+    )
+
+    calls = stamped["trace_envelope"]["tool_calls"]
+    assert len(calls) == 2
+    assert calls[0]["tool_call_id"] != calls[1]["tool_call_id"]
+    assert all(call["duration_ms"] == 5 for call in calls)
+
+
+def test_trace_envelope_does_not_inflate_duration_for_ended_only_tool_calls():
+    ended_at_ms = 1_750_000_000_000
+    stamped = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "tool_calls": [
+                {"name": "run_probe", "status": "recorded", "ended_at_ms": ended_at_ms},
+                {"name": "run_probe", "status": "recorded", "ended_at_ms": ended_at_ms},
+            ],
+        },
+    )
+
+    calls = stamped["trace_envelope"]["tool_calls"]
+    assert len(calls) == 2
+    assert calls[0]["tool_call_id"] != calls[1]["tool_call_id"]
+    for call in calls:
+        assert call["duration_ms"] == 0
+        assert call["duration_us"] == 0
+        assert call["ended_at_ms"] == ended_at_ms

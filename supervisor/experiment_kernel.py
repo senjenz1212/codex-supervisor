@@ -3074,7 +3074,7 @@ class ExperimentKernel:
             or completed.grade is None
             or completed.grade_hash is None
             or completed.completion_hash is None
-            or dict(completed.grade) != canonical_grade
+            or _thaw_json_value(completed.grade) != canonical_grade
             or completed.grade_hash != _sha256_json(canonical_grade)
         ):
             raise RuntimeError(
@@ -4499,7 +4499,7 @@ class ExperimentKernel:
             != outcome.grade.verifier_version
             or attempt.spec.verifier_hash != outcome.grade.verifier_hash
             or attempt.grade is None
-            or dict(attempt.grade) != canonical_grade
+            or _thaw_json_value(attempt.grade) != canonical_grade
             or attempt.grade_hash != outcome.verification_grade_hash
             or attempt.grade_hash != _sha256_json(canonical_grade)
             or attempt.completion_hash

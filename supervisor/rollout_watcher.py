@@ -287,6 +287,20 @@ class RolloutWatcher:
         start = self.offsets.get(path)
         if start is None:
             start = self.state.get_tail_offset(str(path))
+        if size < start:
+            self._record_health(
+                subsystem="rollout_watcher.drain",
+                status="degraded",
+                reason="rollout_truncated_or_replaced",
+                details={
+                    "path": str(path),
+                    "tracked_offset": start,
+                    "observed_size": size,
+                },
+            )
+            start = 0
+            self.offsets[path] = 0
+            self.state.set_tail_offset(str(path), 0)
         if size <= start:
             return
         try:

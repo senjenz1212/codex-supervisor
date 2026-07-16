@@ -159,6 +159,81 @@ async def test_drift_detector_l1_never_touch_is_severe(tmp_path):
     ), f"never_touch finding missing or wrong severity; got findings={findings}"
 
 
+class _FailingOpenAI:
+    async def embed(self, *, model, texts):
+        import asyncio
+        raise asyncio.TimeoutError("embedding backend unreachable")
+
+
+class _FailingModel:
+    async def complete(self, request):
+        import asyncio
+        raise asyncio.TimeoutError("model backend unreachable")
+
+
+@pytest.mark.asyncio
+async def test_transport_failures_still_escalate_heuristic_signals(tmp_path):
+    """L2/L3 transport outages must not swallow already-fired heuristic signals."""
+    db_path = str(tmp_path / "test.db")
+    state = _make_state(tmp_path)
+    state.register_run(
+        run_id="run-fail",
+        session_id="sess-fail",
+        rollout_path="/tmp",
+        task="Refactor auth",
+        scope=ScopeContract(
+            allowed_paths=("src/auth/",),
+            related_paths=(),
+            protected_paths=(),
+            never_touch_patterns=(),
+        ),
+    )
+    # Three identical agent messages -> loop_repetition heuristic fires
+    # (and provides non-empty L2 messages, so the embed call is attempted).
+    for _ in range(3):
+        state.write_event(run_id="run-fail", source="t", kind="agent.message",
+                          payload={"text": "retrying the same thing"})
+    # One out-of-scope write -> scope_violation with threshold 1.
+    state.write_event(run_id="run-fail", source="t", kind="file_change",
+                      payload={"path": "src/billing/charges.py"})
+
+    cfg = _min_config(db_path)
+    cfg.drift.l1_scope_violation_threshold = 1
+
+    from supervisor.drift_detector import DriftDetector
+    detector = DriftDetector(
+        cfg, state,
+        model_client=_FailingModel(),
+        embedding_client=_FailingOpenAI(),
+    )
+
+    run = state.active_runs()[0]
+    await detector._check_one(run)
+
+    rows = list(state._conn.execute(
+        "SELECT * FROM decision_outbox WHERE run_id='run-fail' "
+        "AND kind='adjudicate_drift'"
+    ).fetchall())
+    assert rows, "heuristic signals must still escalate to L4 on transport failure"
+    payload = json.loads(rows[0]["payload_json"])
+    evidence = payload["evidence"]
+    assert "loop_repetition" in evidence["signals"]
+    assert "scope_violation" in evidence["signals"]
+    assert evidence["similarity"] is None
+    assert evidence["plan_status"] is None
+
+    l2 = list(state._conn.execute(
+        "SELECT * FROM verdicts WHERE run_id='run-fail' AND layer='L2'"
+    ).fetchall())
+    assert l2
+    assert json.loads(l2[0]["output_json"]).get("reason") == "embedding_check_failed"
+    l3 = list(state._conn.execute(
+        "SELECT * FROM verdicts WHERE run_id='run-fail' AND layer='L3'"
+    ).fetchall())
+    assert l3
+    assert json.loads(l3[0]["output_json"]).get("reason") == "plan_progress_check_failed"
+
+
 @pytest.mark.asyncio
 async def test_drift_detector_l2_uses_intent_summaries_not_raw_messages(tmp_path):
     """L2 should embed derived intent summaries, not noisy raw message/tool logs."""

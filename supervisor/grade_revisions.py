@@ -1129,19 +1129,6 @@ class GradeBook:
                     )
                 )
                 continue
-            if not (
-                revision.verifier_id
-                and revision.verifier_version
-                and revision.verifier_config_hash
-                and revision.verifier_implementation_hash
-            ):
-                blockers.append(
-                    DecisionGradeBlocker(
-                        code="grade_missing_verifier_provenance",
-                        grade_id=citation.grade_id,
-                        detail="a scored grade must pin verifier provenance",
-                    )
-                )
             terminal_blocker = self._terminal_commit_blocker(
                 revision
             )
@@ -1192,7 +1179,7 @@ class GradeBook:
                     )
                 )
                 continue
-            if not actual:
+            if not actual and citation.resolution_grade_id is None:
                 continue
             if (
                 citation.resolution_grade_id is None
@@ -1614,6 +1601,9 @@ class GradeBook:
                   replacement_revision_hash TEXT,
                   recorded_at_ms INTEGER NOT NULL
                 );
+
+                CREATE INDEX IF NOT EXISTS grade_invalidations_by_grade
+                  ON grade_invalidations(grade_id);
 
                 CREATE TABLE IF NOT EXISTS grade_terminal_commits (
                   commit_sequence INTEGER PRIMARY KEY AUTOINCREMENT,

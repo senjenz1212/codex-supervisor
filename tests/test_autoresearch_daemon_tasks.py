@@ -205,6 +205,7 @@ async def test_weekly_p11_audit_tick_writes_scheduled_audit_event(tmp_path):
     task = WeeklyP11AuditTask(
         _cfg(tmp_path),
         state,
+        repo_root=tmp_path,
         run_id_provider=lambda: ["audit-run"],
         auditor=fake_auditor,
     )

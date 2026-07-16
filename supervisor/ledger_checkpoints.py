@@ -1723,7 +1723,10 @@ class LedgerCheckpointCoordinator:
         try:
             self.trusted_pin_store.pin(normalized)
         except Exception as exc:
-            self._fail("trusted_pin_persistence", exc)
+            superseding = self._superseding_trusted_identity(normalized)
+            if superseding is None:
+                self._fail("trusted_pin_persistence", exc)
+            return superseding
         try:
             observed = self.trusted_pin_store.get(normalized)
             latest = self.trusted_pin_store.latest(
@@ -1764,6 +1767,52 @@ class LedgerCheckpointCoordinator:
                 ),
             )
         assert latest_identity is not None
+        return latest_identity
+
+    def _superseding_trusted_identity(
+        self,
+        normalized: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        run_id = str(normalized["run_id"])
+        try:
+            latest = self.trusted_pin_store.latest(run_id)
+            latest_identity = (
+                None
+                if latest is None
+                else normalize_checkpoint_identity(latest)
+            )
+        except Exception:
+            return None
+        if (
+            latest_identity is None
+            or latest_identity["run_id"] != normalized["run_id"]
+            or int(latest_identity["event_count"])
+            <= int(normalized["event_count"])
+        ):
+            return None
+        try:
+            observed = self.trusted_pin_store.get(latest_identity)
+            observed_identity = (
+                None
+                if observed is None
+                else normalize_checkpoint_identity(observed)
+            )
+        except Exception:
+            return None
+        if observed_identity != latest_identity:
+            return None
+        try:
+            persisted_identities = [
+                checkpoint_identity(persisted.checkpoint)
+                for persisted in self.checkpoint_store.load_all(run_id)
+            ]
+        except Exception:
+            return None
+        if (
+            dict(normalized) not in persisted_identities
+            or latest_identity not in persisted_identities
+        ):
+            return None
         return latest_identity
 
     @staticmethod

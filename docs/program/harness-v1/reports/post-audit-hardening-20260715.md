@@ -58,6 +58,15 @@ PAH-005 is local crash recovery, not production exact-once authority:
 - No live resumable official SWE-bench bridge or retained official grade was
   produced. Recoverable operational outcomes intentionally cannot use the
   generic regrade API until regrade has its own durable authority workflow.
+- When the operational oracle attests infrastructure unavailability,
+  `verify_or_recover` still durably completes the journal attempt with a
+  fail-closed `passed=False` `verifier_infrastructure_unavailable` grade.
+  Recovery replays that grade without rerun and `regrade_arm` refuses
+  recoverable outcomes, so a transient backend outage becomes a permanent
+  failing terminal grade for that arm execution. This is intentional
+  fail-closed attempt accounting; lifting it requires a durable
+  unavailability-aware retry workflow that does not weaken exact-once
+  attempt consumption.
 
 ## Claim Boundary
 

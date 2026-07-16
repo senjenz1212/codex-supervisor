@@ -174,7 +174,14 @@ def _run_forward_migrations(
             & _columns(conn, "events")
         ):
             _ensure_event_ledger_columns(conn)
-            _assert_prepopulated_event_ledger_metadata_matches(conn)
+            _assert_prepopulated_event_ledger_metadata_matches(
+                conn,
+                max_rows=(
+                    None
+                    if allow_legacy_event_backfill
+                    else MAX_STARTUP_LEGACY_EVENT_BACKFILL
+                ),
+            )
         affected_event_count = (
             _legacy_event_backfill_affected_event_count(conn)
             if should_check_legacy_events
@@ -987,7 +994,19 @@ def _ledger_fields_for_event_row(
 
 def _assert_prepopulated_event_ledger_metadata_matches(
     conn: sqlite3.Connection,
+    *,
+    max_rows: int | None = MAX_STARTUP_LEGACY_EVENT_BACKFILL,
 ) -> None:
+    if max_rows is not None:
+        total_row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
+        total = int(total_row[0]) if total_row is not None else 0
+        if total > max_rows:
+            raise LegacyEventLedgerBackfillRequired(
+                _legacy_event_backfill_message(
+                    conn,
+                    affected_event_count=total,
+                )
+            )
     rows = conn.execute(
         """SELECT event_id, run_id, event_sequence, ts, source, kind,
                   payload_json, previous_event_hash, event_hash,
@@ -995,7 +1014,7 @@ def _assert_prepopulated_event_ledger_metadata_matches(
                   ledger_genesis_kind
              FROM events
             ORDER BY run_id ASC, event_id ASC"""
-    ).fetchall()
+    )
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None

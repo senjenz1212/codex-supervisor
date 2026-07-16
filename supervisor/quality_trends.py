@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from collections import defaultdict
 from hashlib import sha256
 from pathlib import Path
@@ -545,6 +546,7 @@ def run_weekly_p11_audit_if_due(
     state: Any,
     *,
     run_id: str,
+    repo_root: str | Path,
     task_id: str | None = None,
     task_class: str | None = None,
     now: int | None = None,
@@ -555,16 +557,46 @@ def run_weekly_p11_audit_if_due(
     """Run the sampled P11 audit at most once per cadence window."""
     timestamp = int(time.time()) if now is None else int(now)
     window_start = timestamp - max(1, int(cadence_s))
-    existing = [
+    scheduled_history = [
         event for event in _read_all_run_events(state, run_id)
         if event["kind"] == "supervisor_p11_audit_scheduled"
-        and int(event["payload"].get("scheduled_at") or 0) >= window_start
+    ]
+    existing = [
+        event for event in scheduled_history
+        if int(event["payload"].get("scheduled_at") or 0) >= window_start
         and _scheduled_audit_consumed_cadence(event["payload"])
     ]
     if existing:
         return {
             "status": "not_due",
             "last_event_id": existing[-1]["event_id"],
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        }
+    cadence_period = timestamp // max(1, int(cadence_s))
+    try:
+        state.write_event_once(
+            run_id=run_id,
+            source="supervisor",
+            kind="supervisor_p11_audit_claimed",
+            payload={
+                "schema_version": "supervisor-p11-audit-claim/v1",
+                "scheduled_at": timestamp,
+                "cadence_period": cadence_period,
+                "claim_token": uuid.uuid4().hex,
+                "observational_only": True,
+                "gate_authority": "unchanged",
+            },
+            idempotency_key=(
+                f"supervisor-p11-audit:{cadence_period}"
+                f":{len(scheduled_history)}"
+            ),
+        )
+    except RuntimeError:
+        return {
+            "status": "not_due",
+            "reason": "cadence_slot_claimed",
+            "last_event_id": None,
             "observational_only": True,
             "gate_authority": "unchanged",
         }
@@ -583,6 +615,7 @@ def run_weekly_p11_audit_if_due(
                     state,
                     run_id=run_id,
                     trend_rows=list(audit.get("updated_trend_rows") or []),
+                    repo_root=repo_root,
                     **(policy_regression_kwargs or {}),
                 ),
             }

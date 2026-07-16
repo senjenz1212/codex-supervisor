@@ -41,6 +41,7 @@ from supervisor.ledger_checkpoints import (
     checkpoint_identity,
     verify_authoritative_event_chain,
 )
+from supervisor.redaction import redact_v1, redact_v2
 from supervisor.quality_projection import (
     QUALITY_TREND_PROJECTION_EVENT,
     quality_trend_projection_event_payload,
@@ -271,6 +272,69 @@ def test_event_verification_fails_closed_on_redacted_key_collision():
         [disambiguated],
         expected_run_id="schema-run",
     ).valid is True
+
+
+def test_legacy_manifest_hash_binds_to_frozen_schema_redaction() -> None:
+    artifact = {"name": "artifact", "API_KEY=secret-value": "marker"}
+    payload = {"trace_envelope": {"artifacts": [artifact]}}
+    manifest_body = {
+        "schema_version": "evidence-ledger-artifact-manifest/v1",
+        "artifacts": [redact_v1(dict(artifact))],
+    }
+    legacy_manifest_hash = artifact_manifest_hash(manifest_body)
+    current_manifest_hash = artifact_manifest_hash(
+        {
+            "schema_version": "evidence-ledger-artifact-manifest/v1",
+            "artifacts": [redact_v2(dict(artifact))],
+        }
+    )
+    assert legacy_manifest_hash != current_manifest_hash
+
+    legacy_schema = evidence_ledger_module.LEGACY_EVENT_HASH_SCHEMA_VERSION
+    fields = build_ledger_fields(
+        run_id="schema-run",
+        event_sequence=1,
+        ts=100,
+        source="test",
+        kind="event_msg",
+        payload=payload,
+        previous_event_hash=None,
+        ledger_genesis_kind=NATIVE_GENESIS,
+        event_hash_schema_version=legacy_schema,
+    )
+    assert fields.artifact_manifest_hash == legacy_manifest_hash
+    assert fields.event_hash == compute_event_hash(
+        run_id="schema-run",
+        event_sequence=1,
+        ts=100,
+        source="test",
+        kind="event_msg",
+        previous_event_hash=None,
+        canonical_payload_hash_value=canonical_payload_hash(payload),
+        artifact_manifest_hash_value=legacy_manifest_hash,
+        ledger_genesis_kind=NATIVE_GENESIS,
+        event_hash_schema_version=legacy_schema,
+    )
+
+    event = {
+        "event_id": 1,
+        "event_sequence": 1,
+        "run_id": "schema-run",
+        "ts": 100,
+        "source": "test",
+        "kind": "event_msg",
+        "payload": payload,
+        "previous_event_hash": None,
+        "event_hash": fields.event_hash,
+        "canonical_payload_hash": fields.canonical_payload_hash,
+        "artifact_manifest_hash": fields.artifact_manifest_hash,
+        "ledger_genesis_kind": NATIVE_GENESIS,
+    }
+    verification = verify_event_chain_structure(
+        [event],
+        expected_run_id="schema-run",
+    )
+    assert verification.valid is True
 
 
 def test_historical_event_schema_binding_ignores_mutable_registry_overrides(

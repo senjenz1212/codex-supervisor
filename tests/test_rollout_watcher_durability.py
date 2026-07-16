@@ -224,6 +224,55 @@ async def test_post_commit_crash_recovery_does_not_duplicate_terminal_work(
 
 
 @pytest.mark.asyncio
+async def test_truncated_rollout_records_health_and_redrains_from_start(
+    tmp_path: Path,
+) -> None:
+    session_id = "abcdefab-1234-5678-9abc-abcdefabcdef"
+    state, watcher, rollout = _registered_watcher(
+        tmp_path,
+        session_id=session_id,
+    )
+    original_line = (
+        json.dumps({"type": "task_started", "padding": "x" * 64}) + "\n"
+    ).encode()
+    rollout.write_bytes(original_line)
+    await watcher._drain_file(rollout)
+    assert state.get_tail_offset(str(rollout)) == len(original_line)
+
+    replacement_line = (json.dumps({"type": "task_complete"}) + "\n").encode()
+    assert len(replacement_line) < len(original_line)
+    rollout.write_bytes(replacement_line)
+
+    await watcher._drain_file(rollout)
+
+    health_rows = state._conn.execute(
+        "SELECT payload_json FROM events "
+        "WHERE kind='supervisor_subsystem_health'"
+    ).fetchall()
+    payloads = [json.loads(row["payload_json"]) for row in health_rows]
+    truncation = [
+        payload
+        for payload in payloads
+        if payload["reason"] == "rollout_truncated_or_replaced"
+    ]
+    assert len(truncation) == 1
+    assert truncation[0]["subsystem"] == "rollout_watcher.drain"
+    assert truncation[0]["details"]["path"] == str(rollout)
+    assert truncation[0]["details"]["tracked_offset"] == len(original_line)
+    assert truncation[0]["details"]["observed_size"] == len(replacement_line)
+
+    assert state.get_tail_offset(str(rollout)) == len(replacement_line)
+    run = state.get_run_by_session(session_id)
+    assert [
+        row["kind"]
+        for row in state._conn.execute(
+            "SELECT kind FROM events WHERE run_id=? ORDER BY event_id",
+            (run["run_id"],),
+        )
+    ] == ["turn.started", "turn.completed"]
+
+
+@pytest.mark.asyncio
 async def test_malformed_source_line_is_durably_dead_lettered(
     tmp_path: Path,
 ) -> None:

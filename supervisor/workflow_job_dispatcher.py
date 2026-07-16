@@ -98,6 +98,7 @@ class WorkflowJobDispatcher:
         self.max_cleanup_retry_attempts = max(1, int(max_cleanup_retry_attempts))
         self._reap_skipped_missing_containment: set[str] = set()
         self._terminal_reap_persist_attempts: dict[str, int] = {}
+        self._terminal_reap_backoff: dict[str, tuple[int, int]] = {}
         self.budget_hook = budget_hook or (lambda _row: True)
         self.popen = popen
         self.pid_alive = pid_alive
@@ -175,9 +176,15 @@ class WorkflowJobDispatcher:
                         error="worker_containment_identity_missing",
                     )
                 continue
+            terminal_job_id = str(terminal_row["job_id"])
+            reap_attempts, next_attempt_at = self._terminal_reap_backoff.get(
+                terminal_job_id, (0, 0)
+            )
+            if now < next_attempt_at:
+                cleanup_retry_pending.append(terminal_job_id)
+                continue
             termination = self._terminate_row_worker(terminal_row)
             if termination["safe_to_finalize"]:
-                terminal_job_id = str(terminal_row["job_id"])
                 try:
                     self._record_worker_reaped(terminal_row, termination)
                 except Exception as e:
@@ -207,13 +214,22 @@ class WorkflowJobDispatcher:
                             pid=terminal_row["pid"],
                             error=f"terminal_reap_persistence_failed: {e}",
                         )
+                    self._terminal_reap_backoff[terminal_job_id] = (
+                        reap_attempts + 1,
+                        now + self._terminal_reap_delay(reap_attempts + 1),
+                    )
                     continue
                 self._terminal_reap_persist_attempts.pop(
                     terminal_job_id, None
                 )
+                self._terminal_reap_backoff.pop(terminal_job_id, None)
                 reaped.append(terminal_job_id)
             else:
-                cleanup_retry_pending.append(str(terminal_row["job_id"]))
+                self._terminal_reap_backoff[terminal_job_id] = (
+                    reap_attempts + 1,
+                    now + self._terminal_reap_delay(reap_attempts + 1),
+                )
+                cleanup_retry_pending.append(terminal_job_id)
         for row in self.state.list_dual_agent_workflow_job_leases():
             recovery_point = str(row["recovery_point"] or "")
             lease_expires_at = row["lease_expires_at"]
@@ -936,6 +952,13 @@ class WorkflowJobDispatcher:
         ):
             return None
 
+    def _terminal_reap_delay(self, attempts: int) -> int:
+        delay = min(
+            self.max_backoff_s,
+            self.base_backoff_s * (2 ** max(0, attempts - 1)),
+        )
+        return int(delay + self.jitter(delay))
+
     def _terminate_row_worker(self, row: Any) -> dict[str, Any]:
         try:
             prepared_at = row["worker_prepared_at"]
@@ -1299,11 +1322,19 @@ class WorkflowJobLeaseHeartbeat:
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_s):
-            ok = self.state.heartbeat_dual_agent_workflow_job(
-                job_id=self.job_id,
-                leased_by=self.leased_by,
-                lease_ttl_s=self.lease_ttl_s,
-            )
+            try:
+                ok = self.state.heartbeat_dual_agent_workflow_job(
+                    job_id=self.job_id,
+                    leased_by=self.leased_by,
+                    lease_ttl_s=self.lease_ttl_s,
+                )
+            except Exception as e:
+                print(
+                    "workflow-job-heartbeat tick failed "
+                    f"(job_id={self.job_id}): {e!r}",
+                    file=sys.stderr,
+                )
+                continue
             if not ok:
                 return
 

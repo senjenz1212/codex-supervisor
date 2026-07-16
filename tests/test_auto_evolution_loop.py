@@ -516,6 +516,7 @@ def _run_loop(tmp_path: Path, *, disabled_wire: str | None = None) -> LoopProof:
     weekly = WeeklyP11AuditTask(
         _cfg(config_path),
         state,
+        repo_root=root,
         run_id_provider=lambda: ["phase-e-audit-empty"],
     )
     weekly_result = asyncio.run(weekly.tick_once(now=1_781_001_500))
@@ -535,6 +536,7 @@ def _run_loop(tmp_path: Path, *, disabled_wire: str | None = None) -> LoopProof:
         state,
         run_id="phase-e-regression",
         trend_rows=after_rows,
+        repo_root=root,
         min_runs=3,
         first_pass_drop_threshold=0.05,
         false_accept_increase_threshold=0.01,

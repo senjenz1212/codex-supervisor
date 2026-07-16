@@ -747,6 +747,8 @@ def cleanup_orphaned_agentic_workers(
             kill=kill,
             exit_wait_s=exit_wait_s,
             base=base,
+            recorded_create_time_s=recorded_create_time_s,
+            process_create_time=create_time,
         )
         cleaned.append({
             **base,
@@ -792,6 +794,8 @@ def _terminate_and_confirm(
     kill: Terminator,
     exit_wait_s: float,
     base: dict[str, Any],
+    recorded_create_time_s: float,
+    process_create_time: Callable[[int], float | None],
 ) -> str:
     try:
         kill(pid, signal.SIGTERM)
@@ -799,6 +803,13 @@ def _terminate_and_confirm(
         base["error"] = str(e)
         return "terminate_failed"
     if _confirm_exit(pid, pid_alive=pid_alive, exit_wait_s=exit_wait_s):
+        return "terminated"
+    observed_create_time_s = process_create_time(pid)
+    if observed_create_time_s is None:
+        if not pid_alive(pid):
+            return "terminated"
+        return "termination_unconfirmed"
+    if abs(observed_create_time_s - recorded_create_time_s) > 1.0:
         return "terminated"
     try:
         kill(pid, signal.SIGKILL)

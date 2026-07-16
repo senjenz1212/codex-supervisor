@@ -96,7 +96,7 @@ def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | Non
     handoff_packet = {
         "path": handoff_path_text,
         "status": "captured",
-        "sha256": sha256(handoff_bytes).hexdigest(),
+        "sha256": sha256(handoff_content.encode("utf-8")).hexdigest(),
         "content": handoff_content,
     }
     evidence["handoff_packet_sha256"] = handoff_packet["sha256"]
@@ -1879,7 +1879,8 @@ def _source_artifact_hashes(
         except OSError:
             pass
         if _is_sha256(artifact.get("sha256")):
-            hashes[kind] = str(artifact["sha256"]).lower().removeprefix("sha256:")
+            declared = str(artifact["sha256"]).lower().removeprefix("sha256:")
+            hashes[kind] = f"declared-unverified:{declared}"
     return hashes
 
 

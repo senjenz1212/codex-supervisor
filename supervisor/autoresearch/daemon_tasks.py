@@ -90,11 +90,13 @@ class WeeklyP11AuditTask:
         cfg: Any,
         state: Any,
         *,
+        repo_root: str | Path,
         run_id_provider: Callable[[], list[str]] | None = None,
         auditor: Callable[..., dict[str, Any]] = run_weekly_p11_audit_if_due,
     ):
         self.cfg = cfg
         self.state = state
+        self.repo_root = Path(repo_root).expanduser().resolve()
         self.run_id_provider = run_id_provider or self._candidate_run_ids
         self.auditor = auditor
 
@@ -113,6 +115,7 @@ class WeeklyP11AuditTask:
             results.append(self.auditor(
                 self.state,
                 run_id=run_id,
+                repo_root=self.repo_root,
                 now=timestamp,
                 cadence_s=cadence,
             ))

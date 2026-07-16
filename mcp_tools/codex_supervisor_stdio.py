@@ -4876,6 +4876,7 @@ class CodexSupervisorMcpAPI:
                     self.state,
                     run_id=run_id,
                     trend_rows=trend_rows,
+                    repo_root=cwd,
                     min_runs=int(getattr(autoresearch_cfg, "policy_regression_min_runs", 3)),
                     first_pass_drop_threshold=float(getattr(
                         autoresearch_cfg,
