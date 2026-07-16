@@ -18,6 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, runtime_checkable
 
+from .backend_run_replay import VerificationAttemptRecord
 from .grade_revisions import (
     GradeBook,
     GradeRevision,
@@ -63,6 +64,12 @@ PRIMARY_REVIEW_PACKET_SCHEMA_VERSION = "supervisor-blinded-primary-review/v2"
 RAW_TEST_ARTIFACT_SCHEMA_VERSION = "supervisor-raw-test-artifact/v1"
 BLINDED_TEST_RECEIPT_SCHEMA_VERSION = (
     "supervisor-blinded-test-receipt/v1"
+)
+EXPERIMENT_VERIFICATION_RECOVERY_SCHEMA_VERSION = (
+    "supervisor-experiment-verification-recovery-envelope/v1"
+)
+EXPERIMENT_VERIFICATION_CONTEXT_SCHEMA_VERSION = (
+    "supervisor-experiment-verification-journal-context/v1"
 )
 _TERMINAL_ARM_STATES = frozenset({
     "completed",
@@ -1041,15 +1048,42 @@ class ArmOutcome:
     execution_receipt: ArmExecutionReceipt | None = None
     token_usage: Mapping[str, Any] = field(default_factory=dict)
     attempt_records: tuple[Mapping[str, Any], ...] = ()
+    verification_attempt_key: str = ""
+    verification_grade_hash: str = ""
+    verification_completion_hash: str = ""
     failure_classification: str = ""
     error: str = ""
+
+    def __post_init__(self) -> None:
+        lineage = (
+            self.verification_attempt_key,
+            self.verification_grade_hash,
+            self.verification_completion_hash,
+        )
+        if any(lineage) and not all(lineage):
+            raise ValueError(
+                "verification attempt lineage must be recorded atomically"
+            )
+        for field_name, value in zip(
+            (
+                "verification_attempt_key",
+                "verification_grade_hash",
+                "verification_completion_hash",
+            ),
+            lineage,
+            strict=True,
+        ):
+            if value and not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(
+                    f"{field_name} must be a lowercase sha256 digest"
+                )
 
     @property
     def blinded_frozen_result_hash(self) -> str:
         return self.frozen_result_hash
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "arm": self.arm.value,
             "status": self.status,
             "grade": self.grade.to_dict(),
@@ -1081,6 +1115,13 @@ class ArmOutcome:
             "failure_classification": self.failure_classification,
             "error": self.error,
         }
+        if self.verification_attempt_key:
+            payload["verification_attempt"] = {
+                "attempt_key": self.verification_attempt_key,
+                "grade_hash": self.verification_grade_hash,
+                "completion_hash": self.verification_completion_hash,
+            }
+        return payload
 
 
 @dataclass(frozen=True)
@@ -2581,10 +2622,22 @@ class ExperimentKernel:
         store: SqliteExperimentStore,
         executor: ArmExecutor,
         gradebook: GradeBook | None = None,
+        verification_journal: Any | None = None,
     ) -> None:
         self.store = store
         self.executor = executor
         self.gradebook = gradebook or GradeBook(store.path)
+        if (
+            verification_journal is not None
+            and any(
+                not callable(getattr(verification_journal, method, None))
+                for method in ("get_verification_attempt",)
+            )
+        ):
+            raise ValueError(
+                "verification journal must provide durable attempt reads"
+            )
+        self.verification_journal = verification_journal
         self._reconciled_grade_orphans: dict[
             tuple[str, str, str],
             tuple[Mapping[str, str], ...],
@@ -2599,7 +2652,7 @@ class ExperimentKernel:
             list[Mapping[str, str]],
         ] = {}
         terminal_lineages: list[
-            tuple[Mapping[str, Any], GradeRevision]
+            tuple[Mapping[str, Any], GradeRevision, ArmOutcome]
         ] = []
         for event in self.store.list_terminal_arm_events():
             if event["state"] not in {"completed", "failed"}:
@@ -2639,6 +2692,32 @@ class ExperimentKernel:
                     "authoritative terminal outcome grade reference does not "
                     f"match GradeBook: {terminal_ref.grade_id}"
                 )
+            experiment_id = str(event["experiment_id"])
+            task_id = str(event["task_id"])
+            assignment = self.store.get_assignment(
+                experiment_id,
+                task_id,
+            )
+            task = self.store.get_task_spec(
+                experiment_id,
+                task_id,
+            )
+            if assignment is None or task is None:
+                raise RuntimeError(
+                    "authoritative terminal outcome lacks persisted run "
+                    f"inputs for {experiment_id}:{task_id}"
+                )
+            expected_run = self._run_envelope_ref_for_outcome(
+                experiment_id=experiment_id,
+                assignment=assignment,
+                task=task,
+                outcome=terminal_outcome,
+            )
+            if terminal_revision.run_envelope != expected_run:
+                raise RuntimeError(
+                    "authoritative terminal outcome run envelope does not "
+                    f"match GradeBook: {terminal_ref.grade_id}"
+                )
             if (
                 event["state"] == "failed"
                 and terminal_revision.passed
@@ -2661,20 +2740,33 @@ class ExperimentKernel:
                 raise RuntimeError(
                     "failed terminal outcome carries a completed status"
                 )
-            terminal_lineages.append((event, terminal_revision))
+            self._validate_outcome_verification_lineage(
+                terminal_outcome,
+                terminal_event=event,
+            )
+            terminal_lineages.append(
+                (event, terminal_revision, terminal_outcome)
+            )
 
         for revision in self.gradebook.list_uncommitted_revisions():
             matching_event: Mapping[str, Any] | None = None
-            for event, terminal_revision in terminal_lineages:
+            matching_outcome: ArmOutcome | None = None
+            for event, terminal_revision, terminal_outcome in terminal_lineages:
                 if terminal_revision.grade_id != revision.grade_id:
                     continue
                 if event["state"] == "failed" and revision.passed:
                     continue
                 matching_event = event
+                matching_outcome = terminal_outcome
                 break
 
             owner: Mapping[str, str] | None
             if matching_event is not None:
+                if matching_outcome is None:
+                    raise RuntimeError(
+                        "authoritative terminal outcome is unavailable "
+                        f"for {revision.grade_id}"
+                    )
                 owner = MappingProxyType({
                     "experiment_id": str(
                         matching_event["experiment_id"]
@@ -2704,6 +2796,14 @@ class ExperimentKernel:
             owner = self.store.get_frozen_result_owner(
                 revision.run_envelope.frozen_result_hash
             )
+            if (
+                owner is not None
+                and self._completed_attempt_matches_revision(
+                    owner=owner,
+                    revision=revision,
+                )
+            ):
+                continue
             invalidations = self.gradebook.list_invalidations(
                 revision.grade_id
             )
@@ -2756,6 +2856,402 @@ class ExperimentKernel:
             key: tuple(records)
             for key, records in reconciled_orphans.items()
         }
+
+    def _completed_attempt_matches_revision(
+        self,
+        *,
+        owner: Mapping[str, str],
+        revision: GradeRevision,
+    ) -> bool:
+        recovery = self._recovery_observation_for_owner(
+            owner=owner,
+            frozen_result_hash=revision.run_envelope.frozen_result_hash,
+        )
+        if recovery is None:
+            return False
+        _observed_event, envelope = recovery
+        journal = self.verification_journal
+        if journal is None:
+            raise RuntimeError(
+                "recoverable verification grade requires its durable "
+                "verification journal before reconciliation"
+            )
+        try:
+            attempt = journal.get_verification_attempt(
+                slot_key=str(envelope["slot_key"])
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "verification recovery journal could not be read"
+            ) from exc
+        if (
+            not isinstance(attempt, VerificationAttemptRecord)
+            or attempt.state != "COMPLETED"
+            or attempt.grade is None
+            or attempt.grade_hash is None
+            or attempt.completion_hash is None
+        ):
+            raise RuntimeError(
+                "recoverable verification grade lacks completed journal "
+                "authority"
+            )
+        expected_context = _verification_journal_context_from_envelope(
+            task_spec_hash=str(envelope["task_spec_hash"]),
+            blinded_frozen_result_hash=str(
+                envelope["blinded_frozen_result_hash"]
+            ),
+            recovery_envelope_hash=str(
+                envelope["recovery_envelope_hash"]
+            ),
+        )
+        if (
+            attempt.slot_key != envelope["slot_key"]
+            or dict(attempt.spec.context) != expected_context
+            or attempt.spec.frozen_result_hash
+            != revision.run_envelope.frozen_result_hash
+            or attempt.spec.verifier_id != revision.verifier_id
+            or attempt.spec.verifier_version != revision.verifier_version
+            or attempt.spec.verifier_hash
+            != revision.verifier_implementation_hash
+        ):
+            raise RuntimeError(
+                "recoverable verification journal authority does not match "
+                "the experiment recovery envelope"
+            )
+        grade = attempt.grade
+        expected_grade = {
+            "schema_version": GRADE_SCHEMA_VERSION,
+            "verifier_id": revision.verifier_id,
+            "verifier_version": revision.verifier_version,
+            "verifier_hash": revision.verifier_implementation_hash,
+            "frozen_result_hash": revision.run_envelope.frozen_result_hash,
+            "passed": revision.passed,
+            "score": revision.score,
+            "evidence": dict(revision.evidence),
+            "failure_classification": revision.failure_classification,
+            "flake_classification": revision.flake_classification,
+        }
+        if (
+            dict(grade) != expected_grade
+            or attempt.grade_hash != _sha256_json(expected_grade)
+        ):
+            raise RuntimeError(
+                "recoverable verification journal grade does not match "
+                "the uncommitted GradeBook revision"
+            )
+        return True
+
+    def _recovery_observation_for_owner(
+        self,
+        *,
+        owner: Mapping[str, str],
+        frozen_result_hash: str,
+    ) -> tuple[Mapping[str, Any], Mapping[str, Any]] | None:
+        try:
+            arm = Arm(owner["arm"])
+        except (KeyError, ValueError) as exc:
+            raise RuntimeError(
+                "persisted frozen-result owner is invalid"
+            ) from exc
+        matches: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+        for event in self.store.get_arm_state_events(
+            owner["experiment_id"],
+            owner["task_id"],
+            arm=arm,
+        ):
+            if event["state"] != "observed":
+                continue
+            envelope = _validated_verification_recovery_envelope(event)
+            if envelope is None:
+                continue
+            if (
+                envelope["blinded_frozen_result_hash"]
+                == frozen_result_hash
+            ):
+                matches.append((event, envelope))
+        if len(matches) > 1:
+            raise RuntimeError(
+                "multiple recovery observations claim the same frozen result"
+            )
+        return matches[0] if matches else None
+
+    def _validate_kernel_verification_attempt(
+        self,
+        *,
+        attempt: VerificationAttemptRecord,
+        verifier: VerifierAdapter,
+        task: TaskSpec,
+        blinded: FrozenTaskResult,
+        envelope: Mapping[str, Any],
+    ) -> None:
+        if not isinstance(attempt, VerificationAttemptRecord):
+            raise RuntimeError(
+                "recoverable verifier returned an invalid attempt record"
+            )
+        expected_context = _verification_journal_context_from_envelope(
+            task_spec_hash=task.spec_hash,
+            blinded_frozen_result_hash=blinded.result_hash,
+            recovery_envelope_hash=str(
+                envelope["recovery_envelope_hash"]
+            ),
+        )
+        expected = {
+            "frozen_result_hash": blinded.result_hash,
+            "model_patch_sha256": blinded.patch_hash,
+            "producer_run_result_hash": blinded.run_result_hash,
+            "verifier_id": str(getattr(verifier, "verifier_id", "")),
+            "verifier_version": str(
+                getattr(verifier, "verifier_version", "")
+            ),
+            "verifier_hash": str(getattr(verifier, "verifier_hash", "")),
+        }
+        for field_name, expected_value in expected.items():
+            if getattr(attempt.spec, field_name) != expected_value:
+                raise RuntimeError(
+                    "verification attempt does not match "
+                    f"{field_name}"
+                )
+        if (
+            attempt.slot_key != envelope["slot_key"]
+            or dict(attempt.spec.context) != expected_context
+        ):
+            raise RuntimeError(
+                "verification attempt does not match the blinded recovery "
+                "envelope"
+            )
+
+    def _completed_attempt_after_verifier_return(
+        self,
+        *,
+        prepared_attempt: VerificationAttemptRecord,
+        returned_grade: Grade,
+        verifier: VerifierAdapter,
+        task: TaskSpec,
+        blinded: FrozenTaskResult,
+        envelope: Mapping[str, Any],
+    ) -> VerificationAttemptRecord:
+        journal = self.verification_journal
+        if journal is None:
+            raise RuntimeError(
+                "recoverable verification has no active journal authority"
+            )
+        try:
+            completed = journal.get_verification_attempt(
+                attempt_key=prepared_attempt.attempt_key
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "verification recovery journal could not be read"
+            ) from exc
+        if not isinstance(completed, VerificationAttemptRecord):
+            raise RuntimeError(
+                "verifier returned before its exact journal attempt existed"
+            )
+        self._validate_kernel_verification_attempt(
+            attempt=completed,
+            verifier=verifier,
+            task=task,
+            blinded=blinded,
+            envelope=envelope,
+        )
+        if (
+            completed.attempt_key != prepared_attempt.attempt_key
+            or completed.spec != prepared_attempt.spec
+            or completed.request_nonce != prepared_attempt.request_nonce
+            or completed.requested_backend_id
+            != prepared_attempt.requested_backend_id
+            or completed.requested_backend_manifest_hash
+            != prepared_attempt.requested_backend_manifest_hash
+            or completed.prepared_at_ms != prepared_attempt.prepared_at_ms
+        ):
+            raise RuntimeError(
+                "completed verification attempt differs from the prepared "
+                "attempt"
+            )
+        canonical_grade = returned_grade.to_dict()
+        if (
+            completed.state != "COMPLETED"
+            or completed.grade is None
+            or completed.grade_hash is None
+            or completed.completion_hash is None
+            or dict(completed.grade) != canonical_grade
+            or completed.grade_hash != _sha256_json(canonical_grade)
+        ):
+            raise RuntimeError(
+                "verifier return is not backed by the exact completed "
+                "journal grade"
+            )
+        return completed
+
+    async def _recover_started_verification(
+        self,
+        *,
+        experiment: ExperimentSpec,
+        task: TaskSpec,
+        assignment: Assignment,
+        verifier: VerifierAdapter,
+        block_attempt: int,
+        arm: Arm,
+        transition_prefix: str,
+        execution_mode: str,
+        observed_execution_ids: set[str],
+        observed_result_ids: set[str],
+        observed_isolation_ids: set[str],
+        observed_workspace_ids: set[str],
+        observed_session_ids: set[str],
+        observed_cache_namespaces: set[str],
+        observed_memory_namespaces: set[str],
+        observed_lesson_namespaces: set[str],
+        observed_environment_attestation_ids: set[str],
+        observed_compute_resource_hashes: dict[Arm, str],
+        persisted_state: Mapping[str, Mapping[str, Any]],
+    ) -> ArmOutcome | None:
+        observed_event = persisted_state.get("observed")
+        if observed_event is None:
+            return None
+        envelope = _validated_verification_recovery_envelope(observed_event)
+        if envelope is None:
+            return None
+        expected_identity = {
+            "experiment_id": experiment.experiment_id,
+            "task_id": task.task_id,
+            "block_attempt": block_attempt,
+            "arm": arm.value,
+            "assignment_id": assignment.assignment_id,
+            "task_spec_hash": task.spec_hash,
+        }
+        for field_name, expected_value in expected_identity.items():
+            if envelope.get(field_name) != expected_value:
+                raise RuntimeError(
+                    "verification recovery envelope differs from "
+                    f"{field_name}"
+                )
+        execution, receipt, reconstructed_blinded, removed_paths = (
+            _execution_from_verification_recovery_envelope(
+                envelope=envelope,
+                task=task,
+            )
+        )
+        persisted_blinded = self.store.get_frozen_result(
+            experiment_id=experiment.experiment_id,
+            task_id=task.task_id,
+            arm=arm,
+        )
+        if persisted_blinded is None:
+            blinded = self.store.put_frozen_result(
+                experiment_id=experiment.experiment_id,
+                task_id=task.task_id,
+                arm=arm,
+                frozen_result=reconstructed_blinded,
+            )
+        else:
+            blinded = persisted_blinded
+        if blinded != reconstructed_blinded:
+            raise RuntimeError(
+                "persisted frozen result differs from the recovery envelope"
+            )
+        _validate_arm_execution_receipt(
+            execution,
+            receipt=receipt,
+            arm=arm,
+            task=task,
+            assignment=assignment,
+            expected_treatment_hash=experiment.treatment_hashes[arm],
+            budget=experiment.arm_budgets[arm],
+            expected_mode=execution_mode,
+            observed_execution_ids=observed_execution_ids,
+            observed_result_ids=observed_result_ids,
+            observed_isolation_ids=observed_isolation_ids,
+            observed_workspace_ids=observed_workspace_ids,
+            observed_session_ids=observed_session_ids,
+            observed_cache_namespaces=observed_cache_namespaces,
+            observed_memory_namespaces=observed_memory_namespaces,
+            observed_lesson_namespaces=observed_lesson_namespaces,
+            observed_environment_attestation_ids=(
+                observed_environment_attestation_ids
+            ),
+            observed_compute_resource_hashes=(
+                observed_compute_resource_hashes
+            ),
+        )
+        slot_key = str(envelope["slot_key"])
+        attempt = verifier.get_verification_attempt(slot_key=slot_key)
+        if attempt is None:
+            raise RuntimeError(
+                "verification recovery envelope lacks its precommitted "
+                "verification attempt"
+            )
+        self._validate_kernel_verification_attempt(
+            attempt=attempt,
+            verifier=verifier,
+            task=task,
+            blinded=blinded,
+            envelope=envelope,
+        )
+        grade = await verifier.verify_or_recover(
+            blinded,
+            prepared_attempt=attempt,
+        )
+        completed_attempt = self._completed_attempt_after_verifier_return(
+            prepared_attempt=attempt,
+            returned_grade=grade,
+            verifier=verifier,
+            task=task,
+            blinded=blinded,
+            envelope=envelope,
+        )
+        _validate_grade_binding(
+            grade,
+            blinded_result=blinded,
+            task=task,
+        )
+        outcome = ArmOutcome(
+            arm=arm,
+            status="completed",
+            grade=grade,
+            attempts=receipt.attempts,
+            cost_usd=receipt.cost_usd,
+            latency_ms=receipt.latency_ms,
+            frozen_result_hash=blinded.result_hash,
+            original_frozen_result_hash=(
+                execution.frozen_result.result_hash
+            ),
+            blinding_removed_paths=removed_paths,
+            execution_receipt=receipt,
+            token_usage=dict(receipt.token_usage),
+            attempt_records=tuple(receipt.attempt_records),
+            verification_attempt_key=completed_attempt.attempt_key,
+            verification_grade_hash=str(completed_attempt.grade_hash),
+            verification_completion_hash=str(
+                completed_attempt.completion_hash
+            ),
+        )
+        outcome = self._with_grade_revision(
+            experiment=experiment,
+            task=task,
+            assignment=assignment,
+            outcome=outcome,
+        )
+        terminal_event = self.store.finish_arm_attempt(
+            experiment_id=experiment.experiment_id,
+            task_id=task.task_id,
+            block_attempt=block_attempt,
+            arm=arm,
+            state="completed",
+            payload={"outcome": outcome.to_dict()},
+            transition_kind="arm.completed",
+            transition_idempotency_key=(
+                f"{transition_prefix}.completed"
+            ),
+            transition_payload=outcome.to_dict(),
+        )
+        self._commit_outcome_terminal_grade(
+            experiment=experiment,
+            task=task,
+            outcome=outcome,
+            terminal_event=terminal_event,
+        )
+        return outcome
 
     def assign(self, experiment: ExperimentSpec, task: TaskSpec) -> Assignment:
         with self.store._write_transaction():
@@ -2897,6 +3393,44 @@ class ExperimentKernel:
         task = persisted_task
         _validate_task_verifier_pin(task)
         verifier_version = _validate_verifier_adapter(verifier, task=task)
+        recoverable_verification = bool(
+            getattr(
+                verifier,
+                "requires_recoverable_verification",
+                False,
+            )
+        )
+        if recoverable_verification:
+            if self.verification_journal is None:
+                raise ValueError(
+                    "operational verifier requires a durable verification "
+                    "journal before paid arm launch"
+                )
+            verifier_journal = getattr(
+                verifier,
+                "verification_journal",
+                None,
+            )
+            if verifier_journal is None:
+                raise ValueError(
+                    "operational verifier lacks its verification journal"
+                )
+            if self.verification_journal is not verifier_journal:
+                raise ValueError(
+                    "kernel and verifier verification journals differ; "
+                    "journal identity cannot be proven without the exact "
+                    "verification journal instance"
+                )
+            for method_name in (
+                "prepare_verification",
+                "get_verification_attempt",
+                "verify_or_recover",
+            ):
+                if not callable(getattr(verifier, method_name, None)):
+                    raise ValueError(
+                        "operational verifier is not recoverable: "
+                        f"{method_name}"
+                    )
         bind_verifier = getattr(self.executor, "bind_verifier", None)
         if callable(bind_verifier):
             bind_verifier(task=task, verifier=verifier)
@@ -2985,6 +3519,12 @@ class ExperimentKernel:
                     outcome = _arm_outcome_from_terminal_event(
                         terminal_event
                     )
+                    self._commit_outcome_terminal_grade(
+                        experiment=experiment,
+                        task=task,
+                        outcome=outcome,
+                        terminal_event=terminal_event,
+                    )
                     _remember_persisted_outcome_claims(
                         outcome,
                         observed_execution_ids=observed_execution_ids,
@@ -3011,6 +3551,57 @@ class ExperimentKernel:
                     outcomes.append(outcome)
                     continue
                 if "started" in persisted_state:
+                    observed_event = persisted_state.get("observed")
+                    recovery_envelope = (
+                        _validated_verification_recovery_envelope(
+                            observed_event
+                        )
+                        if observed_event is not None
+                        else None
+                    )
+                    if (
+                        recovery_envelope is not None
+                        and not recoverable_verification
+                    ):
+                        raise RuntimeError(
+                            "persisted recoverable verification requires "
+                            "its recoverable verifier and journal"
+                        )
+                    if recoverable_verification:
+                        recovered = await self._recover_started_verification(
+                            experiment=experiment,
+                            task=task,
+                            assignment=assignment,
+                            verifier=verifier,
+                            block_attempt=block_attempt,
+                            arm=arm,
+                            transition_prefix=transition_prefix,
+                            execution_mode=execution_mode,
+                            observed_execution_ids=observed_execution_ids,
+                            observed_result_ids=observed_result_ids,
+                            observed_isolation_ids=observed_isolation_ids,
+                            observed_workspace_ids=observed_workspace_ids,
+                            observed_session_ids=observed_session_ids,
+                            observed_cache_namespaces=(
+                                observed_cache_namespaces
+                            ),
+                            observed_memory_namespaces=(
+                                observed_memory_namespaces
+                            ),
+                            observed_lesson_namespaces=(
+                                observed_lesson_namespaces
+                            ),
+                            observed_environment_attestation_ids=(
+                                observed_environment_attestation_ids
+                            ),
+                            observed_compute_resource_hashes=(
+                                observed_compute_resource_hashes
+                            ),
+                            persisted_state=persisted_state,
+                        )
+                        if recovered is not None:
+                            outcomes.append(recovered)
+                            continue
                     observation_event = persisted_state.get("observed")
                     observation = (
                         dict(observation_event["payload"])
@@ -3212,57 +3803,15 @@ class ExperimentKernel:
                     continue
 
                 observation = _observed_execution_usage(execution)
-                try:
-                    self.store.observe_arm_execution(
-                        experiment_id=experiment.experiment_id,
-                        task_id=task.task_id,
-                        block_attempt=block_attempt,
-                        arm=arm,
-                        payload=observation,
-                    )
-                except Exception as exc:
-                    outcome = _post_launch_failure(
-                        arm=arm,
-                        task=task,
-                        verifier_version=verifier_version,
-                        assignment=assignment,
-                        stage="observation_persistence",
-                        exc=exc,
-                        observation=observation,
-                    )
-                    outcome = self._with_failure_grade_revision_best_effort(
-                        experiment=experiment,
-                        task=task,
-                        assignment=assignment,
-                        outcome=outcome,
-                    )
-                    terminal_event = self.store.finish_arm_attempt(
-                        experiment_id=experiment.experiment_id,
-                        task_id=task.task_id,
-                        block_attempt=block_attempt,
-                        arm=arm,
-                        state="failed",
-                        payload={"outcome": outcome.to_dict()},
-                        transition_kind="arm.failed",
-                        transition_idempotency_key=(
-                            f"{transition_prefix}.failed"
-                        ),
-                        transition_payload=outcome.to_dict(),
-                    )
-                    self._commit_outcome_terminal_grade(
-                        experiment=experiment,
-                        task=task,
-                        outcome=outcome,
-                        terminal_event=terminal_event,
-                    )
-                    outcomes.append(outcome)
-                    continue
-
                 stage = "receipt"
                 receipt: ArmExecutionReceipt | None = None
                 validated_receipt: ArmExecutionReceipt | None = None
                 blinded: FrozenTaskResult | None = None
                 removed_paths: tuple[str, ...] = ()
+                recovery_envelope: Mapping[str, Any] | None = None
+                prepared_attempt: VerificationAttemptRecord | None = None
+                completed_attempt: VerificationAttemptRecord | None = None
+                observation_persisted = False
                 try:
                     receipt = _extract_execution_receipt(
                         execution,
@@ -3321,6 +3870,62 @@ class ExperimentKernel:
                     blinded, removed_paths = (
                         _blind_frozen_result_with_audit(verifier_bound)
                     )
+                    if recoverable_verification:
+                        stage = "verification_prepare"
+                        slot_key = _new_verification_attempt_slot_key()
+                        recovery_envelope = (
+                            _verification_recovery_envelope(
+                                experiment=experiment,
+                                task=task,
+                                assignment=assignment,
+                                block_attempt=block_attempt,
+                                arm=arm,
+                                execution=execution,
+                                receipt=receipt,
+                                blinded=blinded,
+                                removed_paths=removed_paths,
+                                observed_usage=observation,
+                                slot_key=slot_key,
+                            )
+                        )
+                        prepared_attempt = verifier.prepare_verification(
+                            blinded,
+                            slot_key=str(recovery_envelope["slot_key"]),
+                            context=(
+                                _verification_journal_context_from_envelope(
+                                    task_spec_hash=task.spec_hash,
+                                    blinded_frozen_result_hash=(
+                                        blinded.result_hash
+                                    ),
+                                    recovery_envelope_hash=str(
+                                        recovery_envelope[
+                                            "recovery_envelope_hash"
+                                        ]
+                                    ),
+                                )
+                            ),
+                        )
+                        self._validate_kernel_verification_attempt(
+                            attempt=prepared_attempt,
+                            verifier=verifier,
+                            task=task,
+                            blinded=blinded,
+                            envelope=recovery_envelope,
+                        )
+                    stage = "observation_persistence"
+                    observation_payload = dict(observation)
+                    if recovery_envelope is not None:
+                        observation_payload["verification_recovery"] = dict(
+                            recovery_envelope
+                        )
+                    self.store.observe_arm_execution(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        payload=observation_payload,
+                    )
+                    observation_persisted = True
                     stage = "frozen_result_persistence"
                     blinded = self.store.put_frozen_result(
                         experiment_id=experiment.experiment_id,
@@ -3328,8 +3933,34 @@ class ExperimentKernel:
                         arm=arm,
                         frozen_result=blinded,
                     )
-                    stage = "verifier"
-                    grade = await verifier.verify(blinded)
+                    if recoverable_verification:
+                        if (
+                            recovery_envelope is None
+                            or prepared_attempt is None
+                        ):
+                            raise RuntimeError(
+                                "recoverable verification lacks its "
+                                "precommitted durable authority"
+                            )
+                        stage = "verifier"
+                        grade = await verifier.verify_or_recover(
+                            blinded,
+                            prepared_attempt=prepared_attempt,
+                        )
+                        stage = "verification_authority"
+                        completed_attempt = (
+                            self._completed_attempt_after_verifier_return(
+                                prepared_attempt=prepared_attempt,
+                                returned_grade=grade,
+                                verifier=verifier,
+                                task=task,
+                                blinded=blinded,
+                                envelope=recovery_envelope,
+                            )
+                        )
+                    else:
+                        stage = "verifier"
+                        grade = await verifier.verify(blinded)
                     stage = "grade_binding"
                     _validate_grade_binding(
                         grade,
@@ -3351,6 +3982,21 @@ class ExperimentKernel:
                         execution_receipt=receipt,
                         token_usage=dict(receipt.token_usage),
                         attempt_records=tuple(receipt.attempt_records),
+                        verification_attempt_key=(
+                            completed_attempt.attempt_key
+                            if completed_attempt is not None
+                            else ""
+                        ),
+                        verification_grade_hash=(
+                            str(completed_attempt.grade_hash)
+                            if completed_attempt is not None
+                            else ""
+                        ),
+                        verification_completion_hash=(
+                            str(completed_attempt.completion_hash)
+                            if completed_attempt is not None
+                            else ""
+                        ),
                     )
                     stage = "gradebook"
                     outcome = self._with_grade_revision(
@@ -3383,6 +4029,37 @@ class ExperimentKernel:
                 except Exception as exc:
                     if stage == "grade_terminal_commit":
                         raise
+                    if (
+                        recoverable_verification
+                        and recovery_envelope is not None
+                        and stage
+                        in {
+                            "frozen_result_persistence",
+                            "verification_prepare",
+                            "verifier",
+                            "verification_authority",
+                            "grade_binding",
+                            "gradebook",
+                            "terminal_persistence",
+                        }
+                    ):
+                        raise
+                    if (
+                        not observation_persisted
+                        and stage != "observation_persistence"
+                    ):
+                        try:
+                            self.store.observe_arm_execution(
+                                experiment_id=experiment.experiment_id,
+                                task_id=task.task_id,
+                                block_attempt=block_attempt,
+                                arm=arm,
+                                payload=observation,
+                            )
+                            observation_persisted = True
+                        except Exception as observation_exc:
+                            stage = "observation_persistence"
+                            exc = observation_exc
                     compensation_failed = False
                     appended_revision = None
                     graded_frozen_result_hash = ""
@@ -3718,6 +4395,10 @@ class ExperimentKernel:
         outcome: ArmOutcome,
         terminal_event: Mapping[str, Any],
     ) -> None:
+        self._validate_outcome_verification_lineage(
+            outcome,
+            terminal_event=terminal_event,
+        )
         grade_revision = outcome.grade_revision
         if grade_revision is None:
             if outcome.status == "completed":
@@ -3743,22 +4424,105 @@ class ExperimentKernel:
             terminal_state_hash=str(terminal_event["state_hash"]),
         )
 
-    def _with_grade_revision(
+    def _validate_outcome_verification_lineage(
+        self,
+        outcome: ArmOutcome,
+        *,
+        terminal_event: Mapping[str, Any],
+    ) -> None:
+        try:
+            arm_state = self.store.get_arm_attempt_state(
+                str(terminal_event["experiment_id"]),
+                str(terminal_event["task_id"]),
+                block_attempt=int(terminal_event["block_attempt"]),
+                arm=Arm(str(terminal_event["arm"])),
+            )
+            observed_event = arm_state.get("observed")
+            recovery_envelope = (
+                _validated_verification_recovery_envelope(
+                    observed_event
+                )
+                if observed_event is not None
+                else None
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "terminal verification observation could not be validated"
+            ) from exc
+        if not outcome.verification_attempt_key:
+            if recovery_envelope is not None:
+                raise RuntimeError(
+                    "recoverable terminal outcome lacks verification "
+                    "attempt lineage"
+                )
+            return
+        if recovery_envelope is None:
+            raise RuntimeError(
+                "terminal outcome verification lineage lacks its recovery "
+                "envelope"
+            )
+        journal = self.verification_journal
+        if journal is None:
+            raise RuntimeError(
+                "recoverable terminal outcome requires its verification "
+                "journal authority"
+            )
+        try:
+            attempt = journal.get_verification_attempt(
+                attempt_key=outcome.verification_attempt_key
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "terminal verification journal could not be read"
+            ) from exc
+        canonical_grade = outcome.grade.to_dict()
+        expected_context = _verification_journal_context_from_envelope(
+            task_spec_hash=str(recovery_envelope["task_spec_hash"]),
+            blinded_frozen_result_hash=str(
+                recovery_envelope["blinded_frozen_result_hash"]
+            ),
+            recovery_envelope_hash=str(
+                recovery_envelope["recovery_envelope_hash"]
+            ),
+        )
+        if (
+            not isinstance(attempt, VerificationAttemptRecord)
+            or attempt.state != "COMPLETED"
+            or attempt.slot_key != recovery_envelope["slot_key"]
+            or dict(attempt.spec.context) != expected_context
+            or attempt.spec.frozen_result_hash
+            != outcome.frozen_result_hash
+            or attempt.spec.frozen_result_hash
+            != recovery_envelope["blinded_frozen_result_hash"]
+            or attempt.spec.verifier_id != outcome.grade.verifier_id
+            or attempt.spec.verifier_version
+            != outcome.grade.verifier_version
+            or attempt.spec.verifier_hash != outcome.grade.verifier_hash
+            or attempt.grade is None
+            or dict(attempt.grade) != canonical_grade
+            or attempt.grade_hash != outcome.verification_grade_hash
+            or attempt.grade_hash != _sha256_json(canonical_grade)
+            or attempt.completion_hash
+            != outcome.verification_completion_hash
+        ):
+            raise RuntimeError(
+                "terminal outcome verification lineage is invalid"
+            )
+
+    def _run_envelope_ref_for_outcome(
         self,
         *,
-        experiment: ExperimentSpec,
-        task: TaskSpec,
+        experiment_id: str,
         assignment: Assignment,
+        task: TaskSpec,
         outcome: ArmOutcome,
-    ) -> ArmOutcome:
-        if outcome.grade_revision is not None:
-            raise ValueError("outcome already carries grade lineage")
+    ) -> RunEnvelopeRef:
         receipt = outcome.execution_receipt
         run_id = (
             receipt.result_id
             if receipt is not None
             else "failure-" + _sha256_json({
-                "experiment_id": experiment.experiment_id,
+                "experiment_id": experiment_id,
                 "assignment_id": assignment.assignment_id,
                 "task_id": task.task_id,
                 "arm": outcome.arm.value,
@@ -3772,7 +4536,7 @@ class ExperimentKernel:
         )
         envelope_payload = {
             "schema_version": "supervisor-experiment-run-envelope/v1",
-            "experiment_id": experiment.experiment_id,
+            "experiment_id": experiment_id,
             "assignment_id": assignment.assignment_id,
             "task_id": task.task_id,
             "canonical_task_id": assignment.canonical_task_id,
@@ -3785,11 +4549,39 @@ class ExperimentKernel:
             "execution_receipt": (
                 None if receipt is None else receipt.to_dict()
             ),
+            "verification_attempt": (
+                None
+                if not outcome.verification_attempt_key
+                else {
+                    "attempt_key": outcome.verification_attempt_key,
+                    "grade_hash": outcome.verification_grade_hash,
+                    "completion_hash": (
+                        outcome.verification_completion_hash
+                    ),
+                }
+            ),
         }
-        run = RunEnvelopeRef(
+        return RunEnvelopeRef(
             run_id=run_id,
             run_envelope_hash=_sha256_json(envelope_payload),
             frozen_result_hash=outcome.frozen_result_hash,
+        )
+
+    def _with_grade_revision(
+        self,
+        *,
+        experiment: ExperimentSpec,
+        task: TaskSpec,
+        assignment: Assignment,
+        outcome: ArmOutcome,
+    ) -> ArmOutcome:
+        if outcome.grade_revision is not None:
+            raise ValueError("outcome already carries grade lineage")
+        run = self._run_envelope_ref_for_outcome(
+            experiment_id=experiment.experiment_id,
+            assignment=assignment,
+            task=task,
+            outcome=outcome,
         )
         revision = self.gradebook.append_grade(
             run=run,
@@ -3862,6 +4654,49 @@ class ExperimentKernel:
         )
         if outcome is None or outcome.grade_revision is None:
             raise ValueError("persisted outcome lacks immutable grade lineage")
+        expected_terminal_state = (
+            "completed" if outcome.status == "completed" else "failed"
+        )
+        terminal_event: Mapping[str, Any] | None = None
+        authoritative_outcome: ArmOutcome | None = None
+        for event in reversed(
+            self.store.get_arm_state_events(
+                experiment_id,
+                task_id,
+                arm=arm,
+            )
+        ):
+            if event["state"] != expected_terminal_state:
+                continue
+            try:
+                candidate = _arm_outcome_from_terminal_event(event)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "persisted terminal grade authority is malformed"
+                ) from exc
+            if (
+                candidate.grade_revision is not None
+                and candidate.grade_revision.grade_id
+                == outcome.grade_revision.grade_id
+                and candidate.grade_revision.revision_hash
+                == outcome.grade_revision.revision_hash
+            ):
+                terminal_event = event
+                authoritative_outcome = candidate
+                break
+        if terminal_event is None or authoritative_outcome is None:
+            raise ValueError(
+                "persisted outcome lacks matching terminal grade authority"
+            )
+        if authoritative_outcome != outcome:
+            raise ValueError(
+                "persisted result differs from authoritative terminal outcome"
+            )
+        if authoritative_outcome.verification_attempt_key:
+            raise ValueError(
+                "recoverable operational outcomes require a distinct durable "
+                "regrade workflow"
+            )
         frozen = self.store.get_frozen_result(
             experiment_id=experiment_id,
             task_id=task_id,
@@ -3897,43 +4732,6 @@ class ExperimentKernel:
             supersedes_grade_id=history[-1].grade_id,
             reason=reason,
         )
-        expected_terminal_state = (
-            "completed" if outcome.status == "completed" else "failed"
-        )
-        terminal_event: Mapping[str, Any] | None = None
-        for event in reversed(
-            self.store.get_arm_state_events(
-                experiment_id,
-                task_id,
-                arm=arm,
-            )
-        ):
-            if event["state"] != expected_terminal_state:
-                continue
-            payload = event.get("payload")
-            raw_outcome = (
-                payload.get("outcome")
-                if isinstance(payload, MappingABC)
-                else None
-            )
-            raw_grade_revision = (
-                raw_outcome.get("grade_revision")
-                if isinstance(raw_outcome, MappingABC)
-                else None
-            )
-            if (
-                isinstance(raw_grade_revision, MappingABC)
-                and str(raw_grade_revision.get("grade_id") or "")
-                == outcome.grade_revision.grade_id
-                and str(raw_grade_revision.get("revision_hash") or "")
-                == outcome.grade_revision.revision_hash
-            ):
-                terminal_event = event
-                break
-        if terminal_event is None:
-            raise ValueError(
-                "persisted outcome lacks matching terminal grade authority"
-            )
         self.gradebook.commit_terminal_grade(
             grade_id=revision.grade_id,
             revision_hash=revision.revision_hash,
@@ -4007,7 +4805,7 @@ def _blind_frozen_result_with_audit(
         metadata=metadata,
         frozen_at_ms=result.frozen_at_ms,
     )
-    return blinded, tuple(removed_paths)
+    return blinded, tuple(sorted(removed_paths))
 
 
 def build_primary_reviewer_packet(
@@ -4455,6 +5253,253 @@ def _observed_execution_usage(
     }
 
 
+def _new_verification_attempt_slot_key() -> str:
+    """Return an opaque slot that reveals no experiment or arm identity."""
+    return secrets.token_hex(32)
+
+
+def _verification_recovery_envelope(
+    *,
+    experiment: ExperimentSpec,
+    task: TaskSpec,
+    assignment: Assignment,
+    block_attempt: int,
+    arm: Arm,
+    execution: ArmExecution,
+    receipt: ArmExecutionReceipt,
+    blinded: FrozenTaskResult,
+    removed_paths: tuple[str, ...],
+    observed_usage: Mapping[str, Any],
+    slot_key: str,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{64}", slot_key):
+        raise ValueError("verification recovery slot must be an opaque digest")
+    canonical_metadata = _thaw_json_value(
+        _freeze_json_value(
+            execution.metadata,
+            path="verification recovery execution metadata",
+        )
+    )
+    canonical_usage = _thaw_json_value(
+        _freeze_json_value(
+            observed_usage,
+            path="verification recovery observed usage",
+        )
+    )
+    body = {
+        "schema_version": (
+            EXPERIMENT_VERIFICATION_RECOVERY_SCHEMA_VERSION
+        ),
+        "slot_key": slot_key,
+        "experiment_id": experiment.experiment_id,
+        "task_id": task.task_id,
+        "block_attempt": block_attempt,
+        "arm": arm.value,
+        "assignment_id": assignment.assignment_id,
+        "task_spec_hash": task.spec_hash,
+        "original_frozen_result": execution.frozen_result.to_dict(),
+        "blinded_frozen_result_hash": blinded.result_hash,
+        "blinding_removed_paths": sorted(removed_paths),
+        "execution_receipt": receipt.to_dict(),
+        "execution_metadata": canonical_metadata,
+        "observed_usage": canonical_usage,
+    }
+    return {
+        **body,
+        "recovery_envelope_hash": _sha256_json(body),
+    }
+
+
+def _verification_journal_context_from_envelope(
+    *,
+    task_spec_hash: str,
+    blinded_frozen_result_hash: str,
+    recovery_envelope_hash: str,
+) -> dict[str, str]:
+    return {
+        "schema_version": (
+            EXPERIMENT_VERIFICATION_CONTEXT_SCHEMA_VERSION
+        ),
+        "task_spec_hash": task_spec_hash,
+        "blinded_frozen_result_hash": blinded_frozen_result_hash,
+        "recovery_envelope_hash": recovery_envelope_hash,
+    }
+
+
+def _validated_verification_recovery_envelope(
+    observed_event: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    if observed_event.get("state") != "observed":
+        raise ValueError("verification recovery requires an observed event")
+    payload = observed_event.get("payload")
+    if not isinstance(payload, MappingABC):
+        raise ValueError("verification recovery observed payload is invalid")
+    raw_envelope = payload.get("verification_recovery")
+    if raw_envelope is None:
+        return None
+    if not isinstance(raw_envelope, MappingABC):
+        raise ValueError("verification recovery envelope must be a mapping")
+    envelope = _thaw_json_value(raw_envelope)
+    if not isinstance(envelope, dict):
+        raise ValueError("verification recovery envelope is not canonical")
+    expected_keys = {
+        "schema_version",
+        "slot_key",
+        "experiment_id",
+        "task_id",
+        "block_attempt",
+        "arm",
+        "assignment_id",
+        "task_spec_hash",
+        "original_frozen_result",
+        "blinded_frozen_result_hash",
+        "blinding_removed_paths",
+        "execution_receipt",
+        "execution_metadata",
+        "observed_usage",
+        "recovery_envelope_hash",
+    }
+    if set(envelope) != expected_keys:
+        raise ValueError("verification recovery envelope fields are invalid")
+    body = {
+        key: value
+        for key, value in envelope.items()
+        if key != "recovery_envelope_hash"
+    }
+    if (
+        envelope["schema_version"]
+        != EXPERIMENT_VERIFICATION_RECOVERY_SCHEMA_VERSION
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(envelope["slot_key"]),
+        )
+        or envelope["recovery_envelope_hash"] != _sha256_json(body)
+    ):
+        raise ValueError("verification recovery envelope hash is invalid")
+    event_identity = {
+        "experiment_id": str(observed_event.get("experiment_id") or ""),
+        "task_id": str(observed_event.get("task_id") or ""),
+        "block_attempt": observed_event.get("block_attempt"),
+        "arm": str(observed_event.get("arm") or ""),
+    }
+    for field_name, expected_value in event_identity.items():
+        if envelope.get(field_name) != expected_value:
+            raise ValueError(
+                "verification recovery envelope does not match observed "
+                f"{field_name}"
+            )
+    observed_usage = {
+        key: _thaw_json_value(value)
+        for key, value in payload.items()
+        if key != "verification_recovery"
+    }
+    if envelope.get("observed_usage") != observed_usage:
+        raise ValueError(
+            "verification recovery envelope does not bind observed usage"
+        )
+    raw_removed_paths = envelope.get("blinding_removed_paths")
+    if (
+        not isinstance(raw_removed_paths, list)
+        or any(not isinstance(path, str) for path in raw_removed_paths)
+        or raw_removed_paths != sorted(set(raw_removed_paths))
+    ):
+        raise ValueError(
+            "verification recovery blinding paths are not canonical"
+        )
+    return envelope
+
+
+def _execution_from_verification_recovery_envelope(
+    *,
+    envelope: Mapping[str, Any],
+    task: TaskSpec,
+) -> tuple[
+    ArmExecution,
+    ArmExecutionReceipt,
+    FrozenTaskResult,
+    tuple[str, ...],
+]:
+    raw_original = envelope.get("original_frozen_result")
+    raw_receipt = envelope.get("execution_receipt")
+    raw_metadata = envelope.get("execution_metadata")
+    raw_removed_paths = envelope.get("blinding_removed_paths")
+    if not isinstance(raw_original, MappingABC):
+        raise ValueError(
+            "verification recovery original result must be a mapping"
+        )
+    if not isinstance(raw_receipt, MappingABC):
+        raise ValueError(
+            "verification recovery execution receipt must be a mapping"
+        )
+    if not isinstance(raw_metadata, MappingABC):
+        raise ValueError(
+            "verification recovery execution metadata must be a mapping"
+        )
+    if not isinstance(raw_removed_paths, list):
+        raise ValueError(
+            "verification recovery blinding paths must be strings"
+        )
+
+    original_payload = _thaw_json_value(raw_original)
+    receipt_payload = _thaw_json_value(raw_receipt)
+    metadata_payload = _thaw_json_value(raw_metadata)
+    if not isinstance(original_payload, dict):
+        raise ValueError(
+            "verification recovery original result is not canonical"
+        )
+    if not isinstance(receipt_payload, dict):
+        raise ValueError(
+            "verification recovery execution receipt is not canonical"
+        )
+    if not isinstance(metadata_payload, dict):
+        raise ValueError(
+            "verification recovery execution metadata is not canonical"
+        )
+
+    original = _frozen_result_from_dict(original_payload)
+    if original.to_dict() != original_payload:
+        raise ValueError(
+            "verification recovery original result is not canonical"
+        )
+    _validate_frozen_result_task_binding(original, task)
+    expected_blinded, expected_removed_paths = (
+        _blind_frozen_result_with_audit(
+            bind_frozen_result_to_task(task, original)
+        )
+    )
+    removed_paths = tuple(raw_removed_paths)
+    if (
+        envelope.get("blinded_frozen_result_hash")
+        != expected_blinded.result_hash
+        or removed_paths != expected_removed_paths
+    ):
+        raise ValueError(
+            "verification recovery envelope does not reproduce blinding"
+        )
+
+    receipt = ArmExecutionReceipt.from_mapping(receipt_payload)
+    if receipt.to_dict() != receipt_payload:
+        raise ValueError(
+            "verification recovery execution receipt is not canonical"
+        )
+    execution = ArmExecution(
+        frozen_result=original,
+        attempts=receipt.attempts,
+        cost_usd=receipt.cost_usd,
+        latency_ms=receipt.latency_ms,
+        metadata=metadata_payload,
+        receipt=receipt,
+    )
+    if (
+        envelope.get("observed_usage")
+        != _observed_execution_usage(execution)
+    ):
+        raise ValueError(
+            "verification recovery envelope usage does not match execution"
+        )
+    return execution, receipt, expected_blinded, removed_paths
+
+
 def _observed_exception_usage(exc: Exception) -> dict[str, Any]:
     return {
         "attempts": max(1, _observed_non_negative_int(
@@ -4558,7 +5603,9 @@ def _post_launch_failure(
         "frozen_result": "post_launch_frozen_result_failure",
         "blinding": "post_launch_blinding_failure",
         "frozen_result_persistence": "post_launch_persistence_failure",
+        "verification_prepare": "verification_prepare_failure",
         "verifier": "verifier_failure",
+        "verification_authority": "verification_authority_failure",
         "grade_binding": "grade_binding_failure",
         "gradebook": "gradebook_failure",
         "terminal_persistence": "post_launch_persistence_failure",
@@ -5815,6 +6862,31 @@ def _arm_outcome_from_dict(
         if isinstance(raw_execution_receipt, MappingABC)
         else None
     )
+    raw_verification_attempt = raw_outcome.get("verification_attempt")
+    if raw_verification_attempt is None:
+        verification_attempt_key = ""
+        verification_grade_hash = ""
+        verification_completion_hash = ""
+    elif isinstance(raw_verification_attempt, MappingABC):
+        if set(raw_verification_attempt) != {
+            "attempt_key",
+            "grade_hash",
+            "completion_hash",
+        }:
+            raise TypeError(
+                "verification attempt lineage fields are invalid"
+            )
+        verification_attempt_key = str(
+            raw_verification_attempt["attempt_key"]
+        )
+        verification_grade_hash = str(
+            raw_verification_attempt["grade_hash"]
+        )
+        verification_completion_hash = str(
+            raw_verification_attempt["completion_hash"]
+        )
+    else:
+        raise TypeError("verification attempt lineage must be a mapping")
     status = str(raw_outcome["status"])
     if status == "completed" and (
         execution_receipt is None or grade_revision is None
@@ -5846,6 +6918,9 @@ def _arm_outcome_from_dict(
                 raw_outcome.get("attempt_records") or ()
             )
         ),
+        verification_attempt_key=verification_attempt_key,
+        verification_grade_hash=verification_grade_hash,
+        verification_completion_hash=verification_completion_hash,
         failure_classification=str(
             raw_outcome.get("failure_classification") or ""
         ),

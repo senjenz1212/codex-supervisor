@@ -17,7 +17,7 @@ from supervisor.backend_run_replay import (
     BACKEND_RUN_REPLAY_SCHEMA_VERSION,
     BackendRunReplayConflictError,
     BackendRunReplayGuardError,
-    SQLiteBackendRunReplayGuard,
+    SQLiteBackendRunReplayGuard as _SQLiteBackendRunReplayGuard,
 )
 from supervisor.swe_bench_official_oracle import (
     SWE_BENCH_BOUND_ORACLE_RECEIPT_SCHEMA_VERSION,
@@ -50,11 +50,15 @@ _AUTHORITY_SECRET = b"fixture-only-swe-bench-authority-key"
 _TRUSTED_BACKEND_MANIFEST_HASH = sha256(
     b"tests.attested-swebench-backend/v1"
 ).hexdigest()
+_OTHER_TRUSTED_BACKEND_MANIFEST_HASH = sha256(
+    b"tests.attested-swebench-backend/v2"
+).hexdigest()
 
 
 class _HmacAuthority:
     key_id = "tests.swe-bench-authority"
     algorithm = "hmac-sha256"
+    trust_root_hash = sha256(_AUTHORITY_SECRET).hexdigest()
 
     def sign(self, payload: bytes) -> bytes:
         return hmac.new(_AUTHORITY_SECRET, payload, sha256).digest()
@@ -82,6 +86,41 @@ class _HmacAuthority:
 
 _AUTHORITY = _HmacAuthority()
 _DEFAULT_REPLAY_GUARD = object()
+_JOURNAL_AUTHORITY_IDS: dict[str, str] = {}
+
+
+def SQLiteBackendRunReplayGuard(
+    path: str | Path,
+) -> _SQLiteBackendRunReplayGuard:
+    """Provision once per test path, then reopen with its external pin."""
+    key = str(path)
+    authority_id = _JOURNAL_AUTHORITY_IDS.get(key)
+    if authority_id is not None:
+        return _SQLiteBackendRunReplayGuard.open(
+            path,
+            expected_authority_id=authority_id,
+        )
+    if Path(path).is_file():
+        return _SQLiteBackendRunReplayGuard.open(
+            path,
+            expected_authority_id="0" * 64,
+        )
+    journal = _SQLiteBackendRunReplayGuard.provision(path)
+    _JOURNAL_AUTHORITY_IDS[key] = journal.authority_id
+    return journal
+
+
+class _ResumableOracle:
+    backend_id = "tests.attested-swebench-backend/v1"
+    backend_manifest_hash = _TRUSTED_BACKEND_MANIFEST_HASH
+
+    def __init__(self, runner) -> None:
+        self._runner = runner
+        self.calls = 0
+
+    def execute_or_recover(self, context):
+        self.calls += 1
+        return self._runner(context)
 
 
 class _SetReplayGuard:
@@ -142,6 +181,14 @@ class _TruthyRejectingAuthorityVerifier:
         _signature: Mapping[str, str],
     ) -> str:
         return "invalid-signature"
+
+
+class _DifferentTrustRoot(_HmacAuthority):
+    key_id = "tests.different-swe-bench-authority"
+
+
+class _SameIdentityDifferentTrustRoot(_HmacAuthority):
+    trust_root_hash = sha256(b"different-authority-root").hexdigest()
 
 
 def _task_spec() -> TaskSpec:
@@ -596,6 +643,7 @@ def test_swebench_backend_run_replay_guard_rejects_forged_table_definition(
             )
             """
         )
+    database.chmod(0o600)
 
     with pytest.raises(BackendRunReplayGuardError, match="schema"):
         SQLiteBackendRunReplayGuard(database)
@@ -676,6 +724,7 @@ def test_swebench_backend_run_replay_guard_detects_live_path_replacement(
         displaced = tmp_path / "displaced.db"
         database.replace(displaced)
         sqlite3.connect(database).close()
+        database.chmod(0o600)
 
         with pytest.raises(RuntimeError, match="database identity changed"):
             guard.consume(
@@ -1183,6 +1232,635 @@ async def test_swebench_verifier_rejects_operational_authority_without_replay_gu
             oracle_runner=oracle_runner,
             backend_run_replay_guard=None,
         ).verify(_bound_frozen(task))
+
+
+def test_operational_swebench_requires_journal_before_backend_launch(
+) -> None:
+    task = _task_spec()
+    oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="verification attempt journal",
+    ):
+        SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+
+    assert oracle.calls == 0
+
+
+def test_operational_swebench_attempt_retains_verification_policy_details(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        prepared = verifier.prepare_verification(frozen)
+
+    policy = prepared.spec.context["verification_policy"]
+    assert policy["backend_id"] == oracle.backend_id
+    assert (
+        policy["backend_manifest_hash"]
+        == oracle.backend_manifest_hash
+    )
+    assert policy["trust_key_id"] == _AUTHORITY.key_id
+    assert policy["trust_algorithm"] == _AUTHORITY.algorithm
+    assert policy["trust_root_hash"] == _AUTHORITY.trust_root_hash
+    assert _json_hash(dict(policy)) == prepared.spec.verification_policy_hash
+
+
+def test_operational_swebench_verification_policy_is_deeply_immutable(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    database = tmp_path / "verification-journal.db"
+    oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        policy = verifier.verification_policy
+        original_hash = verifier.verification_policy_hash
+
+        with pytest.raises(TypeError):
+            policy["trusted_backend_manifest_hashes"][0] = "0" * 64
+
+        prepared = verifier.prepare_verification(_bound_frozen(task))
+
+    assert verifier.verification_policy_hash == original_hash
+    assert (
+        prepared.spec.context["verification_policy"][
+            "trusted_backend_manifest_hashes"
+        ]
+        == (_TRUSTED_BACKEND_MANIFEST_HASH,)
+    )
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_prepared_attempt_from_other_journal(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    backend = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+    with (
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "journal-a.db"
+        ) as journal_a,
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "journal-b.db"
+        ) as journal_b,
+    ):
+        verifier_a = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=backend,
+            verification_journal=journal_a,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        prepared_a = verifier_a.prepare_verification(frozen)
+        verifier_b = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=backend,
+            verification_journal=journal_b,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="active verification journal",
+        ):
+            await verifier_b.verify_or_recover(
+                frozen,
+                prepared_attempt=prepared_a,
+            )
+
+    assert backend.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_completed_attempt_from_other_journal(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    first_backend = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+    second_backend = _ResumableOracle(
+        lambda _context: pytest.fail(
+            "foreign completed attempt must fail before backend execution"
+        )
+    )
+    with (
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "journal-a.db"
+        ) as journal_a,
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "journal-b.db"
+        ) as journal_b,
+    ):
+        verifier_a = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=first_backend,
+            verification_journal=journal_a,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        await verifier_a.verify(frozen)
+        [completed_a] = journal_a.list_verification_attempts()
+        verifier_b = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=second_backend,
+            verification_journal=journal_b,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="active verification journal",
+        ):
+            await verifier_b.verify_or_recover(
+                frozen,
+                prepared_attempt=completed_a,
+            )
+
+    assert first_backend.calls == 1
+    assert second_backend.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_recovers_completed_grade_without_rerun(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    observed_nonces: list[str] = []
+
+    def run_backend(context):
+        observed_nonces.append(context["request_nonce"])
+        return _successful_oracle_result(dict(context))
+
+    oracle = _ResumableOracle(run_backend)
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+
+        first = await verifier.verify(frozen)
+        recovered = await verifier.verify(frozen)
+
+    assert recovered == first
+    assert first.passed is True
+    assert oracle.calls == 1
+    assert len(set(observed_nonces)) == 1
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_recovers_after_reconstruction(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    first_oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        first = await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=first_oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    recovered_oracle = _ResumableOracle(
+        lambda _context: pytest.fail(
+            "completed verification must not call the backend"
+        )
+    )
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        recovered = await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=recovered_oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    assert recovered == first
+    assert recovered_oracle.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_non_boolean_persisted_grade(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        prepared = verifier.prepare_verification(frozen)
+        context = verifier._oracle_context(
+            frozen,
+            request_nonce=prepared.request_nonce,
+        )
+        oracle_result = _successful_oracle_result(context)
+        authority = oracle_result["execution_authority"]
+        journal.complete_verification_attempt(
+            attempt_key=prepared.attempt_key,
+            backend_id=authority["backend_id"],
+            backend_run_id=authority["backend_run_id"],
+            authority_hash=authority["authority_hash"],
+            grade={
+                "schema_version": "supervisor-verification-grade/v1",
+                "verifier_id": verifier.verifier_id,
+                "verifier_version": verifier.verifier_version,
+                "verifier_hash": verifier.verifier_hash,
+                "frozen_result_hash": frozen.result_hash,
+                "passed": 1,
+                "score": 1.0,
+                "evidence": oracle_result,
+                "failure_classification": "",
+                "flake_classification": "",
+            },
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="passed must be a literal boolean",
+        ):
+            await verifier.verify(frozen)
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_recovered_manifest_drift(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    oracle = _ResumableOracle(
+        lambda context: _successful_oracle_result(dict(context))
+    )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=oracle,
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+                _OTHER_TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        prepared = verifier.prepare_verification(frozen)
+        context = verifier._oracle_context(
+            frozen,
+            request_nonce=prepared.request_nonce,
+        )
+        oracle_result = _successful_oracle_result(
+            context,
+            backend_manifest_hash=_OTHER_TRUSTED_BACKEND_MANIFEST_HASH,
+        )
+        authority = oracle_result["execution_authority"]
+        journal.complete_verification_attempt(
+            attempt_key=prepared.attempt_key,
+            backend_id=authority["backend_id"],
+            backend_run_id=authority["backend_run_id"],
+            authority_hash=authority["authority_hash"],
+            grade={
+                "schema_version": "supervisor-verification-grade/v1",
+                "verifier_id": verifier.verifier_id,
+                "verifier_version": verifier.verifier_version,
+                "verifier_hash": verifier.verifier_hash,
+                "frozen_result_hash": frozen.result_hash,
+                "passed": True,
+                "score": 1.0,
+                "evidence": oracle_result,
+                "failure_classification": "",
+                "flake_classification": "",
+            },
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="completed verification attempt backend manifest mismatch",
+        ):
+            await verifier.verify(frozen)
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_prepared_retry_reuses_nonce(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    observed_nonces: list[str] = []
+
+    def interrupted_backend(context):
+        observed_nonces.append(context["request_nonce"])
+        raise RuntimeError("simulated backend response loss")
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        with pytest.raises(
+            RuntimeError,
+            match="simulated backend response loss",
+        ):
+            await SweBenchVerifier(
+                task_spec=task,
+                verifier_version="4.1.0",
+                verifier_hash=task.verifier_hash,
+                operational_oracle=_ResumableOracle(
+                    interrupted_backend
+                ),
+                verification_journal=journal,
+                authority_verifier=_AUTHORITY,
+                trusted_backend_manifest_hashes=(
+                    _TRUSTED_BACKEND_MANIFEST_HASH,
+                ),
+            ).verify(frozen)
+
+    def recovered_backend(context):
+        observed_nonces.append(context["request_nonce"])
+        return _successful_oracle_result(dict(context))
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        grade = await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=_ResumableOracle(recovered_backend),
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    assert grade.passed is True
+    assert len(observed_nonces) == 2
+    assert observed_nonces[0] == observed_nonces[1]
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_recovers_after_response_before_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+    observed_nonces: list[str] = []
+
+    def successful_backend(context):
+        observed_nonces.append(context["request_nonce"])
+        return _successful_oracle_result(dict(context))
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        verifier = SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=_ResumableOracle(successful_backend),
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        )
+        original_complete = journal.complete_verification_attempt
+
+        def crash_before_completion(**_kwargs):
+            raise KeyboardInterrupt(
+                "simulated crash after valid backend response"
+            )
+
+        monkeypatch.setattr(
+            journal,
+            "complete_verification_attempt",
+            crash_before_completion,
+        )
+        with pytest.raises(
+            KeyboardInterrupt,
+            match="after valid backend response",
+        ):
+            await verifier.verify(frozen)
+        [prepared] = journal.list_verification_attempts()
+        assert prepared.state == "PREPARED"
+        monkeypatch.setattr(
+            journal,
+            "complete_verification_attempt",
+            original_complete,
+        )
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        grade = await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=_ResumableOracle(successful_backend),
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    assert grade.passed is True
+    assert len(observed_nonces) == 2
+    assert observed_nonces[0] == observed_nonces[1]
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_recovery_policy_drift(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=_ResumableOracle(
+                lambda context: _successful_oracle_result(dict(context))
+            ),
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    recovered_oracle = _ResumableOracle(
+        lambda _context: pytest.fail(
+            "policy drift must fail before backend recovery"
+        )
+    )
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        with pytest.raises(
+            BackendRunReplayGuardError,
+            match="different immutable authority",
+        ):
+            await SweBenchVerifier(
+                task_spec=task,
+                verifier_version="4.1.0",
+                verifier_hash=task.verifier_hash,
+                operational_oracle=recovered_oracle,
+                verification_journal=journal,
+                authority_verifier=_DifferentTrustRoot(),
+                trusted_backend_manifest_hashes=(
+                    _TRUSTED_BACKEND_MANIFEST_HASH,
+                ),
+            ).verify(frozen)
+
+    assert recovered_oracle.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_operational_swebench_rejects_same_id_trust_root_drift(
+    tmp_path: Path,
+) -> None:
+    task = _task_spec()
+    frozen = _bound_frozen(task)
+    database = tmp_path / "verification-journal.db"
+
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        await SweBenchVerifier(
+            task_spec=task,
+            verifier_version="4.1.0",
+            verifier_hash=task.verifier_hash,
+            operational_oracle=_ResumableOracle(
+                lambda context: _successful_oracle_result(dict(context))
+            ),
+            verification_journal=journal,
+            authority_verifier=_AUTHORITY,
+            trusted_backend_manifest_hashes=(
+                _TRUSTED_BACKEND_MANIFEST_HASH,
+            ),
+        ).verify(frozen)
+
+    recovered_oracle = _ResumableOracle(
+        lambda _context: pytest.fail(
+            "trust-root drift must fail before backend recovery"
+        )
+    )
+    with SQLiteBackendRunReplayGuard(database) as journal:
+        with pytest.raises(
+            BackendRunReplayGuardError,
+            match="different immutable authority",
+        ):
+            await SweBenchVerifier(
+                task_spec=task,
+                verifier_version="4.1.0",
+                verifier_hash=task.verifier_hash,
+                operational_oracle=recovered_oracle,
+                verification_journal=journal,
+                authority_verifier=_SameIdentityDifferentTrustRoot(),
+                trusted_backend_manifest_hashes=(
+                    _TRUSTED_BACKEND_MANIFEST_HASH,
+                ),
+            ).verify(frozen)
+
+    assert recovered_oracle.calls == 0
 
 
 @pytest.mark.asyncio

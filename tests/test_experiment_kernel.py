@@ -11,6 +11,11 @@ from typing import Any
 
 import pytest
 
+from supervisor.backend_run_replay import (
+    SQLiteBackendRunReplayGuard as _SQLiteBackendRunReplayGuard,
+    VerificationAttemptRecord,
+    VerificationAttemptSpec,
+)
 from supervisor.experiment_kernel import (
     ARM_ORDERS,
     Arm,
@@ -25,6 +30,9 @@ from supervisor.experiment_kernel import (
     IsolationAttestation,
     SqliteExperimentStore,
     TreatmentDescriptor,
+    _blind_frozen_result_with_audit,
+    _observed_execution_usage,
+    _verification_recovery_envelope,
     blind_frozen_result,
     build_adjudicator_packet,
     build_primary_reviewer_packet,
@@ -32,7 +40,36 @@ from supervisor.experiment_kernel import (
 )
 from supervisor.grade_revisions import DecisionGradeCitation, GradeBook
 from supervisor.pilot_readiness import PilotReadinessError
-from supervisor.task_environment import FrozenTaskResult, Grade, TaskSpec
+from supervisor.task_environment import (
+    FrozenTaskResult,
+    Grade,
+    TaskSpec,
+    bind_frozen_result_to_task,
+)
+
+
+_JOURNAL_AUTHORITY_IDS: dict[str, str] = {}
+
+
+def SQLiteBackendRunReplayGuard(
+    path: str | Path,
+) -> _SQLiteBackendRunReplayGuard:
+    """Provision once per test path, then reopen with its external pin."""
+    key = str(path)
+    authority_id = _JOURNAL_AUTHORITY_IDS.get(key)
+    if authority_id is not None:
+        return _SQLiteBackendRunReplayGuard.open(
+            path,
+            expected_authority_id=authority_id,
+        )
+    if Path(path).is_file():
+        return _SQLiteBackendRunReplayGuard.open(
+            path,
+            expected_authority_id="0" * 64,
+        )
+    journal = _SQLiteBackendRunReplayGuard.provision(path)
+    _JOURNAL_AUTHORITY_IDS[key] = journal.authority_id
+    return journal
 
 
 def _task_spec(
@@ -434,6 +471,280 @@ class RecordingVerifier:
             score=1.0,
             evidence={"hidden": True},
         )
+
+
+class RecoverableRecordingVerifier(RecordingVerifier):
+    requires_recoverable_verification = True
+    verification_policy_hash = "b" * 64
+
+    def __init__(self, journal: SQLiteBackendRunReplayGuard) -> None:
+        super().__init__()
+        self.verification_journal = journal
+        self.backend_calls = 0
+
+    def prepare_verification(
+        self,
+        frozen_result: FrozenTaskResult,
+        *,
+        slot_key: str = "",
+        context=None,
+    ) -> VerificationAttemptRecord:
+        return self.verification_journal.prepare_verification_attempt(
+            VerificationAttemptSpec(
+                execution_spec_hash="c" * 64,
+                frozen_result_hash=frozen_result.result_hash,
+                model_patch_sha256=frozen_result.patch_hash,
+                producer_run_result_hash=frozen_result.run_result_hash,
+                verifier_id=self.verifier_id,
+                verifier_version=self.verifier_version,
+                verifier_hash=self.verifier_hash,
+                verification_policy_hash=self.verification_policy_hash,
+                slot_key=slot_key,
+                context=dict(context or {}),
+            ),
+            backend_id="tests.recoverable-verifier/v1",
+            backend_manifest_hash="d" * 64,
+        )
+
+    def get_verification_attempt(
+        self,
+        *,
+        slot_key: str,
+    ) -> VerificationAttemptRecord | None:
+        return self.verification_journal.get_verification_attempt(
+            slot_key=slot_key
+        )
+
+    async def verify_or_recover(
+        self,
+        frozen_result: FrozenTaskResult,
+        *,
+        prepared_attempt: VerificationAttemptRecord | None = None,
+    ) -> Grade:
+        attempt = prepared_attempt or self.prepare_verification(
+            frozen_result
+        )
+        if attempt.state == "COMPLETED":
+            assert attempt.grade is not None
+            raw = dict(attempt.grade)
+            return Grade(
+                verifier_id=str(raw["verifier_id"]),
+                verifier_version=str(raw["verifier_version"]),
+                verifier_hash=str(raw["verifier_hash"]),
+                frozen_result_hash=str(raw["frozen_result_hash"]),
+                passed=bool(raw["passed"]),
+                score=float(raw["score"]),
+                evidence=dict(raw["evidence"]),
+                failure_classification=str(
+                    raw["failure_classification"]
+                ),
+                flake_classification=str(raw["flake_classification"]),
+            )
+        self.backend_calls += 1
+        grade = await super().verify(frozen_result)
+        completed = (
+            self.verification_journal.complete_verification_attempt(
+                attempt_key=attempt.attempt_key,
+                backend_id="tests.recoverable-verifier/v1",
+                backend_run_id=(
+                    "verification-" + attempt.request_nonce[:16]
+                ),
+                authority_hash="e" * 64,
+                grade=grade.to_dict(),
+            )
+        )
+        assert completed.grade is not None
+        return grade
+
+    async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+        return await self.verify_or_recover(frozen_result)
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_requires_kernel_journal_before_launch(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verifier-journal.db"
+    ) as journal:
+        verifier = RecoverableRecordingVerifier(journal)
+        kernel = ExperimentKernel(store=store, executor=executor)
+
+        with pytest.raises(
+            ValueError,
+            match="requires a durable verification journal",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        assert executor.calls == []
+        assert journal.list_verification_attempts() == ()
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_rejects_split_journal_authority(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with (
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "kernel-journal.db"
+        ) as kernel_journal,
+        SQLiteBackendRunReplayGuard(
+            tmp_path / "verifier-journal.db"
+        ) as verifier_journal,
+    ):
+        verifier = RecoverableRecordingVerifier(verifier_journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=kernel_journal,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="kernel and verifier verification journals differ",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        assert executor.calls == []
+        assert kernel_journal.list_verification_attempts() == ()
+        assert verifier_journal.list_verification_attempts() == ()
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_requires_exact_shared_journal_instance(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    journal_database = tmp_path / "verification-journal.db"
+    with (
+        SQLiteBackendRunReplayGuard(journal_database) as kernel_journal,
+        SQLiteBackendRunReplayGuard(journal_database) as verifier_journal,
+    ):
+        verifier = RecoverableRecordingVerifier(verifier_journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=kernel_journal,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="exact verification journal instance",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        assert executor.calls == []
+        assert kernel_journal.list_verification_attempts() == ()
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_rejects_unprovable_journal_identity(
+    tmp_path: Path,
+) -> None:
+    class PathlessJournal:
+        def __init__(self, delegate: SQLiteBackendRunReplayGuard) -> None:
+            self.delegate = delegate
+
+        def prepare_verification_attempt(self, *args, **kwargs):
+            return self.delegate.prepare_verification_attempt(
+                *args,
+                **kwargs,
+            )
+
+        def get_verification_attempt(self, *args, **kwargs):
+            return self.delegate.get_verification_attempt(*args, **kwargs)
+
+        def list_verification_attempts(self):
+            return self.delegate.list_verification_attempts()
+
+        def complete_verification_attempt(self, *args, **kwargs):
+            return self.delegate.complete_verification_attempt(
+                *args,
+                **kwargs,
+            )
+
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as durable_journal:
+        kernel_journal = PathlessJournal(durable_journal)
+        verifier_journal = PathlessJournal(durable_journal)
+        verifier = RecoverableRecordingVerifier(verifier_journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=kernel_journal,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="journal identity cannot be proven",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        assert executor.calls == []
+        assert durable_journal.list_verification_attempts() == ()
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_journal_context_is_blinded_and_minimal(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as journal:
+        verifier = RecoverableRecordingVerifier(journal)
+        await ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=journal,
+        ).run_task(
+            _experiment(),
+            _task_spec(),
+            verifier,
+        )
+
+        attempts = journal.list_verification_attempts()
+
+    assert len(attempts) == 3
+    for attempt in attempts:
+        assert set(attempt.spec.context) == {
+            "schema_version",
+            "task_spec_hash",
+            "blinded_frozen_result_hash",
+            "recovery_envelope_hash",
+        }
+        serialized = json.dumps(dict(attempt.spec.context), sort_keys=True)
+        assert "arm" not in serialized
+        assert "assignment" not in serialized
+        assert "treatment" not in serialized
+        assert "original_frozen_result" not in serialized
+        assert "execution_receipt" not in serialized
+        assert "execution_metadata" not in serialized
 
 
 def _assert_terminal_itt_failure(
@@ -1603,6 +1914,44 @@ def test_blinding_drops_encoded_or_free_text_from_unstructured_metadata(
     assert leaking_value not in json.dumps(blinded.to_dict())
 
 
+def test_blinding_removed_paths_are_canonical_across_metadata_order() -> None:
+    common = {
+        "task_id": "task-1",
+        "task_family": "generic",
+        "task_spec_hash": "task-spec",
+        "run_result_hash": "run-1",
+        "patch": "patch",
+        "output": "done",
+    }
+    first = FrozenTaskResult.create(
+        **common,
+        metadata={
+            "z_private": "z",
+            "repo": "repo",
+            "a_private": "a",
+        },
+    )
+    second = FrozenTaskResult.create(
+        **common,
+        metadata={
+            "a_private": "a",
+            "repo": "repo",
+            "z_private": "z",
+        },
+        frozen_at_ms=first.frozen_at_ms,
+    )
+
+    first_blinded, first_removed = _blind_frozen_result_with_audit(first)
+    second_blinded, second_removed = _blind_frozen_result_with_audit(second)
+
+    assert first_blinded == second_blinded
+    assert first_removed == second_removed == (
+        "metadata.a_private",
+        "metadata.z_private",
+        "output",
+    )
+
+
 def test_blinding_allows_one_letter_scalars_in_non_arm_fields() -> None:
     frozen = FrozenTaskResult.create(
         task_id="task-1",
@@ -2504,6 +2853,220 @@ async def test_restart_reconciles_completed_terminal_without_grade_commit(
 
 
 @pytest.mark.asyncio
+async def test_restart_requires_journal_to_reconcile_recoverable_terminal(
+    tmp_path: Path,
+) -> None:
+    class FailOnceTerminalCommitGradeBook(GradeBook):
+        fail_once = True
+
+        def commit_terminal_grade(self, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("grade terminal commit unavailable")
+            return super().commit_terminal_grade(**kwargs)
+
+    database = tmp_path / "recoverable-terminal-reconciliation.db"
+    journal_database = tmp_path / "verification-journal.db"
+    first_store = SqliteExperimentStore(database)
+    first_executor = RecordingExecutor(first_store)
+    first_gradebook = FailOnceTerminalCommitGradeBook(database)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        with pytest.raises(
+            RuntimeError,
+            match="grade terminal commit unavailable",
+        ):
+            await ExperimentKernel(
+                store=first_store,
+                executor=first_executor,
+                gradebook=first_gradebook,
+                verification_journal=journal,
+            ).run_task(
+                _experiment(),
+                _task_spec(),
+                RecoverableRecordingVerifier(journal),
+            )
+    [completed] = [
+        event
+        for event in first_store.get_arm_state_events("exp-1", "task-1")
+        if event["state"] == "completed"
+    ]
+    orphan_ref = completed["payload"]["outcome"]["grade_revision"]
+    grade_id = str(orphan_ref["grade_id"])
+    revision_hash = str(orphan_ref["revision_hash"])
+    assert first_gradebook.get_terminal_commit(grade_id) is None
+    first_gradebook.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="recoverable terminal outcome requires its verification "
+        "journal authority",
+    ):
+        ExperimentKernel(
+            store=SqliteExperimentStore(database),
+            executor=RecordingExecutor(
+                SqliteExperimentStore(database)
+            ),
+        )
+
+    class LineageStrippingTerminalStore(SqliteExperimentStore):
+        def list_terminal_arm_events(self):
+            events = json.loads(
+                json.dumps(super().list_terminal_arm_events())
+            )
+            events[0]["payload"]["outcome"].pop(
+                "verification_attempt",
+                None,
+            )
+            return tuple(events)
+
+        def get_arm_attempt_state(self, *args: Any, **kwargs: Any):
+            raw_state = super().get_arm_attempt_state(*args, **kwargs)
+            state = json.loads(
+                json.dumps(
+                    {
+                        key: dict(value)
+                        for key, value in raw_state.items()
+                    }
+                )
+            )
+            observed = state.get("observed")
+            if observed is not None:
+                observed["payload"].pop("verification_recovery", None)
+            return state
+
+    stripped_store = LineageStrippingTerminalStore(database)
+    with pytest.raises(
+        RuntimeError,
+        match="terminal outcome run envelope does not match GradeBook",
+    ):
+        ExperimentKernel(
+            store=stripped_store,
+            executor=RecordingExecutor(stripped_store),
+        )
+
+    with GradeBook(database) as gradebook:
+        assert gradebook.get_terminal_commit(grade_id) is None
+        assert gradebook.validate_decision([
+            DecisionGradeCitation(grade_id, revision_hash)
+        ]).accepted is False
+
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        recovered = ExperimentKernel(
+            store=SqliteExperimentStore(database),
+            executor=RecordingExecutor(
+                SqliteExperimentStore(database)
+            ),
+            verification_journal=journal,
+        )
+
+    assert recovered.gradebook.get_terminal_commit(grade_id) is not None
+    assert recovered.gradebook.validate_decision([
+        DecisionGradeCitation(grade_id, revision_hash)
+    ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_restart_revalidates_committed_recoverable_terminal_authority(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "committed-recoverable-terminal.db"
+    journal_database = tmp_path / "verification-journal.db"
+    store = SqliteExperimentStore(database)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        kernel = ExperimentKernel(
+            store=store,
+            executor=RecordingExecutor(store),
+            verification_journal=journal,
+        )
+        result = await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            RecoverableRecordingVerifier(journal),
+        )
+        outcome = result.outcomes[0]
+        assert outcome.grade_revision is not None
+        assert kernel.gradebook.get_terminal_commit(
+            outcome.grade_revision.grade_id
+        ) is not None
+
+    restarted_store = SqliteExperimentStore(database)
+    with pytest.raises(
+        RuntimeError,
+        match="recoverable terminal outcome requires its verification "
+        "journal authority",
+    ):
+        ExperimentKernel(
+            store=restarted_store,
+            executor=RecordingExecutor(restarted_store),
+        )
+
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        recovered_store = SqliteExperimentStore(database)
+        recovered = ExperimentKernel(
+            store=recovered_store,
+            executor=RecordingExecutor(recovered_store),
+            verification_journal=journal,
+        )
+
+    assert recovered.gradebook.validate_decision([
+        DecisionGradeCitation(
+            outcome.grade_revision.grade_id,
+            outcome.grade_revision.revision_hash,
+        )
+    ]).accepted is True
+
+
+@pytest.mark.asyncio
+async def test_same_kernel_retry_recommits_reused_terminal_grade(
+    tmp_path: Path,
+) -> None:
+    class FailOnceTerminalCommitGradeBook(GradeBook):
+        fail_once = True
+
+        def commit_terminal_grade(self, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("grade terminal commit unavailable")
+            return super().commit_terminal_grade(**kwargs)
+
+    database = tmp_path / "same-kernel-terminal-retry.db"
+    store = SqliteExperimentStore(database)
+    executor = RecordingExecutor(store)
+    gradebook = FailOnceTerminalCommitGradeBook(database)
+    kernel = ExperimentKernel(
+        store=store,
+        executor=executor,
+        gradebook=gradebook,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="grade terminal commit unavailable",
+    ):
+        await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+    first_calls = tuple(executor.calls)
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    assert tuple(executor.calls[:1]) == first_calls
+    assert len(executor.calls) == 3
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+    for outcome in result.outcomes:
+        assert outcome.grade_revision is not None
+        assert gradebook.get_terminal_commit(
+            outcome.grade_revision.grade_id
+        ) is not None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("tamper", ("missing", "hash_mismatch"))
 async def test_restart_rejects_malformed_terminal_grade_authority(
     tmp_path: Path,
@@ -2748,6 +3311,772 @@ async def test_restart_quarantines_orphan_and_failed_terminal_refs_it(
     assert [blocker.code for blocker in validation.blockers] == [
         "grade_terminal_commit_missing"
     ]
+
+
+@pytest.mark.asyncio
+async def test_restart_does_not_quarantine_when_recovery_journal_is_unreadable(
+    tmp_path: Path,
+) -> None:
+    class CrashBeforeCompletedTerminalStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise KeyboardInterrupt("simulated process death")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    class UnreadableVerificationJournal:
+        def get_verification_attempt(self, **_kwargs: Any):
+            raise RuntimeError("journal unavailable")
+
+    database = tmp_path / "unreadable-recovery-journal.db"
+    journal_database = tmp_path / "verification-journal.db"
+    first_store = CrashBeforeCompletedTerminalStore(database)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=RecordingExecutor(first_store),
+            verification_journal=journal,
+        )
+        with pytest.raises(KeyboardInterrupt, match="simulated process death"):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                RecoverableRecordingVerifier(journal),
+            )
+        [orphan] = first_kernel.gradebook.list_uncommitted_revisions()
+        first_kernel.gradebook.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="verification recovery journal could not be read",
+    ):
+        ExperimentKernel(
+            store=SqliteExperimentStore(database),
+            executor=RecordingExecutor(SqliteExperimentStore(database)),
+            verification_journal=UnreadableVerificationJournal(),
+        )
+
+    with GradeBook(database) as gradebook:
+        assert gradebook.list_invalidations(orphan.grade_id) == ()
+
+
+@pytest.mark.asyncio
+async def test_missing_recovery_journal_cannot_quarantine_recoverable_grade(
+    tmp_path: Path,
+) -> None:
+    class CrashBeforeCompletedTerminalStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise KeyboardInterrupt("simulated process death")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    database = tmp_path / "recoverable-grade.db"
+    journal_database = tmp_path / "verification-journal.db"
+    first_store = CrashBeforeCompletedTerminalStore(database)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=RecordingExecutor(first_store),
+            verification_journal=journal,
+        )
+        with pytest.raises(KeyboardInterrupt, match="simulated process death"):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                RecoverableRecordingVerifier(journal),
+            )
+        [orphan] = first_kernel.gradebook.list_uncommitted_revisions()
+        first_kernel.gradebook.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires its durable verification journal",
+    ):
+        ExperimentKernel(
+            store=SqliteExperimentStore(database),
+            executor=RecordingExecutor(SqliteExperimentStore(database)),
+        )
+
+    with GradeBook(database) as gradebook:
+        assert gradebook.list_invalidations(orphan.grade_id) == ()
+
+
+@pytest.mark.asyncio
+async def test_restart_recovers_completed_verification_without_paid_rerun(
+    tmp_path: Path,
+) -> None:
+    class CrashBeforeCompletedTerminalStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise KeyboardInterrupt("simulated terminal crash")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    experiment_database = tmp_path / "recover-completed-experiment.db"
+    journal_database = tmp_path / "recover-completed-journal.db"
+    first_store = CrashBeforeCompletedTerminalStore(experiment_database)
+    first_executor = RecordingExecutor(first_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_verifier = RecoverableRecordingVerifier(journal)
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            KeyboardInterrupt,
+            match="simulated terminal crash",
+        ):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                first_verifier,
+            )
+        assert len(first_executor.calls) == 1
+        assert first_verifier.backend_calls == 1
+        first_kernel.gradebook.close()
+
+    restarted_store = SqliteExperimentStore(experiment_database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        restarted_verifier = RecoverableRecordingVerifier(journal)
+        restarted = ExperimentKernel(
+            store=restarted_store,
+            executor=restarted_executor,
+            verification_journal=journal,
+        )
+        result = await restarted.run_task(
+            _experiment(),
+            _task_spec(),
+            restarted_verifier,
+        )
+
+    assert len(restarted_executor.calls) == 2
+    assert restarted_verifier.backend_calls == 2
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+    assert restarted.gradebook.list_uncommitted_revisions() == ()
+
+
+@pytest.mark.asyncio
+async def test_restart_reuses_prepared_verification_nonce_without_arm_rerun(
+    tmp_path: Path,
+) -> None:
+    class CrashAfterBackendAcceptedVerifier(RecoverableRecordingVerifier):
+        async def verify_or_recover(
+            self,
+            frozen_result: FrozenTaskResult,
+            *,
+            prepared_attempt: VerificationAttemptRecord | None = None,
+        ) -> Grade:
+            attempt = prepared_attempt or self.prepare_verification(
+                frozen_result
+            )
+            self.backend_calls += 1
+            raise KeyboardInterrupt(
+                "simulated response loss after backend accepted nonce "
+                + attempt.request_nonce
+            )
+
+    experiment_database = tmp_path / "recover-prepared-experiment.db"
+    journal_database = tmp_path / "recover-prepared-journal.db"
+    first_store = SqliteExperimentStore(experiment_database)
+    first_executor = RecordingExecutor(first_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_verifier = CrashAfterBackendAcceptedVerifier(journal)
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            KeyboardInterrupt,
+            match="simulated response loss",
+        ):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                first_verifier,
+            )
+        [prepared] = journal.list_verification_attempts()
+        prepared_nonce = prepared.request_nonce
+        assert prepared.state == "PREPARED"
+        assert len(first_executor.calls) == 1
+        assert first_verifier.backend_calls == 1
+        first_kernel.gradebook.close()
+
+    restarted_store = SqliteExperimentStore(experiment_database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        restarted_verifier = RecoverableRecordingVerifier(journal)
+        restarted = ExperimentKernel(
+            store=restarted_store,
+            executor=restarted_executor,
+            verification_journal=journal,
+        )
+        result = await restarted.run_task(
+            _experiment(),
+            _task_spec(),
+            restarted_verifier,
+        )
+        recovered_attempt = next(
+            attempt
+            for attempt in journal.list_verification_attempts()
+            if attempt.attempt_key == prepared.attempt_key
+        )
+
+    assert recovered_attempt.state == "COMPLETED"
+    assert recovered_attempt.request_nonce == prepared_nonce
+    assert len(restarted_executor.calls) == 2
+    assert restarted_verifier.backend_calls == 3
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+    assert restarted.gradebook.list_uncommitted_revisions() == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "crash_stage",
+    ("after_observed", "after_frozen_persistence"),
+)
+async def test_restart_uses_precommitted_attempt_from_observed_recovery_envelope(
+    tmp_path: Path,
+    crash_stage: str,
+) -> None:
+    class CrashStore(SqliteExperimentStore):
+        crashed = False
+
+        def observe_arm_execution(self, *args: Any, **kwargs: Any):
+            event = super().observe_arm_execution(*args, **kwargs)
+            if crash_stage == "after_observed" and not self.crashed:
+                self.crashed = True
+                raise KeyboardInterrupt("crash after observed envelope")
+            return event
+
+        def put_frozen_result(self, *args: Any, **kwargs: Any):
+            frozen = super().put_frozen_result(*args, **kwargs)
+            if (
+                crash_stage == "after_frozen_persistence"
+                and not self.crashed
+            ):
+                self.crashed = True
+                raise KeyboardInterrupt("crash after frozen persistence")
+            return frozen
+
+    experiment_database = tmp_path / f"{crash_stage}-experiment.db"
+    journal_database = tmp_path / f"{crash_stage}-journal.db"
+    first_store = CrashStore(experiment_database)
+    first_executor = RecordingExecutor(first_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_verifier = RecoverableRecordingVerifier(journal)
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(KeyboardInterrupt, match="crash after"):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                first_verifier,
+            )
+        [prepared] = journal.list_verification_attempts()
+        assert prepared.state == "PREPARED"
+        assert len(first_executor.calls) == 1
+        first_kernel.gradebook.close()
+
+    restarted_store = SqliteExperimentStore(experiment_database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        restarted_verifier = RecoverableRecordingVerifier(journal)
+        restarted = ExperimentKernel(
+            store=restarted_store,
+            executor=restarted_executor,
+            verification_journal=journal,
+        )
+        result = await restarted.run_task(
+            _experiment(),
+            _task_spec(),
+            restarted_verifier,
+        )
+
+    assert len(restarted_executor.calls) == 2
+    assert restarted_verifier.backend_calls == 3
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_prepared_before_observed_crash_fails_closed_without_rerun(
+    tmp_path: Path,
+) -> None:
+    class CrashBeforeObservedStore(SqliteExperimentStore):
+        crashed = False
+
+        def observe_arm_execution(self, *args: Any, **kwargs: Any):
+            if not self.crashed:
+                self.crashed = True
+                raise KeyboardInterrupt("crash before observed persistence")
+            return super().observe_arm_execution(*args, **kwargs)
+
+    experiment_database = tmp_path / "pre-observed-crash.db"
+    journal_database = tmp_path / "verification-journal.db"
+    first_store = CrashBeforeObservedStore(experiment_database)
+    first_executor = RecordingExecutor(first_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            KeyboardInterrupt,
+            match="crash before observed persistence",
+        ):
+            await first_kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                RecoverableRecordingVerifier(journal),
+            )
+        [orphan] = journal.list_verification_attempts()
+        assert orphan.state == "PREPARED"
+        first_kernel.gradebook.close()
+
+    interrupted_arm = first_executor.calls[0]
+    assert set(
+        first_store.get_arm_attempt_state(
+            "exp-1",
+            "task-1",
+            block_attempt=0,
+            arm=interrupted_arm,
+        )
+    ) == {"started"}
+
+    restarted_store = SqliteExperimentStore(experiment_database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        restarted = ExperimentKernel(
+            store=restarted_store,
+            executor=restarted_executor,
+            verification_journal=journal,
+        )
+        result = await restarted.run_task(
+            _experiment(),
+            _task_spec(),
+            RecoverableRecordingVerifier(journal),
+        )
+
+    interrupted = next(
+        outcome for outcome in result.outcomes
+        if outcome.arm == interrupted_arm
+    )
+    assert interrupted.status == "failed"
+    assert (
+        interrupted.failure_classification
+        == "interrupted_after_launch"
+    )
+    assert interrupted_arm not in restarted_executor.calls
+    assert len(restarted_executor.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_restart_rejects_coherent_observed_execution_substitution(
+    tmp_path: Path,
+) -> None:
+    class CrashAfterObservedStore(SqliteExperimentStore):
+        crashed = False
+
+        def observe_arm_execution(self, *args: Any, **kwargs: Any):
+            event = super().observe_arm_execution(*args, **kwargs)
+            if not self.crashed:
+                self.crashed = True
+                raise KeyboardInterrupt("crash after observed envelope")
+            return event
+
+    experiment_database = tmp_path / "substituted-observation.db"
+    journal_database = tmp_path / "verification-journal.db"
+    experiment = _experiment()
+    task = _task_spec()
+    first_store = CrashAfterObservedStore(experiment_database)
+    first_executor = RecordingExecutor(first_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        first_kernel = ExperimentKernel(
+            store=first_store,
+            executor=first_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            KeyboardInterrupt,
+            match="crash after observed envelope",
+        ):
+            await first_kernel.run_task(
+                experiment,
+                task,
+                RecoverableRecordingVerifier(journal),
+            )
+        first_kernel.gradebook.close()
+
+    arm = first_executor.calls[0]
+    assert first_store.get_frozen_result(
+        experiment_id="exp-1",
+        task_id="task-1",
+        arm=arm,
+    ) is None
+    assignment = first_store.get_assignment("exp-1", "task-1")
+    assert assignment is not None
+    state = first_store.get_arm_attempt_state(
+        "exp-1",
+        "task-1",
+        block_attempt=0,
+        arm=arm,
+    )
+    original_observed = state["observed"]
+    replacement_executor = RecordingExecutor(first_store)
+    replacement_executor.calls.append(arm)
+    replacement_execution = await replacement_executor.execute(
+        arm=arm,
+        task=task,
+        budget=experiment.arm_budgets[arm],
+        assignment_id=assignment.assignment_id,
+    )
+    replacement_receipt = replacement_execution.receipt
+    assert replacement_receipt is not None
+    replacement_blinded, replacement_removed_paths = (
+        _blind_frozen_result_with_audit(
+            bind_frozen_result_to_task(
+                task,
+                replacement_execution.frozen_result,
+            )
+        )
+    )
+    replacement_usage = _observed_execution_usage(
+        replacement_execution
+    )
+    replacement_envelope = _verification_recovery_envelope(
+        experiment=experiment,
+        task=task,
+        assignment=assignment,
+        block_attempt=0,
+        arm=arm,
+        execution=replacement_execution,
+        receipt=replacement_receipt,
+        blinded=replacement_blinded,
+        removed_paths=replacement_removed_paths,
+        observed_usage=replacement_usage,
+        slot_key="9" * 64,
+    )
+    replacement_payload = {
+        **replacement_usage,
+        "verification_recovery": replacement_envelope,
+    }
+    substituted_recorded_at_ms = (
+        int(original_observed["recorded_at_ms"]) + 1
+    )
+    substituted_body = {
+        key: value
+        for key, value in original_observed.items()
+        if key not in {
+            "arm_state_sequence",
+            "state_hash",
+            "recorded_at_ms",
+        }
+    }
+    substituted_body["payload"] = replacement_payload
+    substituted_body["recorded_at_ms"] = substituted_recorded_at_ms
+    substituted_state_hash = hashlib.sha256(
+        json.dumps(
+            substituted_body,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    with sqlite3.connect(experiment_database) as connection:
+        trigger_sql = connection.execute(
+            """
+            SELECT sql
+              FROM sqlite_master
+             WHERE type='trigger'
+               AND name='experiment_arm_states_no_update'
+            """
+        ).fetchone()[0]
+        connection.execute(
+            "DROP TRIGGER experiment_arm_states_no_update"
+        )
+        connection.execute(
+            """
+            UPDATE experiment_arm_state_events
+               SET payload_json=?, recorded_at_ms=?, state_hash=?
+             WHERE arm_state_sequence=?
+            """,
+            (
+                json.dumps(
+                    replacement_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
+                substituted_recorded_at_ms,
+                substituted_state_hash,
+                original_observed["arm_state_sequence"],
+            ),
+        )
+        connection.execute(trigger_sql)
+        connection.commit()
+
+    restarted_store = SqliteExperimentStore(experiment_database)
+    restarted_executor = RecordingExecutor(restarted_store)
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        restarted_verifier = RecoverableRecordingVerifier(journal)
+        restarted = ExperimentKernel(
+            store=restarted_store,
+            executor=restarted_executor,
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            RuntimeError,
+            match="recovery envelope lacks its precommitted verification "
+            "attempt",
+        ):
+            await restarted.run_task(
+                experiment,
+                task,
+                restarted_verifier,
+            )
+
+    assert restarted_executor.calls == []
+    assert restarted_verifier.backend_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_recoverable_verifier_runtime_error_retries_without_terminalizing(
+    tmp_path: Path,
+) -> None:
+    class FailOnceVerifier(RecoverableRecordingVerifier):
+        fail_once = True
+
+        async def verify_or_recover(
+            self,
+            frozen_result: FrozenTaskResult,
+            *,
+            prepared_attempt: VerificationAttemptRecord | None = None,
+        ) -> Grade:
+            if self.fail_once:
+                self.fail_once = False
+                self.backend_calls += 1
+                raise RuntimeError("transient verifier transport failure")
+            return await super().verify_or_recover(
+                frozen_result,
+                prepared_attempt=prepared_attempt,
+            )
+
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as journal:
+        verifier = FailOnceVerifier(journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=journal,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="transient verifier transport failure",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        state = store.get_arm_attempt_state(
+            "exp-1",
+            "task-1",
+            block_attempt=0,
+            arm=executor.calls[0],
+        )
+        assert set(state) == {"started", "observed"}
+        assert len(executor.calls) == 1
+
+        result = await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            verifier,
+        )
+
+    assert len(executor.calls) == 3
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+    assert all(outcome.verification_attempt_key for outcome in result.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_runtime_error_after_journal_completion_recovers_exact_grade(
+    tmp_path: Path,
+) -> None:
+    class FailAfterCompletionVerifier(RecoverableRecordingVerifier):
+        fail_once = True
+
+        async def verify_or_recover(
+            self,
+            frozen_result: FrozenTaskResult,
+            *,
+            prepared_attempt: VerificationAttemptRecord | None = None,
+        ) -> Grade:
+            grade = await super().verify_or_recover(
+                frozen_result,
+                prepared_attempt=prepared_attempt,
+            )
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("response lost after journal completion")
+            return grade
+
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as journal:
+        verifier = FailAfterCompletionVerifier(journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=journal,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="response lost after journal completion",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+        [completed] = journal.list_verification_attempts()
+        assert completed.state == "COMPLETED"
+        assert set(
+            store.get_arm_attempt_state(
+                "exp-1",
+                "task-1",
+                block_attempt=0,
+                arm=executor.calls[0],
+            )
+        ) == {"started", "observed"}
+
+        result = await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            verifier,
+        )
+
+    assert len(executor.calls) == 3
+    assert verifier.backend_calls == 3
+    recovered = next(
+        outcome
+        for outcome in result.outcomes
+        if outcome.verification_attempt_key == completed.attempt_key
+    )
+    assert recovered.verification_grade_hash == completed.grade_hash
+    assert (
+        recovered.verification_completion_hash
+        == completed.completion_hash
+    )
+
+
+@pytest.mark.asyncio
+async def test_returned_grade_requires_exact_completed_journal_attempt(
+    tmp_path: Path,
+) -> None:
+    class UncommittedVerifier(RecoverableRecordingVerifier):
+        async def verify_or_recover(
+            self,
+            frozen_result: FrozenTaskResult,
+            *,
+            prepared_attempt: VerificationAttemptRecord | None = None,
+        ) -> Grade:
+            assert prepared_attempt is not None
+            return await RecordingVerifier.verify(self, frozen_result)
+
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as journal:
+        verifier = UncommittedVerifier(journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=journal,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="not backed by the exact completed journal grade",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        [attempt] = journal.list_verification_attempts()
+        assert attempt.state == "PREPARED"
+        assert set(
+            store.get_arm_attempt_state(
+                "exp-1",
+                "task-1",
+                block_attempt=0,
+                arm=executor.calls[0],
+            )
+        ) == {"started", "observed"}
+
+
+@pytest.mark.asyncio
+async def test_returned_grade_must_equal_completed_journal_grade(
+    tmp_path: Path,
+) -> None:
+    class ConflictingVerifier(RecoverableRecordingVerifier):
+        async def verify_or_recover(
+            self,
+            frozen_result: FrozenTaskResult,
+            *,
+            prepared_attempt: VerificationAttemptRecord | None = None,
+        ) -> Grade:
+            committed = await super().verify_or_recover(
+                frozen_result,
+                prepared_attempt=prepared_attempt,
+            )
+            return replace(
+                committed,
+                passed=False,
+                score=0.0,
+                failure_classification="conflicting_return",
+            )
+
+    store = SqliteExperimentStore(tmp_path / "experiment.db")
+    executor = RecordingExecutor(store)
+    with SQLiteBackendRunReplayGuard(
+        tmp_path / "verification-journal.db"
+    ) as journal:
+        verifier = ConflictingVerifier(journal)
+        kernel = ExperimentKernel(
+            store=store,
+            executor=executor,
+            verification_journal=journal,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="not backed by the exact completed journal grade",
+        ):
+            await kernel.run_task(
+                _experiment(),
+                _task_spec(),
+                verifier,
+            )
+
+        [attempt] = journal.list_verification_attempts()
+        assert attempt.state == "COMPLETED"
+        assert attempt.grade is not None
+        assert attempt.grade["passed"] is True
 
 
 @pytest.mark.asyncio
@@ -3219,6 +4548,111 @@ async def test_task_execution_is_idempotent_and_regrade_appends_lineage_only(
     assert store.get_transitions(first.experiment_id, first.task_id)[-1][
         "kind"
     ] == "arm.regraded"
+
+
+@pytest.mark.asyncio
+async def test_recoverable_outcome_rejects_unjournaled_regrade(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "recoverable-regrade.db")
+    journal_database = tmp_path / "verification-journal.db"
+
+    class CountingRegradingVerifier:
+        verifier_id = "hidden"
+        verifier_version = "2"
+        verifier_hash = "a" * 64
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+            self.calls += 1
+            return Grade(
+                verifier_id=self.verifier_id,
+                verifier_version=self.verifier_version,
+                verifier_hash=self.verifier_hash,
+                frozen_result_hash=frozen_result.result_hash,
+                passed=False,
+                score=0.0,
+                evidence={"regrade": True},
+                failure_classification="tests_failed",
+            )
+
+    with SQLiteBackendRunReplayGuard(journal_database) as journal:
+        kernel = ExperimentKernel(
+            store=store,
+            executor=RecordingExecutor(store),
+            verification_journal=journal,
+        )
+        result = await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            RecoverableRecordingVerifier(journal),
+        )
+        outcome = result.outcomes[0]
+        assert outcome.grade_revision is not None
+        verifier = CountingRegradingVerifier()
+
+        with pytest.raises(
+            ValueError,
+            match="recoverable operational outcomes require a distinct "
+            "durable regrade workflow",
+        ):
+            await kernel.regrade_arm(
+                experiment_id=result.experiment_id,
+                task_id=result.task_id,
+                arm=outcome.arm,
+                verifier=verifier,
+                reason="unjournaled operational regrade",
+            )
+
+        class LineageStrippingResultStore(SqliteExperimentStore):
+            def get_result(self, *args: Any, **kwargs: Any):
+                persisted = super().get_result(*args, **kwargs)
+                if persisted is None:
+                    return None
+                return replace(
+                    persisted,
+                    outcomes=tuple(
+                        replace(
+                            candidate,
+                            verification_attempt_key="",
+                            verification_grade_hash="",
+                            verification_completion_hash="",
+                        )
+                        for candidate in persisted.outcomes
+                    ),
+                )
+
+        stripped_store = LineageStrippingResultStore(store.path)
+        stripped_kernel = ExperimentKernel(
+            store=stripped_store,
+            executor=RecordingExecutor(stripped_store),
+            verification_journal=journal,
+        )
+        with pytest.raises(
+            ValueError,
+            match="persisted result differs from authoritative terminal "
+            "outcome",
+        ):
+            await stripped_kernel.regrade_arm(
+                experiment_id=result.experiment_id,
+                task_id=result.task_id,
+                arm=outcome.arm,
+                verifier=verifier,
+                reason="stripped-lineage operational regrade",
+            )
+
+    root = kernel.gradebook.get_revision(outcome.grade_revision.grade_id)
+    assert verifier.calls == 0
+    assert kernel.gradebook.list_revisions(root.run_envelope) == (root,)
+    assert all(
+        transition["kind"] != "arm.regraded"
+        for transition in store.get_transitions(
+            result.experiment_id,
+            result.task_id,
+        )
+    )
 
 
 @pytest.mark.asyncio

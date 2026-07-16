@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 from urllib.parse import unquote, urlsplit
 
 
@@ -69,6 +69,20 @@ SWE_BENCH_EXECUTION_AUTHORITY_OUTCOME_FIELDS = (
     "fail_to_pass_results_hash",
     "pass_to_pass_results_hash",
 )
+
+
+@runtime_checkable
+class ResumableSweBenchOracle(Protocol):
+    """Trusted backend that executes or recovers one nonce-bound request."""
+
+    backend_id: str
+    backend_manifest_hash: str
+
+    def execute_or_recover(
+        self,
+        context: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        ...
 
 
 @dataclass(frozen=True)

@@ -24,8 +24,13 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 from urllib.parse import unquote, urlsplit
 
+from .backend_run_replay import (
+    VerificationAttemptRecord,
+    VerificationAttemptSpec,
+)
 from .redaction import redact
 from .swe_bench_official_oracle import (
+    ResumableSweBenchOracle,
     SWE_BENCH_BOUND_ORACLE_RECEIPT_SCHEMA_VERSION,
     SweBenchVerifierExecutionSpec,
     new_swe_bench_verification_nonce,
@@ -496,6 +501,72 @@ def _thaw_grade_evidence(value: Any) -> Any:
     return value
 
 
+def _freeze_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({
+            str(key): _freeze_json_value(item)
+            for key, item in value.items()
+        })
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json_value(item) for item in value)
+    return value
+
+
+def _grade_from_mapping(value: Mapping[str, Any]) -> Grade:
+    expected_fields = {
+        "schema_version",
+        "verifier_id",
+        "verifier_version",
+        "verifier_hash",
+        "frozen_result_hash",
+        "passed",
+        "score",
+        "evidence",
+        "failure_classification",
+        "flake_classification",
+    }
+    if set(value) != expected_fields:
+        raise ValueError("persisted verification grade fields are invalid")
+    if value.get("schema_version") != GRADE_SCHEMA_VERSION:
+        raise ValueError("persisted verification grade schema is invalid")
+    for field_name in (
+        "verifier_id",
+        "verifier_version",
+        "verifier_hash",
+        "frozen_result_hash",
+        "failure_classification",
+        "flake_classification",
+    ):
+        if not isinstance(value.get(field_name), str):
+            raise ValueError(
+                "persisted verification grade "
+                f"{field_name} must be a string"
+            )
+    if type(value.get("passed")) is not bool:
+        raise ValueError(
+            "persisted verification grade passed must be a literal boolean"
+        )
+    if type(value.get("score")) not in {int, float}:
+        raise ValueError(
+            "persisted verification grade score must be numeric"
+        )
+    evidence = value.get("evidence")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("persisted verification grade evidence is invalid")
+    return Grade(
+        verifier_id=value["verifier_id"],
+        verifier_version=value["verifier_version"],
+        verifier_hash=value["verifier_hash"],
+        frozen_result_hash=value["frozen_result_hash"],
+        passed=value.get("passed"),
+        score=value.get("score"),
+        evidence=dict(evidence),
+        failure_classification=value["failure_classification"],
+        flake_classification=value["flake_classification"],
+        schema_version=value["schema_version"],
+    )
+
+
 @runtime_checkable
 class TaskEnvironmentAdapter(Protocol):
     async def materialize(self, spec: TaskSpec) -> MaterializedTask:
@@ -711,6 +782,8 @@ class SweBenchVerifier:
         authority_verifier: Any | None = None,
         trusted_backend_manifest_hashes: Sequence[str] = (),
         backend_run_replay_guard: BackendRunReplayGuard | None = None,
+        operational_oracle: ResumableSweBenchOracle | None = None,
+        verification_journal: Any | None = None,
     ) -> None:
         if not str(verifier_version).strip():
             raise ValueError("verifier_version must be non-empty")
@@ -757,12 +830,197 @@ class SweBenchVerifier:
                 "backend run replay guard must provide consume()"
             )
         self._backend_run_replay_guard = backend_run_replay_guard
+        self._operational_backend_id = ""
+        self._operational_backend_manifest_hash = ""
+        self._verification_policy_hash = ""
+        self._verification_policy: Mapping[str, Any] = MappingProxyType({})
+        if operational_oracle is not None:
+            backend_id = str(
+                getattr(operational_oracle, "backend_id", "") or ""
+            ).strip()
+            backend_manifest_hash = str(
+                getattr(
+                    operational_oracle,
+                    "backend_manifest_hash",
+                    "",
+                )
+                or ""
+            ).strip().casefold()
+            if (
+                not backend_id
+                or not _is_sha256(backend_manifest_hash)
+                or not callable(
+                    getattr(
+                        operational_oracle,
+                        "execute_or_recover",
+                        None,
+                    )
+                )
+            ):
+                raise ValueError(
+                    "operational SWE-bench oracle must provide a pinned "
+                    "execute_or_recover backend"
+                )
+            if verification_journal is None or any(
+                not callable(getattr(verification_journal, method, None))
+                for method in (
+                    "prepare_verification_attempt",
+                    "get_verification_attempt",
+                    "complete_verification_attempt",
+                )
+            ):
+                raise ValueError(
+                    "operational SWE-bench requires a durable verification "
+                    "attempt journal"
+                )
+            if authority_verifier is None:
+                raise ValueError(
+                    "operational SWE-bench requires an authority trust "
+                    "verifier"
+                )
+            if backend_manifest_hash not in trusted_hashes:
+                raise ValueError(
+                    "operational SWE-bench backend manifest is not trusted"
+                )
+            trust_key_id = str(
+                getattr(authority_verifier, "key_id", "") or ""
+            ).strip()
+            trust_algorithm = str(
+                getattr(authority_verifier, "algorithm", "") or ""
+            ).strip()
+            trust_root_hash = str(
+                getattr(
+                    authority_verifier,
+                    "trust_root_hash",
+                    "",
+                )
+                or ""
+            ).strip().casefold()
+            if (
+                not trust_key_id
+                or not trust_algorithm
+                or not _is_sha256(trust_root_hash)
+            ):
+                raise ValueError(
+                    "operational SWE-bench authority verifier must expose "
+                    "a pinned key_id, algorithm, and trust_root_hash"
+                )
+            self._operational_backend_id = backend_id
+            self._operational_backend_manifest_hash = (
+                backend_manifest_hash
+            )
+            verification_policy = {
+                "schema_version": (
+                    "supervisor-swe-bench-verification-policy/v1"
+                ),
+                "execution_spec_hash": (
+                    self._execution_spec.execution_spec_hash
+                ),
+                "verifier_id": self.verifier_id,
+                "verifier_version": self.verifier_version,
+                "verifier_hash": self.verifier_hash,
+                "backend_id": backend_id,
+                "backend_manifest_hash": backend_manifest_hash,
+                "trusted_backend_manifest_hashes": sorted(trusted_hashes),
+                "trust_key_id": trust_key_id,
+                "trust_algorithm": trust_algorithm,
+                "trust_root_hash": trust_root_hash,
+            }
+            self._verification_policy = _freeze_json_value(
+                verification_policy
+            )
+            self._verification_policy_hash = _sha256_json(
+                verification_policy
+            )
+        self._operational_oracle = operational_oracle
+        self._verification_journal = verification_journal
 
     @property
     def execution_spec(self) -> SweBenchVerifierExecutionSpec:
         return self._execution_spec
 
+    @property
+    def requires_recoverable_verification(self) -> bool:
+        return self._operational_oracle is not None
+
+    @property
+    def verification_policy_hash(self) -> str:
+        return self._verification_policy_hash
+
+    @property
+    def verification_policy(self) -> Mapping[str, Any]:
+        return self._verification_policy
+
+    @property
+    def verification_journal(self) -> Any | None:
+        return self._verification_journal
+
+    def prepare_verification(
+        self,
+        frozen_result: FrozenTaskResult,
+        *,
+        slot_key: str = "",
+        context: Mapping[str, Any] | None = None,
+    ) -> VerificationAttemptRecord:
+        """Persist recovery authority before the operational backend launch."""
+        self._validate_frozen_result_binding(frozen_result)
+        if self._operational_oracle is None:
+            raise ValueError(
+                "diagnostic SWE-bench verification is not recoverable"
+            )
+        journal = self._verification_journal
+        if journal is None:
+            raise ValueError(
+                "operational SWE-bench has no verification attempt journal"
+            )
+        attempt_context = dict(context or {})
+        existing_policy = attempt_context.get("verification_policy")
+        if existing_policy is not None:
+            if existing_policy != self._verification_policy:
+                raise ValueError(
+                    "verification attempt context policy differs from the "
+                    "bound operational policy"
+                )
+        elif context is None:
+            # Standalone verifier use retains the full policy for audit.
+            # Kernel recovery supplies its own deliberately minimal blinded
+            # context and binds policy through verification_policy_hash.
+            attempt_context["verification_policy"] = dict(
+                self._verification_policy
+            )
+        spec = VerificationAttemptSpec(
+            execution_spec_hash=self._execution_spec.execution_spec_hash,
+            frozen_result_hash=frozen_result.result_hash,
+            model_patch_sha256=frozen_result.patch_hash,
+            producer_run_result_hash=frozen_result.run_result_hash,
+            verifier_id=self.verifier_id,
+            verifier_version=self.verifier_version,
+            verifier_hash=self.verifier_hash,
+            verification_policy_hash=self._verification_policy_hash,
+            slot_key=slot_key,
+            context=attempt_context,
+        )
+        return journal.prepare_verification_attempt(
+            spec,
+            backend_id=self._operational_backend_id,
+            backend_manifest_hash=(
+                self._operational_backend_manifest_hash
+            ),
+        )
+
+    def get_verification_attempt(
+        self,
+        *,
+        slot_key: str,
+    ) -> VerificationAttemptRecord | None:
+        journal = self._verification_journal
+        if journal is None:
+            return None
+        return journal.get_verification_attempt(slot_key=slot_key)
+
     async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
+        if self._operational_oracle is not None:
+            return await self.verify_or_recover(frozen_result)
         self._validate_frozen_result_binding(frozen_result)
         request_nonce = new_swe_bench_verification_nonce()
         context = {
@@ -815,6 +1073,254 @@ class SweBenchVerifier:
                 else ("" if passed else "official_tests_failed")
             ),
         )
+
+    async def verify_or_recover(
+        self,
+        frozen_result: FrozenTaskResult,
+        *,
+        prepared_attempt: VerificationAttemptRecord | None = None,
+    ) -> Grade:
+        """Execute or recover one operational nonce-bound verification."""
+        self._validate_frozen_result_binding(frozen_result)
+        if self._operational_oracle is None:
+            return await self.verify(frozen_result)
+        attempt = prepared_attempt or self.prepare_verification(
+            frozen_result
+        )
+        self._validate_prepared_attempt(attempt, frozen_result)
+        journal = self._verification_journal
+        if journal is None:
+            raise ValueError(
+                "operational SWE-bench has no active verification journal"
+            )
+        active_attempt = journal.get_verification_attempt(
+            attempt_key=attempt.attempt_key
+        )
+        if active_attempt is None:
+            raise ValueError(
+                "prepared attempt is not owned by the active verification "
+                "journal"
+            )
+        if (
+            active_attempt.spec != attempt.spec
+            or active_attempt.slot_key != attempt.slot_key
+            or active_attempt.request_nonce != attempt.request_nonce
+            or active_attempt.requested_backend_id
+            != attempt.requested_backend_id
+            or active_attempt.requested_backend_manifest_hash
+            != attempt.requested_backend_manifest_hash
+            or active_attempt.prepared_at_ms != attempt.prepared_at_ms
+        ):
+            raise ValueError(
+                "prepared attempt differs from the active verification "
+                "journal"
+            )
+        attempt = active_attempt
+        if attempt.state == "COMPLETED":
+            return self._grade_from_completed_attempt(
+                attempt,
+                frozen_result=frozen_result,
+            )
+        context = self._oracle_context(
+            frozen_result,
+            request_nonce=attempt.request_nonce,
+        )
+        oracle_result = await asyncio.to_thread(
+            self._operational_oracle.execute_or_recover,
+            context,
+        )
+        if not isinstance(oracle_result, Mapping):
+            raise ValueError(
+                "operational SWE-bench oracle must return a mapping"
+            )
+        unavailable = self._oracle_result_unavailable(oracle_result)
+        authority = self._validate_oracle_receipt_binding(
+            oracle_result,
+            candidate_id=frozen_result.result_hash,
+            model_patch_sha256=frozen_result.patch_hash,
+            producer_run_result_hash=frozen_result.run_result_hash,
+            request_nonce=attempt.request_nonce,
+            require_execution_authority=True,
+            require_enforced=not unavailable,
+            consume_backend_run=False,
+        )
+        if authority is None or authority["mode"] != "operational":
+            raise ValueError(
+                "operational SWE-bench oracle lacks operational authority"
+            )
+        if (
+            str(authority["backend_id"])
+            != self._operational_backend_id
+            or str(authority["backend_manifest_hash"])
+            != self._operational_backend_manifest_hash
+        ):
+            raise ValueError(
+                "operational SWE-bench authority backend differs from "
+                "prepared policy"
+            )
+        grade = self._grade_from_oracle_result(
+            frozen_result,
+            oracle_result,
+        )
+        completed = journal.complete_verification_attempt(
+            attempt_key=attempt.attempt_key,
+            backend_id=str(authority["backend_id"]),
+            backend_run_id=str(authority["backend_run_id"]),
+            authority_hash=str(authority["authority_hash"]),
+            grade=grade.to_dict(),
+        )
+        return self._grade_from_completed_attempt(
+            completed,
+            frozen_result=frozen_result,
+        )
+
+    def _oracle_context(
+        self,
+        frozen_result: FrozenTaskResult,
+        *,
+        request_nonce: str,
+    ) -> dict[str, Any]:
+        return {
+            **self._execution_spec.context_binding(),
+            "candidate_id": frozen_result.result_hash,
+            "model_patch": frozen_result.patch,
+            "model_patch_sha256": frozen_result.patch_hash,
+            "frozen_result_hash": frozen_result.result_hash,
+            "producer_run_result_hash": frozen_result.run_result_hash,
+            "request_nonce": request_nonce,
+        }
+
+    @staticmethod
+    def _oracle_result_unavailable(
+        oracle_result: Mapping[str, Any],
+    ) -> bool:
+        return (
+            bool(oracle_result.get("oracle_unavailable"))
+            or str(oracle_result.get("fail_to_pass_status") or "")
+            == "unavailable"
+            or str(oracle_result.get("pass_to_pass_status") or "")
+            == "unavailable"
+        )
+
+    def _grade_from_oracle_result(
+        self,
+        frozen_result: FrozenTaskResult,
+        oracle_result: Mapping[str, Any],
+    ) -> Grade:
+        fail_to_pass = str(
+            oracle_result.get("fail_to_pass_status") or ""
+        )
+        pass_to_pass = str(
+            oracle_result.get("pass_to_pass_status") or ""
+        )
+        unavailable = self._oracle_result_unavailable(oracle_result)
+        passed = (
+            not unavailable
+            and _official_oracle_status_passed(fail_to_pass)
+            and _official_oracle_status_passed(pass_to_pass)
+        )
+        return Grade(
+            verifier_id=self.verifier_id,
+            verifier_version=self.verifier_version,
+            verifier_hash=self.verifier_hash,
+            frozen_result_hash=frozen_result.result_hash,
+            passed=passed,
+            score=1.0 if passed else 0.0,
+            evidence=dict(oracle_result),
+            failure_classification=(
+                "verifier_infrastructure_unavailable"
+                if unavailable
+                else ("" if passed else "official_tests_failed")
+            ),
+        )
+
+    def _validate_prepared_attempt(
+        self,
+        attempt: VerificationAttemptRecord,
+        frozen_result: FrozenTaskResult,
+    ) -> None:
+        if not isinstance(attempt, VerificationAttemptRecord):
+            raise ValueError(
+                "recoverable verification requires a prepared attempt"
+            )
+        spec = attempt.spec
+        expected = {
+            "execution_spec_hash": (
+                self._execution_spec.execution_spec_hash
+            ),
+            "frozen_result_hash": frozen_result.result_hash,
+            "model_patch_sha256": frozen_result.patch_hash,
+            "producer_run_result_hash": frozen_result.run_result_hash,
+            "verifier_id": self.verifier_id,
+            "verifier_version": self.verifier_version,
+            "verifier_hash": self.verifier_hash,
+            "verification_policy_hash": self._verification_policy_hash,
+        }
+        for field_name, expected_value in expected.items():
+            if getattr(spec, field_name) != expected_value:
+                raise ValueError(
+                    "prepared verification attempt "
+                    f"{field_name} mismatch"
+                )
+        if (
+            attempt.requested_backend_id
+            != self._operational_backend_id
+            or attempt.requested_backend_manifest_hash
+            != self._operational_backend_manifest_hash
+        ):
+            raise ValueError(
+                "prepared verification attempt backend policy mismatch"
+            )
+
+    def _grade_from_completed_attempt(
+        self,
+        attempt: VerificationAttemptRecord,
+        *,
+        frozen_result: FrozenTaskResult,
+    ) -> Grade:
+        self._validate_prepared_attempt(attempt, frozen_result)
+        if attempt.state != "COMPLETED" or attempt.grade is None:
+            raise ValueError("verification attempt is not completed")
+        stored = _grade_from_mapping(attempt.grade)
+        oracle_result = dict(stored.evidence)
+        unavailable = self._oracle_result_unavailable(oracle_result)
+        authority = self._validate_oracle_receipt_binding(
+            oracle_result,
+            candidate_id=frozen_result.result_hash,
+            model_patch_sha256=frozen_result.patch_hash,
+            producer_run_result_hash=frozen_result.run_result_hash,
+            request_nonce=attempt.request_nonce,
+            require_execution_authority=True,
+            require_enforced=not unavailable,
+            consume_backend_run=False,
+        )
+        if authority is None or (
+            str(authority["backend_id"])
+            != attempt.requested_backend_id
+            or str(authority["backend_run_id"])
+            != attempt.backend_run_id
+            or str(authority["authority_hash"])
+            != attempt.authority_hash
+        ):
+            raise ValueError(
+                "completed verification attempt authority mismatch"
+            )
+        if (
+            str(authority["backend_manifest_hash"])
+            != attempt.requested_backend_manifest_hash
+        ):
+            raise ValueError(
+                "completed verification attempt backend manifest mismatch"
+            )
+        canonical = self._grade_from_oracle_result(
+            frozen_result,
+            oracle_result,
+        )
+        if canonical.to_dict() != stored.to_dict():
+            raise ValueError(
+                "completed verification attempt grade is not canonical"
+            )
+        return stored
 
     def _validate_frozen_result_binding(
         self,
@@ -889,7 +1395,14 @@ class SweBenchVerifier:
         producer_run_result_hash: str,
         request_nonce: str,
         require_execution_authority: bool,
-    ) -> None:
+        require_enforced: bool | None = None,
+        consume_backend_run: bool = True,
+    ) -> Mapping[str, Any] | None:
+        enforce = (
+            require_execution_authority
+            if require_enforced is None
+            else require_enforced
+        )
         observed_result_hash = str(
             oracle_result.get("verifier_execution_spec_hash") or ""
         ).strip().casefold()
@@ -968,7 +1481,7 @@ class SweBenchVerifier:
                     "official SWE-bench oracle result missing execution "
                     "authority"
                 )
-            return
+            return None
         if not isinstance(result_authority, Mapping) or not isinstance(
             receipt_authority,
             Mapping,
@@ -987,7 +1500,7 @@ class SweBenchVerifier:
                 request_nonce=request_nonce,
                 oracle_result=oracle_result,
                 oracle_receipt=adapter_receipt,
-                require_enforced=require_execution_authority,
+                require_enforced=enforce,
                 authority_verifier=self._authority_verifier,
                 trusted_backend_manifest_hashes=(
                     self._trusted_backend_manifest_hashes
@@ -1004,7 +1517,7 @@ class SweBenchVerifier:
                 request_nonce=request_nonce,
                 oracle_result=oracle_result,
                 oracle_receipt=adapter_receipt,
-                require_enforced=require_execution_authority,
+                require_enforced=enforce,
                 authority_verifier=self._authority_verifier,
                 trusted_backend_manifest_hashes=(
                     self._trusted_backend_manifest_hashes
@@ -1030,7 +1543,10 @@ class SweBenchVerifier:
             raise ValueError(
                 "official SWE-bench execution authority hash mismatch"
             )
-        if validated_result_authority["mode"] == "operational":
+        if (
+            consume_backend_run
+            and validated_result_authority["mode"] == "operational"
+        ):
             replay_guard = self._backend_run_replay_guard
             if replay_guard is None:
                 raise ValueError(
@@ -1062,6 +1578,7 @@ class SweBenchVerifier:
                 raise ValueError(
                     "official SWE-bench backend_run_id was already consumed"
                 )
+        return validated_result_authority
 
 
 class LegacyEnvironmentSelectedSweBenchVerifier:
