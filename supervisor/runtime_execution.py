@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
 
@@ -72,36 +72,55 @@ def execute_agent_task_blocking(
 ) -> RuntimeExecution:
     """Run an async runtime from legacy synchronous orchestration safely.
 
-    A dedicated thread owns the event loop so this remains valid when the
-    synchronous caller itself is reached from an already-running async loop.
+    A dedicated daemon thread owns the event loop so this remains valid when
+    the synchronous caller itself is reached from an already-running async
+    loop. If cancellation cannot stop that thread, interpreter shutdown does
+    not wait for it.
     """
 
     loop_state: dict[str, object] = {}
+    loop_ready = threading.Event()
 
     async def _execute() -> RuntimeExecution:
         loop_state["loop"] = asyncio.get_running_loop()
         loop_state["task"] = asyncio.current_task()
+        loop_ready.set()
         return await execute_agent_task(runtime, task)
 
-    pool = ThreadPoolExecutor(
-        max_workers=1,
-        thread_name_prefix="agent-runtime-execution",
+    future: concurrent.futures.Future[RuntimeExecution] = (
+        concurrent.futures.Future()
     )
-    join_worker_on_exit = True
+
+    def _run() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            result = asyncio.run(_execute())
+        except BaseException as exc:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
+
+    worker = threading.Thread(
+        target=_run,
+        name="agent-runtime-execution",
+        daemon=True,
+    )
+    worker.start()
+    interrupted = False
     try:
-        future = pool.submit(asyncio.run, _execute())
         try:
             return future.result()
         except KeyboardInterrupt:
-            join_worker_on_exit = False
+            interrupted = True
             future.cancel()
-            deadline = time.monotonic() + INTERRUPT_LOOP_READY_WAIT_S
-            while not future.done() and time.monotonic() < deadline:
-                if isinstance(
-                    loop_state.get("loop"), asyncio.AbstractEventLoop
-                ) and isinstance(loop_state.get("task"), asyncio.Task):
-                    break
-                time.sleep(0.02)
+            deadline = time.monotonic() + INTERRUPT_CLEANUP_WAIT_S
+            loop_ready.wait(
+                timeout=min(
+                    INTERRUPT_LOOP_READY_WAIT_S,
+                    max(0.0, deadline - time.monotonic()),
+                )
+            )
             loop = loop_state.get("loop")
             inner_task = loop_state.get("task")
             if isinstance(loop, asyncio.AbstractEventLoop) and isinstance(
@@ -113,7 +132,7 @@ def execute_agent_task_blocking(
                     pass
             done, _pending = concurrent.futures.wait(
                 (future,),
-                timeout=INTERRUPT_CLEANUP_WAIT_S,
+                timeout=max(0.0, deadline - time.monotonic()),
             )
             if not done:
                 log.error(
@@ -125,7 +144,8 @@ def execute_agent_task_blocking(
                 )
             raise
     finally:
-        pool.shutdown(wait=join_worker_on_exit)
+        if not interrupted:
+            worker.join()
 
 
 def runtime_task_runner(factory: RuntimeFactory) -> RuntimeTaskRunner:
