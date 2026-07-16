@@ -18,7 +18,7 @@ import shutil
 import subprocess
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -42,20 +42,25 @@ from supervisor.cursor_agent import (
     invoke_cursor_agent,
 )
 from supervisor.reviewer_registry import (
+    ReviewerAdapter,
     adjudicate_reviewer_panel,
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
     load_reviewer_panel_calibration,
 )
+from supervisor.reviewer_neutral import (
+    RuntimeReviewerAdapter,
+    StructuredReviewerAdapter,
+)
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
     ScreenshotArtifact,
     default_dual_agent_artifact_dir,
+    default_dual_agent_release_dir,
     export_dual_agent_run_artifacts,
 )
 from supervisor.dual_agent_workflow import (
-    WORKFLOW_GATES,
     claude_accepts,
     cursor_review_gates_for_workflow,
     ensure_workflow_source_artifacts,
@@ -73,6 +78,7 @@ from supervisor.dual_agent_workflow import (
 )
 from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
 from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
+from supervisor.evidence_ledger import strict_json_object_loads
 from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.agentic_workers import discover_agentic_worker_receipts
 from supervisor.runtime_evidence import capture_runtime_baseline, collect_runtime_evidence
@@ -112,7 +118,6 @@ from supervisor.worker_dispatch_ledger import (
     build_evidence_attempt_payload,
     build_roster_payload,
     compute_attempt_id,
-    provider_family_for,
     select_cross_vendor_reviewer,
 )
 from supervisor.lessons import (
@@ -133,12 +138,17 @@ from supervisor.no_mistakes import (
     build_no_mistakes_command,
     run_no_mistakes_validation,
 )
-from supervisor.planning_validator import _tdd_test_names
+from supervisor.planning_validator import (
+    _tdd_test_names,
+    build_trace_closure_binding,
+)
 from supervisor.autoresearch.policy_evolution import (
+    PolicyClaimAuthority,
     approve_policy_proposal,
     create_policy_evolution_proposals,
     derive_policy_evolution_proposals_from_report,
     deny_policy_proposal,
+    ensure_recorded_policy_report,
     rollback_policy_proposal,
 )
 from supervisor.autoresearch.generator import (
@@ -152,20 +162,69 @@ from supervisor.dual_agent_runner import (
     DualAgentGateSpec,
     request_deadlock_escalation,
     resume_pending_gates,
-    run_dual_agent_gate,
     run_dual_agent_gate_with_escalation,
 )
-from supervisor.dual_agent_lead import GateName, PlanningArtifact
+from supervisor.dual_agent_lead import (
+    GateName,
+    PlanningArtifact,
+    compute_file_sha256,
+)
+from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime, CodexRuntime
+from supervisor.model_client import ModelClient
+from supervisor.provider_clients import OpenAICompatibleModelClient
+from supervisor.provider_routing import direct_anthropic_env
+from supervisor.production_trace import (
+    ProductionTraceEvidence,
+    ProductionTraceError,
+    ProductionTraceRecorder,
+)
 from supervisor.redaction import redact
+from supervisor.run_registry import (
+    DEFAULT_LAUNCH_RECEIPT_TTL_S,
+    PENDING_SESSION_SOURCE,
+    WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+    consume_launch_receipt,
+    register_submitted_workflow,
+    register_workflow_runtime_session,
+    release_launch_receipt,
+    reserve_launch_receipt,
+    resolve_target_session_id,
+    validate_run_registration_authority,
+)
+from supervisor.runtime_execution import (
+    RuntimeTaskRunner,
+    execute_agent_task_blocking,
+    runtime_task_runner,
+)
 from supervisor.state import State
+from supervisor.state_factory import build_state
+from supervisor.trace_graph import (
+    DecisionGradeValidator,
+    TraceClosureBinding,
+    TraceGraph,
+    TraceGraphError,
+    TraceGraphStore,
+)
 from supervisor.trace_envelope import ensure_tool_call_timing, stamp_trace_envelope, timed_tool_call
 from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+PolicyClaimAuthorityResolver = Callable[
+    [Mapping[str, Any], Path],
+    PolicyClaimAuthority | None,
+]
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
 STRICT_ARTIFACT_GATES = {"implementation_plan", "execution", "outcome_review"}
+HARNESS_V1_TRACE_TASK_RE = re.compile(
+    r"^(?:"
+    r"harness-v1|program-001|integrity-a|integrity-b|obs-001|replay-001|"
+    r"trace-001|ledger-001|grade-001|runtime-001|task-001|exp-001|"
+    r"tracer-001|pilot-001|confirm-001|opt-001|deploy-001|scale-001"
+    r")(?:(?:-[a-z0-9]+)*-\d{8})?$",
+    re.IGNORECASE,
+)
 STRICT_ARTIFACT_REQUIREMENTS = {
     "prd_review": ("prd",),
     "issues_review": ("prd", "issues", "grill_findings"),
@@ -186,6 +245,19 @@ VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_
 VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
 REVIEWER_UNAVAILABLE_POLICIES = {"block", "escalate", "proceed_degraded"}
 NO_MISTAKES_POLICIES = {"off", "advisory", "required", "shipping"}
+_REPLAY_PROVENANCE_COLLECTIONS = (
+    "provider_model_resolutions",
+    "canonical_tool_contracts",
+    "runtime_component_receipts",
+)
+_RUNTIME_COMPONENT_RECEIPT_CATEGORIES = {
+    "container",
+    "containers",
+    "image",
+    "cli",
+    "evaluator",
+    "evaluators",
+}
 
 
 def _canonical_workflow_job_payload(payload: dict[str, Any]) -> str:
@@ -198,6 +270,17 @@ def _canonical_workflow_job_payload(payload: dict[str, Any]) -> str:
     pid, and config_path so a transport retry reattaches to the same job.
     """
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _canonical_payload_sha256(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _workflow_job_idempotency_token(
@@ -313,6 +396,97 @@ def _runtime_baseline_for_gate(
     return fallback
 
 
+def _build_reviewer_model_client(cfg: Config | None) -> ModelClient | None:
+    """Build the structured reviewer edge at the MCP composition root."""
+
+    models = getattr(cfg, "models", None)
+    api_key = (
+        str(getattr(models, "openai_api_key", "") or "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
+    )
+    if not api_key:
+        return None
+    base_url = (
+        str(getattr(models, "openai_base_url", "") or "").strip()
+        or os.environ.get("OPENAI_BASE_URL", "").strip()
+    )
+    from openai import AsyncOpenAI
+
+    kwargs: dict[str, Any] = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    return OpenAICompatibleModelClient(
+        AsyncOpenAI(**kwargs),
+        provider="openai_compatible",
+    )
+
+
+def _is_harness_v1_trace_task(task_id: str) -> bool:
+    return (
+        HARNESS_V1_TRACE_TASK_RE.match(str(task_id or "").strip())
+        is not None
+    )
+
+
+def _reject_trace_closure_downgrade(
+    *,
+    task_id: str,
+    trace_closure_required: bool | None,
+) -> None:
+    if (
+        trace_closure_required is False
+        and _is_harness_v1_trace_task(task_id)
+    ):
+        raise ValueError(
+            "harness-v1 tasks cannot disable trace closure"
+        )
+
+
+def _harness_trace_closure_required(*, task_id: str, gate: str) -> bool:
+    return (
+        str(gate) in {"execution", "outcome_review"}
+        and _is_harness_v1_trace_task(task_id)
+    )
+
+
+def _load_pinned_trace_graph(
+    *,
+    cwd: str | Path,
+    trace_graph_store_path: str | None,
+    trace_graph_store_sha256: str | None,
+) -> TraceGraph | None:
+    raw_path = str(trace_graph_store_path or "").strip()
+    if not raw_path:
+        return None
+    repo_root = Path(cwd).expanduser().resolve()
+    path = _resolve_repo_path(repo_root, raw_path)
+    try:
+        path.relative_to(repo_root)
+    except ValueError as exc:
+        raise ValueError(
+            "trace graph store must resolve inside the workflow cwd"
+        ) from exc
+    if not path.is_file() or path.is_symlink():
+        raise ValueError(
+            "trace graph store must be an existing regular non-symlink file"
+        )
+    expected_sha256 = str(trace_graph_store_sha256 or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise ValueError(
+            "trace graph store requires an explicit sha256 pin"
+        )
+    actual_sha256 = compute_file_sha256(path)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            "trace graph store sha256 differs from the submitted pin"
+        )
+    try:
+        with TraceGraphStore(path) as store:
+            return store.load()
+    except (OSError, TraceGraphError) as exc:
+        raise ValueError(f"unable to load pinned trace graph store: {exc}") from exc
+
+
 class CodexSupervisorMcpAPI:
     def __init__(
         self,
@@ -321,17 +495,101 @@ class CodexSupervisorMcpAPI:
         *,
         runner: Runner = subprocess.run,
         codex_runner: Runner = subprocess.run,
+        codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
+        codex_runtime_runner: RuntimeTaskRunner | None = None,
+        lead_runtime_runner: RuntimeTaskRunner | None = None,
+        reviewer_adapters: (
+            list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
+        ) = None,
+        reviewer_model_client: ModelClient | None = None,
         cursor_runner: CursorRunner | None = None,
         no_mistakes_runner: Runner = subprocess.run,
         notifier: Any | None = None,
+        policy_claim_authority_resolver: (
+            PolicyClaimAuthorityResolver | None
+        ) = None,
+        trace_decision_grade_validator: (
+            DecisionGradeValidator | None
+        ) = None,
     ) -> None:
         self.cfg = cfg
         self.state = state
         self.runner = runner
         self.codex_runner = codex_runner
+        target_cfg = getattr(cfg, "target", None)
+        codex_cfg = (
+            target_cfg.codex
+            if target_cfg and target_cfg.codex
+            else None
+        )
+        codex_cli = (
+            codex_cfg.cli_command
+            if codex_cfg is not None
+            else "codex"
+        )
+        self.codex_runtime_factory = (
+            codex_runtime_factory
+            or (lambda: CodexRuntime(binary=codex_cli))
+        )
+        self.codex_runtime_runner = (
+            codex_runtime_runner
+            or runtime_task_runner(self.codex_runtime_factory)
+        )
+        claude_cfg = (
+            target_cfg.claude_code
+            if target_cfg and target_cfg.claude_code
+            else None
+        )
+        claude_cli = (
+            claude_cfg.cli_command
+            if claude_cfg is not None
+            else "claude"
+        )
+        if lead_runtime_runner is not None:
+            self.lead_runtime_runner = lead_runtime_runner
+        elif runner is subprocess.run:
+            def _run_lead_runtime(task: AgentTask):
+                environment = direct_anthropic_env({
+                    **os.environ,
+                    **dict(task.env),
+                })
+                return execute_agent_task_blocking(
+                    ClaudeCodeRuntime(binary=claude_cli),
+                    replace(
+                        task,
+                        env=environment,
+                        inherit_env=False,
+                    ),
+                )
+
+            self.lead_runtime_runner = _run_lead_runtime
+        else:
+            # Preserve injected legacy subprocess runners used by replay/tests;
+            # production composition uses the AgentRuntime path above.
+            self.lead_runtime_runner = None
+        self.reviewer_adapters = (
+            tuple(reviewer_adapters)
+            if reviewer_adapters is not None
+            else None
+        )
+        if reviewer_model_client is not None:
+            self.reviewer_model_client = reviewer_model_client
+        elif cursor_runner is None and reviewer_adapters is None:
+            # Only production composition may derive a structured reviewer
+            # client from ambient configuration. Injected test/replay seams
+            # must remain hermetic and must never consume OPENAI_API_KEY.
+            self.reviewer_model_client = _build_reviewer_model_client(cfg)
+        else:
+            self.reviewer_model_client = None
         self.cursor_runner = cursor_runner or invoke_cursor_agent
         self.no_mistakes_runner = no_mistakes_runner
         self.notifier = notifier
+        self.policy_claim_authority_resolver = (
+            policy_claim_authority_resolver
+        )
+        self.trace_decision_grade_validator = (
+            trace_decision_grade_validator
+        )
 
     async def start_dual_agent_gate(
         self,
@@ -375,8 +633,15 @@ class CodexSupervisorMcpAPI:
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
         sanitize_tool_receipts: bool = True,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -386,6 +651,12 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            cwd=cwd,
         )
         if sanitize_tool_receipts:
             tool_receipts = _normalise_receipt_payloads(tool_receipts or [])
@@ -472,6 +743,9 @@ class CodexSupervisorMcpAPI:
             policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -489,17 +763,16 @@ class CodexSupervisorMcpAPI:
                 "min_subagents": agentic_policy["min_subagents"],
                 "required_roles": agentic_policy["required_roles"],
                 "required_evidence_grade": agentic_policy["required_evidence_grade"],
+                "trace_closure_required": spec.trace_closure_required,
             },
         ) as gate_tool_call:
-            if notifier is not None:
-                result = await run_dual_agent_gate_with_escalation(
-                    spec,
-                    state=self.state,
-                    notifier=notifier,
-                    runner=self.runner,
-                )
-            else:
-                result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
+            result = await run_dual_agent_gate_with_escalation(
+                spec,
+                state=self.state,
+                notifier=notifier,
+                runner=self.runner,
+                runtime_runner=self.lead_runtime_runner,
+            )
         gate_tool_call.update({
             "status": "completed",
             "attempts": result.attempts,
@@ -512,14 +785,42 @@ class CodexSupervisorMcpAPI:
                 },
             },
         })
+        target_run_registrations = self._register_gate_runtime_sessions(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            gate=str(gate),
+            cwd=cwd,
+            result=result,
+        )
         payload = _gate_result_payload(result, gate_tool_call=gate_tool_call)
+        if target_run_registrations:
+            payload["target_run_registrations"] = target_run_registrations
         payload["artifact_rigor"] = artifact_preflight
-        self.state.write_event(
+        if spec.trace_closure_required or spec.trace_graph is not None:
+            payload["trace_closure_binding"] = (
+                build_trace_closure_binding(
+                    task_id=spec.task_id,
+                    run_id=spec.run_id,
+                    gate=str(spec.gate),
+                    planning_artifacts=spec.planning_artifacts,
+                ).to_dict()
+            )
+            payload["production_trace_workspace_root"] = str(
+                Path(spec.cwd).expanduser().resolve()
+            )
+        gate_result_event_id = self.state.write_event(
             run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_result",
             payload=payload,
         )
+        production_trace = self._record_gate_production_trace(
+            spec=spec,
+            source_event_id=gate_result_event_id,
+        )
+        if production_trace is not None:
+            payload["production_trace"] = production_trace
         payload["artifact_export"] = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -560,7 +861,14 @@ class CodexSupervisorMcpAPI:
         required_planning_kinds: list[str] | None = None,
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -570,6 +878,12 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            cwd=cwd,
         )
         artifact_preflight = _artifact_preflight(
             state=self.state,
@@ -633,18 +947,55 @@ class CodexSupervisorMcpAPI:
             dynamic_workflow_task_class=dynamic_workflow_task_class,  # type: ignore[arg-type]
             agentic_policy=agentic_policy,
             planning_artifacts=planning_artifacts,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
-        results = resume_pending_gates([spec], state=self.state, runner=self.runner)
+        results = resume_pending_gates(
+            [spec],
+            state=self.state,
+            runner=self.runner,
+            runtime_runner=self.lead_runtime_runner,
+        )
         if not results:
             return {"status": "no_signal", "task_id": task_id, "run_id": run_id}
-        payload = _gate_result_payload(results[0])
+        result = results[0]
+        target_run_registrations = self._register_gate_runtime_sessions(
+            run_id=run_id,
+            task_id=task_id,
+            task=instruction,
+            gate=str(gate),
+            cwd=cwd,
+            result=result,
+        )
+        payload = _gate_result_payload(result)
+        if target_run_registrations:
+            payload["target_run_registrations"] = target_run_registrations
         payload["artifact_rigor"] = artifact_preflight
-        self.state.write_event(
+        if spec.trace_closure_required or spec.trace_graph is not None:
+            payload["trace_closure_binding"] = (
+                build_trace_closure_binding(
+                    task_id=spec.task_id,
+                    run_id=spec.run_id,
+                    gate=str(spec.gate),
+                    planning_artifacts=spec.planning_artifacts,
+                ).to_dict()
+            )
+            payload["production_trace_workspace_root"] = str(
+                Path(spec.cwd).expanduser().resolve()
+            )
+        gate_result_event_id = self.state.write_event(
             run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_result",
             payload=payload,
         )
+        production_trace = self._record_gate_production_trace(
+            spec=spec,
+            source_event_id=gate_result_event_id,
+        )
+        if production_trace is not None:
+            payload["production_trace"] = production_trace
         payload["artifact_export"] = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -694,7 +1045,14 @@ class CodexSupervisorMcpAPI:
         no_mistakes_policy: str | None = None,
         no_mistakes_skip_steps: list[str] | None = None,
         no_mistakes_timeout_s: int | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -752,6 +1110,12 @@ class CodexSupervisorMcpAPI:
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
+        self._ensure_workflow_run_registration(
+            run_id=run_id,
+            task_id=task_id,
+            task=intent,
+            cwd=cwd,
+        )
         self._write_receipt_provenance_downgrade_events(
             run_id=run_id,
             task_id=task_id,
@@ -897,6 +1261,7 @@ class CodexSupervisorMcpAPI:
             }
         agentic_worker_production = None
         agentic_worker_tool_call: dict[str, Any] | None = None
+        agentic_target_run_registrations: list[dict[str, Any]] = []
         if _is_agentic_lead_policy_active(agentic_policy["agentic_lead_policy"]):
             with timed_tool_call(
                 "produce_agentic_worker_receipts",
@@ -920,7 +1285,11 @@ class CodexSupervisorMcpAPI:
                     timeout_s=timeout_s,
                     budget_usd=budget_usd,
                     quality=quality,  # type: ignore[arg-type]
-                    runner=self.runner,
+                    **(
+                        {"runtime_runner": self.lead_runtime_runner}
+                        if self.lead_runtime_runner is not None
+                        else {"runner": self.runner}
+                    ),
                 )
             agentic_tool_call.update({
                 "status": agentic_worker_production.status,
@@ -936,6 +1305,20 @@ class CodexSupervisorMcpAPI:
                     *receipt_payloads,
                     *agentic_worker_production.receipts,
                 ]))
+            agentic_target_run_registrations = (
+                self._register_runtime_evidence_records(
+                    run_id=run_id,
+                    task_id=task_id,
+                    task=intent,
+                    gate="workflow_start",
+                    cwd=cwd,
+                    source="agentic_runtime_result",
+                    records=tuple([
+                        agentic_worker_production.planner,
+                        *agentic_worker_production.receipts,
+                    ]),
+                )
+            )
             workflow_route = {
                 **workflow_route,
                 "agentic_worker_production": {
@@ -943,6 +1326,9 @@ class CodexSupervisorMcpAPI:
                     "receipt_count": len(agentic_worker_production.receipts),
                     "blocking_findings": agentic_worker_production.blocking_findings,
                     "hydrated_receipt_count": len(hydrated_agentic_receipts),
+                    "target_run_registrations": (
+                        agentic_target_run_registrations
+                    ),
                 },
             }
         prior_resume = _workflow_resume_state(
@@ -1047,6 +1433,9 @@ class CodexSupervisorMcpAPI:
                     "gate": "workflow_start",
                     **agentic_worker_production.to_event_payload(),
                     "tool_calls": [agentic_worker_tool_call] if agentic_worker_tool_call is not None else [],
+                    "target_run_registrations": (
+                        agentic_target_run_registrations
+                    ),
                 },
             )
             for receipt in agentic_worker_production.receipts:
@@ -1397,6 +1786,9 @@ class CodexSupervisorMcpAPI:
                         gate=gate,
                         task_complexity=str(workflow_route["task_complexity"]),
                     ),
+                    trace_closure_required=trace_closure_required,
+                    trace_graph_store_path=trace_graph_store_path,
+                    trace_graph_store_sha256=trace_graph_store_sha256,
                     sanitize_tool_receipts=False,
                 )
                 final_payload = payload
@@ -1408,6 +1800,10 @@ class CodexSupervisorMcpAPI:
                 cursor_tool_calls: list[dict[str, Any]] = []
                 review_results: list[tuple[Any, CursorInvocationResult]] = []
                 independent_reviewer_results: list[dict[str, Any]] = []
+                reviewer_target_run_registrations: list[
+                    dict[str, Any]
+                ] = []
+                reviewer_call_receipts: list[dict[str, Any]] = []
                 independent_reviewer_adjudication: dict[str, Any] | None = None
                 current_runtime_receipt_ids: set[str] = set()
                 runtime_evidence_result = None
@@ -1492,6 +1888,9 @@ class CodexSupervisorMcpAPI:
                         reviewer_model=reviewer_model_value,
                         runner=self.cursor_runner,
                         codex_runner=self.codex_runner,
+                        reviewer_adapters=self.reviewer_adapters,
+                        runtime_runner=self.codex_runtime_runner,
+                        model_client=self.reviewer_model_client,
                     )
                     roster = _reviewer_roster_preflight(
                         task_id=task_id,
@@ -1757,6 +2156,58 @@ class CodexSupervisorMcpAPI:
                             )
                             reviewer_started = time.monotonic()
                             result = independent_reviewer.review(reviewer_request)
+                            reviewer_call_receipt = (
+                                _reviewer_call_provenance_receipt(
+                                    reviewer_id=spec.reviewer_id,
+                                    reviewer_runtime=(
+                                        result.reviewer_runtime
+                                        or spec.runtime
+                                    ),
+                                    task_id=task_id,
+                                    run_id=run_id,
+                                    gate=str(gate),
+                                    round_index=round_index,
+                                    instruction=(
+                                        reviewer_request.instruction
+                                    ),
+                                    result=result,
+                                )
+                            )
+                            reviewer_call_receipts.append(
+                                reviewer_call_receipt
+                            )
+                            reviewer_registrations = []
+                            if isinstance(
+                                independent_reviewer,
+                                RuntimeReviewerAdapter,
+                            ):
+                                reviewer_registrations = (
+                                    self._register_runtime_evidence_records(
+                                        run_id=run_id,
+                                        task_id=task_id,
+                                        task=(
+                                            reviewer_request.instruction
+                                        ),
+                                        gate=str(gate),
+                                        cwd=cwd,
+                                        source=(
+                                            "independent_reviewer_runtime_result"
+                                        ),
+                                        records=({
+                                            "diagnostics": (
+                                                result.diagnostics
+                                                if isinstance(
+                                                    result.diagnostics,
+                                                    Mapping,
+                                                )
+                                                else {}
+                                            ),
+                                        },),
+                                    )
+                                )
+                            reviewer_target_run_registrations.extend(
+                                reviewer_registrations
+                            )
                             receipt_id = f"reviewer-{spec.reviewer_id}-{gate}-{round_index}"
                             attempt = EvidenceAttempt(
                                 attempt_id=compute_attempt_id(
@@ -1831,6 +2282,12 @@ class CodexSupervisorMcpAPI:
                                     "decision": _review_worker_decision(result),
                                     "failure_classification": result.failure_classification,
                                     "recoverable": result.recoverable,
+                                    "reviewer_call_receipt": (
+                                        reviewer_call_receipt
+                                    ),
+                                    "target_run_registrations": (
+                                        reviewer_registrations
+                                    ),
                                 },
                             )
                             self.state.write_event(
@@ -1920,6 +2377,12 @@ class CodexSupervisorMcpAPI:
                     if cursor_payload is None:
                         cursor_payload = {"schema_version": "independent-reviewer-result/v1", "accepted": False}
                     cursor_payload["independent_reviewer_results"] = independent_reviewer_results
+                    cursor_payload["target_run_registrations"] = (
+                        reviewer_target_run_registrations
+                    )
+                    cursor_payload["reviewer_call_receipts"] = (
+                        reviewer_call_receipts
+                    )
                     if supervisor_review_packet_payload is not None:
                         cursor_payload["supervisor_review_packet"] = supervisor_review_packet_payload
                     cursor_payload["cross_vendor_review"] = build_cross_vendor_payload(
@@ -1934,6 +2397,12 @@ class CodexSupervisorMcpAPI:
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
                     payload["independent_reviewer_results"] = independent_reviewer_results
+                    payload["reviewer_target_run_registrations"] = (
+                        reviewer_target_run_registrations
+                    )
+                    payload["reviewer_call_receipts"] = (
+                        reviewer_call_receipts
+                    )
                     cursor_response_would_change_if = (
                         "Claude or Codex provides evidence resolving Cursor's objections."
                     )
@@ -2051,6 +2520,10 @@ class CodexSupervisorMcpAPI:
                         )
                 payload["independent_reviewer_panel_decision"] = independent_reviewer_panel_decision
                 payload["independent_reviewer_results"] = independent_reviewer_results
+                if reviewer_target_run_registrations:
+                    payload["reviewer_target_run_registrations"] = (
+                        reviewer_target_run_registrations
+                    )
                 claim_payload = asdict(claim_probe) if claim_probe is not None else None
                 cursor_infrastructure_failure = bool(panel_recoverable_failures)
                 reviewer_unavailable_recovery: dict[str, Any] | None = None
@@ -2113,6 +2586,9 @@ class CodexSupervisorMcpAPI:
                             "cursor_review": cursor_payload,
                             "independent_reviewer": cursor_payload,
                             "tool_calls": cursor_tool_calls,
+                            "target_run_registrations": (
+                                reviewer_target_run_registrations
+                            ),
                         },
                     )
                     self.state.write_event(
@@ -2127,6 +2603,9 @@ class CodexSupervisorMcpAPI:
                             "independent_reviewer_results": independent_reviewer_results,
                             "independent_reviewer_panel_decision": independent_reviewer_panel_decision,
                             "tool_calls": cursor_tool_calls,
+                            "target_run_registrations": (
+                                reviewer_target_run_registrations
+                            ),
                         },
                     )
                 codex_decision = (
@@ -2793,6 +3272,30 @@ class CodexSupervisorMcpAPI:
         """Create operator-reviewable policy proposals from an accepted AutoResearch report."""
         repo_root_path = Path(repo_root).expanduser().resolve()
         report = _read_json_mapping(_resolve_repo_path(repo_root_path, report_path))
+        claim_authority = (
+            self.policy_claim_authority_resolver(report, repo_root_path)
+            if self.policy_claim_authority_resolver is not None
+            else None
+        )
+        if claim_authority is not None and not isinstance(
+            claim_authority,
+            PolicyClaimAuthority,
+        ):
+            raise TypeError(
+                "policy_claim_authority_resolver must return "
+                "PolicyClaimAuthority or None"
+            )
+        authority_kwargs = (
+            claim_authority.validation_kwargs()
+            if claim_authority is not None
+            else {}
+        )
+        if claim_authority is not None:
+            ensure_recorded_policy_report(
+                report,
+                state=self.state,
+                run_id=str(run_id or ""),
+            )
         if candidate_changes is not None:
             proposals = create_policy_evolution_proposals(
                 report,
@@ -2801,6 +3304,7 @@ class CodexSupervisorMcpAPI:
                 affected_gates=affected_gates,
                 state=self.state,
                 run_id=run_id,
+                **authority_kwargs,
             )
             mode = "explicit_candidate_changes"
         else:
@@ -2810,6 +3314,7 @@ class CodexSupervisorMcpAPI:
                 affected_gates=affected_gates,
                 state=self.state,
                 run_id=run_id,
+                **authority_kwargs,
             )
             mode = "report_derived"
         return redact({
@@ -2901,6 +3406,7 @@ class CodexSupervisorMcpAPI:
         *,
         proposal: dict[str, Any] | None = None,
         proposal_path: str | None = None,
+        proposal_event_id: int | None = None,
         repo_root: str,
         run_id: str,
         approver: str,
@@ -2909,15 +3415,20 @@ class CodexSupervisorMcpAPI:
     ) -> dict[str, Any]:
         """Apply exactly one recorded policy proposal after explicit operator approval."""
         repo_root_path = Path(repo_root).expanduser().resolve()
-        proposal_payload = _proposal_payload(
-            proposal=proposal,
-            proposal_path=proposal_path,
-            repo_root=repo_root_path,
+        proposal_payload = (
+            _proposal_payload(
+                proposal=proposal,
+                proposal_path=proposal_path,
+                repo_root=repo_root_path,
+            )
+            if proposal is not None or proposal_path is not None
+            else None
         )
         approval = approve_policy_proposal(
             proposal_payload,
             state=self.state,
             run_id=run_id,
+            proposal_event_id=proposal_event_id,
             repo_root=repo_root_path,
             approver=approver,
             approval_channel=approval_channel,
@@ -2989,6 +3500,7 @@ class CodexSupervisorMcpAPI:
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -3025,7 +3537,14 @@ class CodexSupervisorMcpAPI:
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -3078,6 +3597,11 @@ class CodexSupervisorMcpAPI:
             timeout_s=no_mistakes_timeout_s,
         )
         cwd_path = Path(cwd).expanduser().resolve()
+        target_session_id, session_id_source = resolve_target_session_id(
+            workflow_run_id=run_id,
+            target_kind=self.cfg.target.kind,
+            explicit_session_id=target_session_id,
+        )
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
         submit_visual_policy = workflow_visual_evidence_policy(
             intent=intent,
@@ -3108,6 +3632,7 @@ class CodexSupervisorMcpAPI:
             "cwd": str(cwd_path),
             "task_id": task_id,
             "run_id": run_id,
+            "target_session_id": target_session_id,
             "intent": intent,
             "user_facing": user_facing,
             "visual_evidence_policy": visual_evidence_policy,
@@ -3145,6 +3670,9 @@ class CodexSupervisorMcpAPI:
             "no_mistakes_policy": no_mistakes_config.policy,
             "no_mistakes_skip_steps": list(no_mistakes_config.skip_steps),
             "no_mistakes_timeout_s": no_mistakes_config.timeout_s,
+            "trace_closure_required": trace_closure_required,
+            "trace_graph_store_path": trace_graph_store_path,
+            "trace_graph_store_sha256": trace_graph_store_sha256,
         }
         idempotency_token = _workflow_job_idempotency_token(
             run_id=run_id,
@@ -3170,7 +3698,57 @@ class CodexSupervisorMcpAPI:
             request_payload_json=request_payload_json,
             config_path=str(Path(config_path or "~/.codex-supervisor/config.yaml").expanduser()),
         )
+        try:
+            reserved_request = json.loads(reserved_job["request_payload_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            reserved_request = {}
+        if not isinstance(reserved_request, dict):
+            reserved_request = {}
+        effective_run_id = str(reserved_job["run_id"] or run_id)
+        effective_task_id = str(reserved_job["task_id"] or task_id)
+        if "target_session_id" in reserved_request:
+            effective_target_session_id = str(
+                reserved_request.get("target_session_id") or ""
+            ).strip()
+        else:
+            effective_target_session_id = str(target_session_id or "").strip()
+        effective_intent = str(reserved_request.get("intent") or intent)
+        effective_cwd = str(reserved_request.get("cwd") or cwd_path)
+        effective_session_id_source = (
+            session_id_source
+            if created
+            else (
+                "reserved_request"
+                if effective_target_session_id
+                else PENDING_SESSION_SOURCE
+            )
+        )
         if created:
+            try:
+                registration = register_submitted_workflow(
+                    state=self.state,
+                    registry_dir=self.cfg.orchestrator.run_registry_dir,
+                    workflow_run_id=effective_run_id,
+                    target_session_id=effective_target_session_id,
+                    task_id=effective_task_id,
+                    task=effective_intent,
+                    target_kind=self.cfg.target.kind,
+                    cwd=effective_cwd,
+                    session_id_source=effective_session_id_source,
+                    completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+                )
+            except Exception as exc:
+                self.state.park_dual_agent_workflow_job(
+                    job_id=reserved_job["job_id"],
+                    reason=f"workflow_run_registration_failed: {exc}",
+                )
+                raise
+            self.state.write_event(
+                run_id=effective_run_id,
+                source="supervisor",
+                kind="workflow_run_registered",
+                payload=registration.event_payload(job_id=reserved_job["job_id"]),
+            )
             self._write_receipt_provenance_downgrade_events(
                 run_id=run_id,
                 task_id=task_id,
@@ -3192,19 +3770,23 @@ class CodexSupervisorMcpAPI:
                     "transport_recovery": "detached_cli_worker",
                 },
             )
-            return self._workflow_job_response(reserved_job)
+            response = self._workflow_job_response(reserved_job)
+            response["target_session_id"] = effective_target_session_id
+            return response
         if not created:
             record_transport_incident(
                 self.state,
-                run_id=run_id,
-                task_id=task_id,
+                run_id=effective_run_id,
+                task_id=effective_task_id,
                 job_id=reserved_job["job_id"],
                 client_token=client_token,
                 incident_type="same_client_token_reattach",
                 interface="mcp",
                 details={"status": reserved_job["status"], "recovery_point": reserved_job["recovery_point"]},
             )
-            return self._workflow_job_response(reserved_job, reattached=True)
+            response = self._workflow_job_response(reserved_job, reattached=True)
+            response["target_session_id"] = effective_target_session_id
+            return response
 
         raise RuntimeError("unreachable workflow job reservation state")
 
@@ -3804,12 +4386,34 @@ class CodexSupervisorMcpAPI:
         output_dir: str | None = None,
         screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        target_dir = Path(output_dir).expanduser() if output_dir else default_dual_agent_artifact_dir(cwd, task_id)
+        target_dir = (
+            Path(output_dir).expanduser()
+            if output_dir
+            else default_dual_agent_release_dir(cwd, task_id)
+        )
+        replay_provenance = _stored_replay_provenance(
+            self.state,
+            run_id=run_id,
+            task_id=task_id,
+        )
         result = export_dual_agent_run_artifacts(
             self.state,
             run_id=run_id,
             task_id=task_id,
             output_dir=target_dir,
+            require_complete_provenance=True,
+            require_complete_trace=_is_harness_v1_trace_task(task_id),
+            require_authoritative_ledger=True,
+            trusted_workspace_root=cwd,
+            provider_model_resolutions=replay_provenance[
+                "provider_model_resolutions"
+            ],
+            canonical_tool_contracts=replay_provenance[
+                "canonical_tool_contracts"
+            ],
+            runtime_component_receipts=replay_provenance[
+                "runtime_component_receipts"
+            ],
             screenshots=tuple(
                 artifact
                 for artifact in (
@@ -3826,6 +4430,9 @@ class CodexSupervisorMcpAPI:
             "task_id": task_id,
             "output_dir": _display_path(result.output_dir, cwd_path),
             "files": [_display_path(path, cwd_path) for path in result.files],
+            "export_root_sha256": result.export_root_sha256,
+            "ledger_head_hash": result.ledger_head_hash,
+            "ledger_authoritative": result.ledger_authoritative,
         }
 
     def start_codex_session(
@@ -3837,39 +4444,168 @@ class CodexSupervisorMcpAPI:
         reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
+        workflow_run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        codex_cfg = self.cfg.target.codex if self.cfg.target and self.cfg.target.codex else None
-        cli = codex_cfg.cli_command if codex_cfg is not None else "codex"
-        argv = [cli, "exec", "--json", "-C", str(Path(cwd).expanduser())]
-        argv.extend(["-m", model or DEFAULT_CODEX_MODEL])
-        if reasoning_effort:
-            argv.extend(["-c", f'reasoning_effort="{reasoning_effort}"'])
-        argv.append(prompt)
-        if not execute:
-            return {"status": "dry_run", "argv": _redacted_prompt_argv(argv)}
-        try:
-            completed = self.codex_runner(
-                argv,
-                capture_output=True,
-                text=True,
-                timeout=max(1, int(timeout_s)),
-                cwd=str(Path(cwd).expanduser()),
+        normalized_workflow_run_id = str(workflow_run_id or "").strip()
+        normalized_task_id = str(task_id or "").strip()
+        if bool(normalized_workflow_run_id) != bool(normalized_task_id):
+            raise ValueError(
+                "workflow_run_id and task_id must be provided together"
             )
-        except subprocess.TimeoutExpired:
+        if execute and not normalized_workflow_run_id:
+            raise ValueError(
+                "executable Codex sessions require workflow_run_id and task_id"
+            )
+        cwd_path = Path(cwd).expanduser().resolve()
+        agent_task = AgentTask(
+            task_id=f"codex-session-{uuid.uuid4()}",
+            instruction=prompt,
+            cwd=cwd_path,
+            model=model or DEFAULT_CODEX_MODEL,
+            timeout_s=max(1, int(timeout_s)),
+            metadata={
+                "reasoning_effort": reasoning_effort,
+                "result_metadata": {
+                    "entrypoint": "codex_supervisor_mcp.start_codex_session",
+                },
+            },
+        )
+        preview_runtime = self.codex_runtime_factory()
+        argv = list(preview_runtime.preview_start_argv(agent_task))
+        if not execute:
+            return {
+                "status": "dry_run",
+                "runtime": preview_runtime.kind,
+                "task_id": agent_task.task_id,
+                "argv": _redacted_prompt_argv(argv),
+            }
+        launch_receipt = None
+        if normalized_workflow_run_id:
+            launch_receipt = reserve_launch_receipt(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                workflow_run_id=normalized_workflow_run_id,
+                task_id=normalized_task_id,
+                target_kind=preview_runtime.kind,
+                cwd=cwd_path,
+                ttl_s=max(
+                    DEFAULT_LAUNCH_RECEIPT_TTL_S,
+                    max(1, int(timeout_s)) + 60,
+                ),
+            )
+            agent_task = replace(
+                agent_task,
+                env={
+                    **dict(agent_task.env),
+                    **launch_receipt.launch_environment(),
+                },
+                metadata={
+                    **dict(agent_task.metadata),
+                    "launch_receipt": {
+                        "schema_version": "supervisor-launch-receipt/v1",
+                        "launch_id": launch_receipt.launch_id,
+                        "workflow_run_id": normalized_workflow_run_id,
+                        "task_id": normalized_task_id,
+                        "target_kind": preview_runtime.kind,
+                        "expires_at": launch_receipt.expires_at,
+                    },
+                },
+            )
+        def _release_receipt(reason: str) -> None:
+            if launch_receipt is None:
+                return
+            try:
+                release_launch_receipt(
+                    registry_dir=self.cfg.orchestrator.run_registry_dir,
+                    launch_id=launch_receipt.launch_id,
+                    nonce=launch_receipt.nonce,
+                    reason=reason,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "failed to release launch receipt %s",
+                    launch_receipt.launch_id,
+                )
+
+        try:
+            execution = self.codex_runtime_runner(agent_task)
+        except (subprocess.TimeoutExpired, TimeoutError):
+            _release_receipt("codex_runtime_timeout")
             return {
                 "status": "timeout",
                 "argv": _redacted_prompt_argv(argv),
                 "timeout_s": timeout_s,
             }
         except FileNotFoundError:
+            _release_receipt("codex_binary_not_found")
             return {"status": "failed", "reason": "codex_binary_not_found", "argv": _redacted_prompt_argv(argv)}
-        status = "completed" if completed.returncode == 0 else "failed"
+        result = execution.result
+        discovered_session_id = str(result.session_id or "").strip()
+        session_discovered = bool(
+            discovered_session_id
+            and discovered_session_id != str(result.run_id or "").strip()
+        )
+        if launch_receipt is None:
+            raise RuntimeError(
+                "executable Codex session lacks launch-receipt authority"
+            )
+        if not session_discovered:
+            _release_receipt("missing_target_session_id")
+            raise RuntimeError(
+                "Codex runtime did not report a distinct target session id"
+            )
+        runtime_run_id = str(result.run_id or "").strip()
+        runtime_result_hash = str(result.result_hash or "").strip()
+        if not runtime_run_id or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            runtime_result_hash,
+        ):
+            _release_receipt("missing_runtime_provenance")
+            raise RuntimeError(
+                "Codex runtime lacks exact run/result-hash provenance"
+            )
+        binding = consume_launch_receipt(
+            state=self.state,
+            registry_dir=self.cfg.orchestrator.run_registry_dir,
+            launch_id=launch_receipt.launch_id,
+            nonce=launch_receipt.nonce,
+            workflow_run_id=normalized_workflow_run_id,
+            task_id=normalized_task_id,
+            target_kind=result.runtime,
+            target_session_id=result.session_id,
+            runtime_run_id=runtime_run_id,
+            runtime_result_hash=runtime_result_hash,
+            cwd=cwd_path,
+        )
+        returncode = result.metadata.get("returncode")
+        status = (
+            "timeout"
+            if returncode == 124
+            else result.status
+        )
         return redact({
             "status": status,
-            "returncode": completed.returncode,
+            "returncode": returncode,
             "argv": _redacted_prompt_argv(argv),
-            "stdout_tail": (completed.stdout or "")[-4000:],
-            "stderr_tail": (completed.stderr or "")[-4000:],
+            "stdout_tail": result.output[-4000:],
+            "stderr_tail": str(
+                result.metadata.get("stderr") or ""
+            )[-4000:],
+            "runtime": result.runtime,
+            "run_id": result.run_id,
+            "session_id": result.session_id,
+            "result_hash": result.result_hash,
+            "resolved_model": result.resolved_model,
+            "model_provenance": result.model_provenance,
+            "cost_usd": result.cost_usd,
+            "cost_provenance": result.cost_provenance,
+            "token_usage": dict(result.token_usage),
+            "token_provenance": result.token_provenance,
+            "workflow_run_id": normalized_workflow_run_id,
+            "workflow_task_id": normalized_task_id,
+            "launch_id": launch_receipt.launch_id,
+            "session_registration_ref": binding["registry_path"],
         })
 
     async def _emit_workflow_milestone(
@@ -4140,6 +4876,7 @@ class CodexSupervisorMcpAPI:
                     self.state,
                     run_id=run_id,
                     trend_rows=trend_rows,
+                    repo_root=cwd,
                     min_runs=int(getattr(autoresearch_cfg, "policy_regression_min_runs", 3)),
                     first_pass_drop_threshold=float(getattr(
                         autoresearch_cfg,
@@ -4231,6 +4968,623 @@ class CodexSupervisorMcpAPI:
             ),
             "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
         })
+
+    def _ensure_workflow_run_registration(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task: str,
+        cwd: str,
+    ) -> None:
+        """Create or validate the immutable parent registration.
+
+        Detached submission normally creates this row before the worker
+        starts.  The public direct workflow entry point must establish the same
+        boundary instead of permitting an unjoinable execution.
+        """
+        existing_run = self.state.get_run(run_id)
+        existing_snapshot = self.state.get_run_snapshot(run_id)
+        if existing_run is None and existing_snapshot is None:
+            registration = register_submitted_workflow(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                workflow_run_id=run_id,
+                target_session_id="",
+                task_id=task_id,
+                task=task,
+                target_kind=self.cfg.target.kind,
+                cwd=cwd,
+                session_id_source=PENDING_SESSION_SOURCE,
+                completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
+            )
+            self.state.write_event(
+                run_id=run_id,
+                source="supervisor",
+                kind="workflow_run_registered",
+                payload=registration.event_payload(),
+            )
+            return
+        if existing_run is None or existing_snapshot is None:
+            raise RuntimeError(
+                f"workflow run registration is incomplete: {run_id}"
+            )
+        validate_run_registration_authority(
+            state=self.state,
+            run_id=run_id,
+            expected_workflow_run_id=run_id,
+            expected_task_id=task_id,
+            expected_target_kind=self.cfg.target.kind,
+            expected_cwd=cwd,
+            expected_completion_policy=(
+                WORKFLOW_AGGREGATE_COMPLETION_POLICY
+            ),
+            require_workflow_registration=True,
+        )
+
+    def _register_runtime_evidence_records(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task: str,
+        gate: str,
+        cwd: str,
+        source: str,
+        records: tuple[Mapping[str, Any], ...],
+    ) -> list[dict[str, Any]]:
+        """Bind complete provider-neutral runtime receipts to child runs.
+
+        Callers pass only records produced by controlled ``AgentRuntime``
+        paths.  The normalizer accepts the public receipt shapes emitted by
+        leads, agentic planners/workers, and runtime-backed reviewers, but it
+        never invents a missing run, session, or result hash.
+        """
+        parent_run = self.state.get_run(run_id)
+        if (
+            parent_run is None
+            or self.state.get_run_snapshot(run_id) is None
+        ):
+            raise RuntimeError(
+                f"workflow run is not registered for runtime binding: {run_id}"
+            )
+        workflow_task = str(parent_run["task"] or "").strip()
+        if not workflow_task:
+            raise RuntimeError(
+                f"workflow run task is missing for runtime binding: {run_id}"
+            )
+        # ``task`` is the gate/reviewer instruction that produced the runtime
+        # receipt. It remains bound by that receipt. The child run registration
+        # carries the immutable parent workflow task so a gate-specific prompt
+        # cannot redefine the workflow's authority identity.
+        _ = task
+
+        registrations: list[dict[str, Any]] = []
+        seen_sessions: dict[str, tuple[str, str, str]] = {}
+        for record in records:
+            candidate_mappings: list[Mapping[str, Any]] = []
+            diagnostics = record.get("diagnostics")
+            if isinstance(diagnostics, Mapping):
+                diagnostics_runtime = diagnostics.get("agent_runtime")
+                if isinstance(diagnostics_runtime, Mapping):
+                    candidate_mappings.append(diagnostics_runtime)
+            agent_run_result = record.get("agent_run_result")
+            if isinstance(agent_run_result, Mapping):
+                candidate_mappings.append(agent_run_result)
+            candidate_mappings.append(record)
+
+            complete_identities: list[tuple[str, str, str, str]] = []
+            partial_identities: list[
+                tuple[str, str, str, str]
+            ] = []
+            for candidate in candidate_mappings:
+                runtime_kind = str(
+                    candidate.get("runtime")
+                    or (
+                        candidate.get("agent_runtime")
+                        if not isinstance(
+                            candidate.get("agent_runtime"),
+                            Mapping,
+                        )
+                        else ""
+                    )
+                    or candidate.get("reviewer_runtime")
+                    or ""
+                ).strip()
+                runtime_run_id = str(
+                    candidate.get("runtime_run_id")
+                    or candidate.get("run_id")
+                    or ""
+                ).strip()
+                session_id = str(
+                    candidate.get("runtime_session_id")
+                    or candidate.get("session_id")
+                    or candidate.get("agent_id")
+                    or ""
+                ).strip()
+                runtime_result_hash = str(
+                    candidate.get("runtime_result_hash")
+                    or candidate.get("result_hash")
+                    or ""
+                ).strip()
+                if (
+                    runtime_kind
+                    and runtime_run_id
+                    and session_id
+                    and re.fullmatch(r"[0-9a-f]{64}", runtime_result_hash)
+                ):
+                    complete_identities.append((
+                        runtime_kind,
+                        runtime_run_id,
+                        session_id,
+                        runtime_result_hash,
+                    ))
+                elif any((
+                    runtime_run_id,
+                    session_id,
+                    runtime_result_hash,
+                )):
+                    partial_identities.append((
+                        runtime_kind,
+                        runtime_run_id,
+                        session_id,
+                        runtime_result_hash,
+                    ))
+            unique_identities = tuple(dict.fromkeys(complete_identities))
+            if not unique_identities:
+                if not partial_identities:
+                    # A heterogeneous receipt batch can contain policy or
+                    # artifact records with no runtime identity at all. They
+                    # are not target sessions and must be ignored here. A
+                    # record that supplies only part of an identity remains a
+                    # hard error below so provenance cannot be upgraded by
+                    # omission.
+                    continue
+                raise RuntimeError(
+                    "runtime session binding requires exact runtime, run, "
+                    "session, and result-hash provenance"
+                )
+            if len(unique_identities) != 1:
+                raise RuntimeError(
+                    "runtime evidence record contains conflicting complete "
+                    "identities"
+                )
+            identity = unique_identities[0]
+            for partial in partial_identities:
+                if any(
+                    observed and observed != expected
+                    for observed, expected in zip(partial, identity)
+                ):
+                    raise RuntimeError(
+                        "runtime evidence record contains conflicting partial "
+                        "identity"
+                    )
+            (
+                runtime_kind,
+                runtime_run_id,
+                session_id,
+                runtime_result_hash,
+            ) = identity
+            if session_id == runtime_run_id:
+                # Command runtimes use the local invocation id as a temporary
+                # session id until the provider emits a real resumable
+                # session/thread id.  That fallback is useful for lifecycle
+                # control, but it is not target-session provenance and must
+                # never be registered as if it were.  Keep the workflow
+                # running without manufacturing an identity; any boundary
+                # that requires a concrete target session still fails closed
+                # when the resulting registration set is empty.
+                continue
+            provenance_identity = (
+                runtime_kind,
+                runtime_run_id,
+                runtime_result_hash,
+            )
+            previous_identity = seen_sessions.get(session_id)
+            if previous_identity is not None:
+                if previous_identity != provenance_identity:
+                    raise RuntimeError(
+                        "runtime session has conflicting run/result provenance"
+                    )
+                continue
+            registration = register_workflow_runtime_session(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                workflow_run_id=run_id,
+                target_session_id=session_id,
+                task_id=task_id,
+                task=workflow_task,
+                target_kind=runtime_kind,
+                cwd=cwd,
+                gate=gate,
+                runtime_run_id=runtime_run_id,
+                runtime_result_hash=runtime_result_hash,
+                source=source,
+            )
+            seen_sessions[session_id] = provenance_identity
+            registrations.append({
+                "workflow_run_id": str(
+                    registration["workflow_run_id"]
+                ),
+                "target_run_id": str(registration["target_run_id"]),
+                "target_session_id": str(
+                    registration["target_session_id"]
+                ),
+                "gate": str(registration["gate"]),
+                "runtime_run_id": str(registration["runtime_run_id"]),
+                "runtime_result_hash": str(
+                    registration["runtime_result_hash"]
+                ),
+                "completion_policy": str(
+                    registration["completion_policy"]
+                ),
+                "registry_path": str(registration["registry_path"]),
+            })
+        return registrations
+
+    def _register_gate_runtime_sessions(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task: str,
+        gate: str,
+        cwd: str,
+        result: DualAgentGateResult,
+    ) -> list[dict[str, Any]]:
+        """Bind every concrete runtime attempt reported by one gate."""
+        records: list[Mapping[str, Any]] = [
+            call
+            for call in result.tool_calls
+            if isinstance(call, Mapping)
+            and str(
+                call.get("runtime_session_id")
+                or call.get("session_id")
+                or ""
+            ).strip()
+        ]
+        if (
+            result.lead_result is not None
+            and str(result.lead_result.runtime_session_id or "").strip()
+        ):
+            records.append({
+                "runtime": result.lead_result.runtime,
+                "runtime_run_id": result.lead_result.runtime_run_id,
+                "runtime_session_id": result.lead_result.runtime_session_id,
+                "runtime_result_hash": result.lead_result.runtime_result_hash,
+            })
+        return self._register_runtime_evidence_records(
+            run_id=run_id,
+            task_id=task_id,
+            task=task,
+            gate=gate,
+            cwd=cwd,
+            source="controlled_runtime_result",
+            records=tuple(records),
+        )
+
+    def _record_gate_production_trace(
+        self,
+        *,
+        spec: DualAgentGateSpec,
+        source_event_id: int,
+    ) -> dict[str, Any] | None:
+        """Rebuild one process trace from its committed gate-result event."""
+        source_event = self.state.get_event(
+            run_id=spec.run_id,
+            event_id=source_event_id,
+        )
+        if source_event is None:
+            raise RuntimeError(
+                "production trace source event disappeared after commit"
+            )
+        if (
+            str(source_event["source"]) != "dual_agent"
+            or str(source_event["kind"]) != "dual_agent_gate_result"
+        ):
+            raise RuntimeError(
+                "production trace source must be a persisted dual-agent "
+                "gate-result event"
+            )
+        ledger_verification = self.state.verify_event_ledger_structure(
+            spec.run_id
+        )
+        if not ledger_verification.valid:
+            raise RuntimeError(
+                "production trace source event ledger is invalid: "
+                + str(
+                    ledger_verification.failure_code
+                    or ledger_verification.detail
+                    or "unknown"
+                )
+            )
+        source_event_hash = str(source_event["event_hash"] or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", source_event_hash):
+            raise RuntimeError(
+                "production trace source event lacks a canonical event hash"
+            )
+        persisted_payload = strict_json_object_loads(
+            str(source_event["payload_json"])
+        )
+        raw_binding = persisted_payload.get("trace_closure_binding")
+        if raw_binding is None:
+            if spec.trace_closure_required or spec.trace_graph is not None:
+                raise RuntimeError(
+                    "persisted gate-result event lacks trace_closure_binding"
+                )
+            return None
+        if not isinstance(raw_binding, Mapping):
+            raise RuntimeError(
+                "persisted gate-result trace_closure_binding must be an object"
+            )
+        planning_binding = TraceClosureBinding.from_mapping(raw_binding)
+        expected_binding = build_trace_closure_binding(
+            task_id=spec.task_id,
+            run_id=spec.run_id,
+            gate=str(spec.gate),
+            planning_artifacts=spec.planning_artifacts,
+        )
+        if planning_binding != expected_binding:
+            raise RuntimeError(
+                "persisted trace closure binding differs from the exact "
+                "gate inputs"
+            )
+        if (
+            str(persisted_payload.get("task_id") or "")
+            != planning_binding.task_id
+            or str(persisted_payload.get("gate") or "")
+            != planning_binding.gate
+        ):
+            raise RuntimeError(
+                "persisted gate-result identity differs from its trace binding"
+            )
+        target_run_registrations = list(
+            persisted_payload.get("target_run_registrations") or []
+        )
+        if not all(
+            isinstance(registration, Mapping)
+            for registration in target_run_registrations
+        ):
+            raise RuntimeError(
+                "persisted target runtime registrations must be objects"
+            )
+        runtime_calls = [
+            call
+            for call in (
+                persisted_payload.get("tool_calls") or []
+            )
+            if isinstance(call, Mapping)
+            and str(call.get("runtime_session_id") or "").strip()
+        ]
+        accepted = str(
+            persisted_payload.get("status") or ""
+        ).strip().lower() in {"accept", "accepted"}
+        if accepted and not runtime_calls:
+            raise RuntimeError(
+                "accepted production trace requires a persisted concrete "
+                "runtime call"
+            )
+        for persisted_call in runtime_calls:
+            call_session_id = str(
+                persisted_call.get("runtime_session_id") or ""
+            ).strip()
+            call_run_id = str(
+                persisted_call.get("runtime_run_id") or ""
+            ).strip()
+            call_result_hash = str(
+                persisted_call.get("runtime_result_hash") or ""
+            ).strip()
+            registrations = [
+                registration
+                for registration in target_run_registrations
+                if str(
+                    registration.get("target_session_id") or ""
+                ).strip() == call_session_id
+            ]
+            if call_session_id == call_run_id:
+                if registrations or not re.fullmatch(
+                    r"[0-9a-f]{64}", call_result_hash
+                ):
+                    raise RuntimeError(
+                        "persisted runtime call and registration provenance "
+                        "differ"
+                    )
+                continue
+            if (
+                len(registrations) != 1
+                or not call_run_id
+                or not re.fullmatch(r"[0-9a-f]{64}", call_result_hash)
+                or str(
+                    registrations[0].get("runtime_run_id") or ""
+                )
+                != call_run_id
+                or str(
+                    registrations[0].get("runtime_result_hash") or ""
+                )
+                != call_result_hash
+            ):
+                raise RuntimeError(
+                    "persisted runtime call and registration provenance "
+                    "differ"
+                )
+        runtime_call = runtime_calls[-1] if runtime_calls else {}
+        runtime_session_id = str(
+            runtime_call.get("runtime_session_id") or ""
+        ).strip()
+        matching_registrations = [
+            registration
+            for registration in target_run_registrations
+            if str(
+                registration.get("target_session_id") or ""
+            ).strip() == runtime_session_id
+        ]
+        lead_call_uses_run_id_fallback = bool(runtime_session_id) and (
+            runtime_session_id
+            == str(runtime_call.get("runtime_run_id") or "").strip()
+        )
+        if (
+            accepted
+            and not lead_call_uses_run_id_fallback
+            and len(matching_registrations) != 1
+        ):
+            raise RuntimeError(
+                "accepted production trace runtime call lacks one exact "
+                "workflow registration"
+            )
+        runtime_registration = (
+            matching_registrations[0]
+            if matching_registrations
+            else {}
+        )
+        persisted_runtime_hash = str(
+            runtime_call.get("runtime_result_hash") or ""
+        ).strip()
+        persisted_runtime_run_id = str(
+            runtime_call.get("runtime_run_id") or ""
+        ).strip()
+        assignment_id = str(
+            runtime_registration.get("target_run_id") or ""
+        ).strip()
+        if not assignment_id:
+            assignment_id = (
+                "workflow-gate:"
+                + _canonical_payload_sha256({
+                    "task_id": planning_binding.task_id,
+                    "run_id": planning_binding.run_id,
+                    "gate": planning_binding.gate,
+                    "source_event_hash": source_event_hash,
+                })
+            )
+        runtime_provenance: dict[str, Any] = {
+            "assignment_id": assignment_id,
+            "arm": "supervisor",
+            "runtime_kind": runtime_call.get("runtime"),
+            "runtime_run_id": persisted_runtime_run_id or None,
+            "runtime_session_id": runtime_session_id or None,
+            "runtime_result_hash": persisted_runtime_hash or None,
+            "model": runtime_call.get("model"),
+            "attempts": int(
+                persisted_payload.get("attempts") or 0
+            ),
+            "runtime_calls": [
+                dict(call) for call in runtime_calls
+            ],
+            "target_run_registrations": target_run_registrations,
+        }
+        run_envelope_hash = _canonical_payload_sha256({
+            "schema_version": "supervisor-production-run-envelope/v1",
+            "task_id": planning_binding.task_id,
+            "run_id": planning_binding.run_id,
+            "gate": planning_binding.gate,
+            "source_event_hash": source_event_hash,
+            "runtime_provenance": runtime_provenance,
+        })
+        runtime_provenance["run_envelope_hash"] = run_envelope_hash
+        frozen_result_hash = _canonical_payload_sha256(
+            persisted_payload
+        )
+        task_hash = _canonical_payload_sha256({
+            "task_id": planning_binding.task_id,
+            "run_id": planning_binding.run_id,
+            "gate": planning_binding.gate,
+            "planning_artifacts": [
+                artifact.to_dict()
+                for artifact in planning_binding.planning_artifacts
+            ],
+        })
+        gate_hash = _canonical_payload_sha256(
+            planning_binding.to_dict()
+        )
+        raw_workspace_root = str(
+            persisted_payload.get("production_trace_workspace_root") or ""
+        ).strip()
+        workspace_root = Path(raw_workspace_root).expanduser()
+        if (
+            not raw_workspace_root
+            or not workspace_root.is_absolute()
+            or str(workspace_root.resolve(strict=False)) != raw_workspace_root
+        ):
+            raise RuntimeError(
+                "persisted gate-result event lacks a canonical absolute "
+                "production_trace_workspace_root"
+            )
+        trace_root = (
+            workspace_root
+            / ".codex-supervisor"
+            / "production-traces"
+            / source_event_hash
+        )
+        trace_root.mkdir(parents=True, exist_ok=True)
+        evidence = ProductionTraceEvidence(
+            task_id=planning_binding.task_id,
+            task_hash=task_hash,
+            run_id=planning_binding.run_id,
+            run_envelope_hash=run_envelope_hash,
+            frozen_result_hash=frozen_result_hash,
+            gate=planning_binding.gate,
+            gate_hash=gate_hash,
+            planning_artifacts=planning_binding.planning_artifacts,
+            runtime_provenance=runtime_provenance,
+            result_provenance={
+                "frozen_result_hash": frozen_result_hash,
+                "result_kind": "dual_agent_gate_result",
+                "result_receipt_hash": source_event_hash,
+                "public_result": redact(persisted_payload),
+            },
+            source_event_id=str(source_event_id),
+            source_event_hash=source_event_hash,
+            source_event_state="completed",
+            source_event_recorded_at_ms=int(source_event["ts"]) * 1000,
+            final_gate_result={
+                "status": str(
+                    persisted_payload.get("status") or ""
+                ),
+                "gate_result_hash": frozen_result_hash,
+                "source_event_id": source_event_id,
+                "source_event_hash": source_event_hash,
+                "result": redact(persisted_payload),
+            },
+        )
+        try:
+            receipt = ProductionTraceRecorder(
+                trace_store_path=trace_root / "trace.db",
+                gradebook_path=trace_root / "grades.db",
+            ).record(evidence)
+        except (OSError, ProductionTraceError, ValueError) as exc:
+            failure = {
+                "task_id": spec.task_id,
+                "gate": str(spec.gate),
+                "status": "blocked",
+                "source_event_id": source_event_id,
+                "source_event_hash": source_event_hash,
+                "reason": "production_trace_recording_failed",
+                "error": str(exc),
+            }
+            self.state.write_event(
+                run_id=spec.run_id,
+                source="dual_agent",
+                kind="dual_agent_production_trace_failed",
+                payload=failure,
+            )
+            raise RuntimeError(
+                "required production trace recording failed"
+            ) from exc
+        receipt_payload = receipt.to_dict()
+        self.state.write_event_once(
+            run_id=spec.run_id,
+            source="dual_agent",
+            kind="dual_agent_production_trace_recorded",
+            payload={
+                "task_id": spec.task_id,
+                "gate": str(spec.gate),
+                "status": "recorded",
+                "source_event_id": source_event_id,
+                "source_event_hash": source_event_hash,
+                "receipt": receipt_payload,
+            },
+            idempotency_key=f"production-trace:{source_event_hash}",
+        )
+        return receipt_payload
 
     def _record_lesson_feedback_for_run(self, *, run_id: str) -> dict[str, Any]:
         events = self.state.read_events_since(run_id, after_event_id=0, limit=10_000)
@@ -4425,7 +5779,44 @@ class CodexSupervisorMcpAPI:
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> DualAgentGateSpec:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
+        effective_trace_closure_required = (
+            _harness_trace_closure_required(task_id=task_id, gate=str(gate))
+            if trace_closure_required is None
+            else bool(trace_closure_required)
+        )
+        parsed_planning_artifacts = tuple(
+            artifact
+            for artifact in (
+                _maybe_artifact(item)
+                for item in (planning_artifacts or [])
+            )
+            if artifact is not None
+        )
+        trace_graph = _load_pinned_trace_graph(
+            cwd=cwd,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
+        )
+        if trace_graph is not None:
+            trace_graph = trace_graph.bind_validation(
+                expected_binding=build_trace_closure_binding(
+                    task_id=task_id,
+                    run_id=run_id,
+                    gate=str(gate),
+                    planning_artifacts=parsed_planning_artifacts,
+                ),
+                decision_grade_validator=(
+                    self.trace_decision_grade_validator
+                ),
+            )
         return DualAgentGateSpec(
             task_id=task_id,
             run_id=run_id,
@@ -4470,14 +5861,14 @@ class CodexSupervisorMcpAPI:
             planning_rubric_unavailable_policy=(
                 str(planning_rubric_unavailable_policy or self.cfg.planning_rubric.unavailable_policy)
             ),
-            planning_artifacts=tuple(
-                artifact
-                for artifact in (
-                    _maybe_artifact(item)
-                    for item in (planning_artifacts or [])
-                )
-                if artifact is not None
+            trace_closure_required=effective_trace_closure_required,
+            trace_graph=trace_graph,
+            trace_now=(
+                datetime.now(timezone.utc)
+                if effective_trace_closure_required or trace_graph is not None
+                else None
             ),
+            planning_artifacts=parsed_planning_artifacts,
         )
 
     def _record_reviewer_unavailable_recovery(
@@ -4618,9 +6009,22 @@ def build_codex_supervisor_mcp_server(
     mcp_cls: Any | None = None,
     runner: Runner = subprocess.run,
     codex_runner: Runner = subprocess.run,
+    codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
+    codex_runtime_runner: RuntimeTaskRunner | None = None,
+    lead_runtime_runner: RuntimeTaskRunner | None = None,
+    reviewer_adapters: (
+        list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
+    ) = None,
+    reviewer_model_client: ModelClient | None = None,
     cursor_runner: CursorRunner | None = None,
     no_mistakes_runner: Runner = subprocess.run,
     notifier: Any | None = None,
+    policy_claim_authority_resolver: (
+        PolicyClaimAuthorityResolver | None
+    ) = None,
+    trace_decision_grade_validator: (
+        DecisionGradeValidator | None
+    ) = None,
 ) -> Any:
     if mcp_cls is None:
         from mcp.server.fastmcp import FastMCP
@@ -4631,9 +6035,16 @@ def build_codex_supervisor_mcp_server(
         state,
         runner=runner,
         codex_runner=codex_runner,
+        codex_runtime_factory=codex_runtime_factory,
+        codex_runtime_runner=codex_runtime_runner,
+        lead_runtime_runner=lead_runtime_runner,
+        reviewer_adapters=reviewer_adapters,
+        reviewer_model_client=reviewer_model_client,
         cursor_runner=cursor_runner,
         no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
+        policy_claim_authority_resolver=policy_claim_authority_resolver,
+        trace_decision_grade_validator=trace_decision_grade_validator,
     )
     _configure_mcp_transport_logging()
     try:
@@ -4676,6 +6087,9 @@ def build_codex_supervisor_mcp_server(
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -4710,6 +6124,9 @@ def build_codex_supervisor_mcp_server(
             policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -4738,6 +6155,9 @@ def build_codex_supervisor_mcp_server(
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.poll_resume_signal(
             task_id=task_id,
@@ -4764,6 +6184,9 @@ def build_codex_supervisor_mcp_server(
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -4909,11 +6332,13 @@ def build_codex_supervisor_mcp_server(
         approval_channel: str,
         proposal: dict[str, Any] | None = None,
         proposal_path: str | None = None,
+        proposal_event_id: int | None = None,
         rollback_root: str = ".handoff/policy-rollbacks",
     ) -> dict[str, Any]:
         return tool_api.approve_autoresearch_policy_proposal(
             proposal=proposal,
             proposal_path=proposal_path,
+            proposal_event_id=proposal_event_id,
             repo_root=repo_root,
             run_id=run_id,
             approver=approver,
@@ -4967,6 +6392,7 @@ def build_codex_supervisor_mcp_server(
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -5003,12 +6429,16 @@ def build_codex_supervisor_mcp_server(
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         payload = tool_api.submit_dual_agent_workflow_job(
             cwd=cwd,
             task_id=task_id,
             run_id=run_id,
             intent=intent,
+            target_session_id=target_session_id,
             user_facing=user_facing,
             visual_evidence_policy=visual_evidence_policy,
             max_rounds_per_gate=max_rounds_per_gate,
@@ -5045,6 +6475,9 @@ def build_codex_supervisor_mcp_server(
             no_mistakes_timeout_s=no_mistakes_timeout_s,
             config_path=config_path,
             client_token=client_token,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
         payload["compatibility_tool"] = "run_dual_agent_workflow"
         payload["execution_model"] = "detached_dispatcher_only"
@@ -5063,6 +6496,7 @@ def build_codex_supervisor_mcp_server(
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -5099,12 +6533,16 @@ def build_codex_supervisor_mcp_server(
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.submit_dual_agent_workflow_job(
             cwd=cwd,
             task_id=task_id,
             run_id=run_id,
             intent=intent,
+            target_session_id=target_session_id,
             user_facing=user_facing,
             visual_evidence_policy=visual_evidence_policy,
             max_rounds_per_gate=max_rounds_per_gate,
@@ -5141,6 +6579,9 @@ def build_codex_supervisor_mcp_server(
             no_mistakes_timeout_s=no_mistakes_timeout_s,
             config_path=config_path,
             client_token=client_token,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -5171,6 +6612,8 @@ def build_codex_supervisor_mcp_server(
         reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
+        workflow_run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.start_codex_session(
             prompt=prompt,
@@ -5179,6 +6622,8 @@ def build_codex_supervisor_mcp_server(
             reasoning_effort=reasoning_effort,
             execute=execute,
             timeout_s=timeout_s,
+            workflow_run_id=workflow_run_id,
+            task_id=task_id,
         )
 
     return mcp
@@ -5193,7 +6638,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     cfg = Config.load(args.config)
-    state = State(cfg.supervisor.state_db)
+    state = build_state(cfg)
     server = build_codex_supervisor_mcp_server(cfg, state)
     server.run(transport="stdio")
 
@@ -5257,13 +6702,36 @@ def _gate_result_tool_calls(
             key: value.status for key, value in result.probes.items()
         },
     })
+    recorded_calls = [
+        dict(recorded)
+        for recorded in result.tool_calls
+    ]
+    if recorded_calls:
+        result_summary = dict(call.get("result_summary") or {})
+        result_summary.update(_lead_attempt_usage(recorded_calls))
+        call["result_summary"] = result_summary
     gate_call = ensure_tool_call_timing(call)
     gate_tool_call_id = gate_call.get("tool_call_id")
     calls: list[dict[str, Any]] = [gate_call]
+    if recorded_calls:
+        for recorded in recorded_calls:
+            if (
+                str(recorded.get("name") or "").startswith("invoke_")
+                and not recorded.get("parent_tool_call_id")
+            ):
+                recorded["parent_tool_call_id"] = gate_tool_call_id
+            calls.append(ensure_tool_call_timing(recorded))
+        return calls
+
     lead_tool_call_id: str | None = None
     if result.lead_result is not None:
+        runtime_backed = result.lead_result.runtime is not None
         lead_call = ensure_tool_call_timing({
-            "name": "invoke_claude_lead",
+            "name": (
+                "invoke_runtime_lead"
+                if runtime_backed
+                else "invoke_claude_lead"
+            ),
             "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
             "attempts": result.attempts,
             "parent_tool_call_id": gate_tool_call_id,
@@ -5276,12 +6744,22 @@ def _gate_result_tool_calls(
             "tokens_in": result.lead_result.tokens_in,
             "tokens_out": result.lead_result.tokens_out,
             "token_usage": result.lead_result.token_usage,
+            "runtime": result.lead_result.runtime,
+            "runtime_run_id": result.lead_result.runtime_run_id,
+            "runtime_session_id": result.lead_result.runtime_session_id,
+            "runtime_result_hash": result.lead_result.runtime_result_hash,
+            "runtime_duration_ms": result.lead_result.runtime_duration_ms,
+            "model_provenance": result.lead_result.model_provenance,
+            "cost_provenance": result.lead_result.cost_provenance,
+            "token_provenance": result.lead_result.token_provenance,
             "stdout_bytes": result.lead_result.stdout_bytes,
             "stderr_bytes": result.lead_result.stderr_bytes,
             "result_summary": {
                 "probe_status": result.lead_result.probe.status,
                 "probe_reason": result.lead_result.probe.reason,
                 "outcome_present": result.outcome is not None,
+                "runtime": result.lead_result.runtime,
+                "runtime_result_hash": result.lead_result.runtime_result_hash,
                 "tokens_in": result.lead_result.tokens_in,
                 "tokens_out": result.lead_result.tokens_out,
             },
@@ -5303,6 +6781,29 @@ def _gate_result_tool_calls(
             },
         }))
     return calls
+
+
+def _lead_attempt_usage(tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
+    lead_calls = [
+        call
+        for call in tool_calls
+        if call.get("name") in {"invoke_runtime_lead", "invoke_claude_lead"}
+    ]
+    return {
+        "lead_attempt_count": len(lead_calls),
+        "lead_total_cost_usd": sum(
+            float(call.get("cost_usd") or 0.0)
+            for call in lead_calls
+        ),
+        "lead_tokens_in": sum(
+            int(call.get("tokens_in") or 0)
+            for call in lead_calls
+        ),
+        "lead_tokens_out": sum(
+            int(call.get("tokens_out") or 0)
+            for call in lead_calls
+        ),
+    }
 
 
 def _artifact_blocked_payload(
@@ -5973,6 +7474,200 @@ def _normalise_receipt_payloads(
     return normalised
 
 
+def _stored_replay_provenance(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> dict[str, tuple[dict[str, Any], ...]]:
+    """Collect persisted task authority without reconstructing missing data."""
+    collected: dict[str, list[dict[str, Any]]] = {
+        field: []
+        for field in _REPLAY_PROVENANCE_COLLECTIONS
+    }
+    for row in state.read_dual_agent_gate_events(run_id):
+        try:
+            payload = strict_json_object_loads(
+                str(row["payload_json"] or "{}")
+            )
+        except (TypeError, ValueError):
+            continue
+        if payload.get("task_id") != task_id:
+            continue
+
+        provenance = payload.get("replay_provenance")
+        sources = [
+            payload,
+            *(
+                [provenance]
+                if isinstance(provenance, Mapping)
+                else []
+            ),
+        ]
+        for source in sources:
+            for field in _REPLAY_PROVENANCE_COLLECTIONS:
+                values = source.get(field)
+                if isinstance(values, list):
+                    collected[field].extend(
+                        dict(value)
+                        for value in values
+                        if isinstance(value, Mapping)
+                    )
+
+        for receipt in _stored_provenance_receipts(
+            payload,
+            event_kind=str(row["kind"]),
+            provenance=provenance,
+        ):
+            if _is_provider_model_resolution_receipt(receipt):
+                collected["provider_model_resolutions"].append(receipt)
+            if _is_canonical_tool_contract_receipt(receipt):
+                collected["canonical_tool_contracts"].append(receipt)
+            if _is_runtime_component_receipt(receipt):
+                collected["runtime_component_receipts"].append(receipt)
+
+    return {
+        field: _dedupe_stored_provenance_records(records)
+        for field, records in collected.items()
+    }
+
+
+def _stored_provenance_receipts(
+    payload: Mapping[str, Any],
+    *,
+    event_kind: str,
+    provenance: Any,
+) -> tuple[dict[str, Any], ...]:
+    receipts: list[dict[str, Any]] = []
+    # tool_receipts and trace-envelope copies can originate at MCP callers.
+    sources = [
+        *(
+            [payload]
+            if event_kind == "dual_agent_runtime_evidence"
+            else []
+        ),
+        *(
+            [provenance]
+            if isinstance(provenance, Mapping)
+            else []
+        ),
+    ]
+    for source in sources:
+        values = source.get("receipts")
+        if not isinstance(values, list):
+            continue
+        receipts.extend(
+            dict(value)
+            for value in values
+            if isinstance(value, Mapping)
+        )
+    return tuple(receipts)
+
+
+def _is_provider_model_resolution_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    receipt_type = _provenance_receipt_type(receipt)
+    if receipt_type in {
+        "model_resolution",
+        "model_resolution_receipt",
+        "provider_model_resolution",
+        "provider_model_resolution_receipt",
+    }:
+        return True
+    return (
+        "resolved_model" in receipt
+        and "event_id" in receipt
+        and any(
+            field in receipt
+            for field in ("lane", "worker_id", "reviewer_id")
+        )
+        and any(
+            field in receipt
+            for field in (
+                "provider_response_receipt_ref",
+                "response_receipt_ref",
+                "provider_receipt_ref",
+                "receipt_ref",
+                "provider_response_source",
+                "model_provenance",
+                "provider_response_receipt",
+            )
+        )
+    )
+
+
+def _is_canonical_tool_contract_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    receipt_type = _provenance_receipt_type(receipt)
+    if receipt_type in {
+        "canonical_tool_contract",
+        "canonical_tool_contract_receipt",
+        "tool_contract",
+        "tool_contract_receipt",
+    }:
+        return True
+    return (
+        "tool_name" in receipt
+        and any(
+            field in receipt
+            for field in ("canonical_bytes", "canonical_bytes_base64")
+        )
+        and "sha256" in receipt
+    )
+
+
+def _is_runtime_component_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    category = str(
+        receipt.get("category")
+        or receipt.get("kind")
+        or ""
+    ).strip().lower()
+    return (
+        category in _RUNTIME_COMPONENT_RECEIPT_CATEGORIES
+        and bool(str(receipt.get("component_id") or "").strip())
+    )
+
+
+def _provenance_receipt_type(receipt: Mapping[str, Any]) -> str:
+    value = (
+        receipt.get("provenance_type")
+        or receipt.get("receipt_type")
+        or receipt.get("kind")
+        or receipt.get("category")
+        or ""
+    )
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip(
+        "_"
+    )
+
+
+def _dedupe_stored_provenance_records(
+    records: list[dict[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        try:
+            identity = json.dumps(
+                record,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError):
+            identity = repr(record)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(record)
+    return tuple(deduped)
+
+
 def _trusted_runtime_receipt_ids(receipts: list[dict[str, Any]]) -> set[str]:
     ids: set[str] = set()
     for receipt in receipts:
@@ -6293,7 +7988,13 @@ def _is_benign_review_packet_path(path_text: str) -> bool:
     path = str(path_text or "").strip()
     if not path:
         return True
-    if path.startswith((".scratch/", ".handoff/", "reviews/", ".cortex/runtime_workspaces/")):
+    if path.startswith((
+        ".scratch/",
+        ".handoff/",
+        "reviews/",
+        "runs/",
+        ".cortex/runtime_workspaces/",
+    )):
         return True
     if path == "state.db" or path.endswith((".db-shm", ".db-wal")):
         return True
@@ -6355,6 +8056,66 @@ def _git_branch(cwd: str | Path) -> str | None:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _reviewer_call_provenance_receipt(
+    *,
+    reviewer_id: str,
+    reviewer_runtime: str,
+    task_id: str,
+    run_id: str,
+    gate: str,
+    round_index: int,
+    instruction: str,
+    result: CursorInvocationResult,
+) -> dict[str, Any]:
+    """Hash one reviewer call even when it has no rollout-style session."""
+    outcome_payload = (
+        result.outcome.model_dump()
+        if result.outcome is not None
+        else None
+    )
+    diagnostics_payload = (
+        redact(dict(result.diagnostics))
+        if isinstance(result.diagnostics, Mapping)
+        else None
+    )
+    body = {
+        "schema_version": "supervisor-reviewer-call-receipt/v1",
+        "reviewer_id": str(reviewer_id),
+        "reviewer_runtime": str(reviewer_runtime),
+        "task_id": str(task_id),
+        "workflow_run_id": str(run_id),
+        "gate": str(gate),
+        "round_index": int(round_index),
+        "instruction_sha256": hashlib.sha256(
+            str(instruction).encode("utf-8")
+        ).hexdigest(),
+        "runtime_run_id": str(result.run_id or ""),
+        "target_session_id": str(result.agent_id or ""),
+        "status": str(result.status or ""),
+        "probe_status": str(result.probe.status),
+        "probe_reason": str(result.probe.reason),
+        "model": str(result.model or ""),
+        "attempts": int(result.attempts),
+        "transcript_sha256": hashlib.sha256(
+            str(result.transcript or "").encode("utf-8")
+        ).hexdigest(),
+        "outcome_sha256": (
+            _canonical_payload_sha256(outcome_payload)
+            if isinstance(outcome_payload, Mapping)
+            else None
+        ),
+        "diagnostics_sha256": (
+            _canonical_payload_sha256(diagnostics_payload)
+            if isinstance(diagnostics_payload, Mapping)
+            else None
+        ),
+    }
+    return {
+        **body,
+        "result_hash": _canonical_payload_sha256(body),
+    }
 
 
 def _review_worker_terminal_status(result: CursorInvocationResult) -> str:
@@ -6528,6 +8289,10 @@ def _reviewer_boot_status(
 ) -> tuple[bool, str, str | None]:
     spec = reviewer.spec
     runtime = str(spec.runtime or "").lower()
+    if isinstance(reviewer, RuntimeReviewerAdapter):
+        return True, "runtime_adapter_configured", None
+    if isinstance(reviewer, StructuredReviewerAdapter):
+        return True, "model_client_configured", None
     if runtime == "codex_cli":
         command = str(getattr(reviewer, "command", "") or "codex")
         if _uses_real_subprocess_runner(codex_runner):

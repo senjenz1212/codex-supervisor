@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..auto_evolve_benchmark_ledger import append_auto_evolve_benchmark_event
+from ..claim_gate import ClaimGate
 from .schema import sha256_json
 
 
@@ -50,7 +50,7 @@ def promote_benchmark_report_to_autoresearch_report(
         empty_floor_comparison=empty_floor_comparison or {},
         aeb0_artifact_ref=str(aeb0_artifact_ref or ""),
     )
-    report: dict[str, Any] = {
+    report = ClaimGate.derive_report({
         "schema_version": "supervisor-autoresearch-summary/v1",
         "records": [record],
         "summary": {
@@ -68,7 +68,6 @@ def promote_benchmark_report_to_autoresearch_report(
         },
         "default_change_allowed": False,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
         "operator_facing_only": True,
         "policy_derivation_allowed": False,
         "report_only": {
@@ -77,7 +76,7 @@ def promote_benchmark_report_to_autoresearch_report(
             "policy_mutated": False,
             "operator_review_required": True,
         },
-    }
+    })
     report["report_sha256"] = sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -216,7 +215,6 @@ def _autoresearch_record(
         "wall_clock_s": 0.0,
         "default_change_allowed": False,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
         "operator_facing_only": True,
         "policy_derivation_allowed": False,
         "policy_mutated": False,

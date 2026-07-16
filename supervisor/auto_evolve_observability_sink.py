@@ -10,6 +10,7 @@ from .auto_evolve_benchmark_ledger import (
     AUTHORITY_FLAGS_FALSE,
     append_auto_evolve_benchmark_event,
 )
+from .claim_gate import ClaimGate
 
 
 AUTO_EVOLVE_OBSERVABILITY_SINK_SCHEMA_VERSION = (
@@ -87,8 +88,7 @@ def ingest_auto_evolve_observability_sink(
         ),
         "trust_path": _trust_path_boundary(),
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
-        "powered_improvement_claim_allowed": False,
+        **ClaimGate.derived_claim_flags(),
         "human_mergeability_claim_allowed": False,
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -100,6 +100,7 @@ def ingest_auto_evolve_observability_sink(
             "operator_review_required": True,
         },
     }
+    report = ClaimGate.govern_report(report)
     report_path = output_path / "observability_sink_report.json"
     report["report_path"] = str(report_path)
     report["report_sha256"] = _sha256_json({

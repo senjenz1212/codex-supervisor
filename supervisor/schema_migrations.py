@@ -1,12 +1,55 @@
 """Forward-only SQLite schema migrations for the supervisor state DB."""
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
+
+from .evidence_ledger import (
+    EVENT_HASH_SCHEMA_VERSION,
+    GENESIS_KINDS,
+    LEGACY_IMPORT_GENESIS,
+    build_legacy_import_ledger_fields,
+    build_ledger_fields,
+    event_hash_schema_transition_allowed,
+    prepare_event_payload,
+    strict_json_object_loads,
+    supported_event_hash_schema_versions,
+)
+from .quality_projection import (
+    QUALITY_TREND_PROJECTION_EVENT,
+    canonical_quality_trend_projection_row,
+    quality_trend_projection_event_payload,
+)
 
 
 MigrationFn = Callable[[sqlite3.Connection], None]
+MAX_STARTUP_LEGACY_EVENT_BACKFILL = 10_000
+MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS = 10_000
+MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS = 50_000
+MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS = 50_000
+EVENT_LEDGER_MIGRATION_VERSION = 12
+STORAGE_INTEGRITY_V2_MIGRATION_VERSION = 13
+_QUALITY_PROJECTION_REQUIRED_TREND_COLUMNS = {
+    "run_id",
+    "task_id",
+    "task_class",
+    "gate",
+    "accepted",
+    "first_pass_accepted",
+    "revision_rounds",
+    "time_to_accepted_outcome_s",
+    "p11_audit_sample_size",
+    "false_accept_count",
+    "false_accept_denominator",
+    "false_accept_rate",
+    "policy_overlay_hash",
+    "policy_proposal_id",
+    "details_json",
+    "computed_at",
+}
 
 
 @dataclass(frozen=True)
@@ -16,38 +59,186 @@ class SchemaMigration:
     apply: MigrationFn
 
 
+class LegacyEventLedgerBackfillRequired(RuntimeError):
+    """Normal startup found historical events that need an offline import."""
+
+
+class QualityProjectionBackfillRequired(RuntimeError):
+    """Normal startup found a quality projection backfill above its bounds."""
+
+
 def run_forward_migrations(conn: sqlite3.Connection) -> None:
-    """Apply known migrations once and fail closed on version/name drift."""
-    _ensure_migration_table(conn)
-    applied = {
-        _row_int(row, "version", 0): _row_str(row, "name", 1)
-        for row in conn.execute(
-            "SELECT version, name FROM schema_migrations ORDER BY version ASC"
-        ).fetchall()
-    }
-    known_versions = {migration.version for migration in MIGRATIONS}
-    unknown_versions = sorted(version for version in applied if version not in known_versions)
-    if unknown_versions:
-        raise RuntimeError(
-            "unknown future schema migration: "
-            + ", ".join(str(version) for version in unknown_versions)
+    """Apply startup-safe migrations and repair required integrity objects."""
+    _run_forward_migrations(
+        conn,
+        allow_legacy_event_backfill=False,
+        allow_quality_projection_backfill=False,
+    )
+
+
+def migrate_legacy_event_ledger_offline(db_path: str | Path) -> None:
+    """Import legacy events exactly once while holding an exclusive DB lock.
+
+    Stop every supervisor process that can access ``db_path`` before invoking
+    this helper. Historical payload JSON is preserved; only ledger metadata is
+    added, and each imported chain is marked with ``legacy-import`` genesis.
+    """
+    path = str(Path(db_path).expanduser())
+    conn = sqlite3.connect(path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("BEGIN EXCLUSIVE")
+        _run_forward_migrations(
+            conn,
+            allow_legacy_event_backfill=True,
+            allow_quality_projection_backfill=True,
         )
-    now = _sqlite_now_s(conn)
-    for migration in MIGRATIONS:
-        existing_name = applied.get(migration.version)
-        if existing_name is not None:
-            if existing_name != migration.name:
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def migrate_quality_projection_evidence_offline(
+    db_path: str | Path,
+) -> None:
+    """Backfill canonical quality projection evidence under an exclusive lock."""
+
+    path = str(Path(db_path).expanduser())
+    conn = sqlite3.connect(path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("BEGIN EXCLUSIVE")
+        _run_forward_migrations(
+            conn,
+            allow_legacy_event_backfill=False,
+            allow_quality_projection_backfill=True,
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _run_forward_migrations(
+    conn: sqlite3.Connection,
+    *,
+    allow_legacy_event_backfill: bool,
+    allow_quality_projection_backfill: bool,
+) -> None:
+    try:
+        conn.execute("PRAGMA recursive_triggers = ON")
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        _ensure_migration_table(conn)
+        applied = {
+            _row_int(row, "version", 0): _row_str(row, "name", 1)
+            for row in conn.execute(
+                "SELECT version, name FROM schema_migrations ORDER BY version ASC"
+            ).fetchall()
+        }
+        known_versions = {migration.version for migration in MIGRATIONS}
+        unknown_versions = sorted(
+            version for version in applied if version not in known_versions
+        )
+        if unknown_versions:
+            raise RuntimeError(
+                "unknown future schema migration: "
+                + ", ".join(str(version) for version in unknown_versions)
+            )
+        for migration in MIGRATIONS:
+            existing_name = applied.get(migration.version)
+            if (
+                existing_name is not None
+                and existing_name != migration.name
+            ):
                 raise RuntimeError(
                     "schema migration mismatch: "
-                    f"version={migration.version} expected={migration.name} observed={existing_name}"
+                    f"version={migration.version} "
+                    f"expected={migration.name} observed={existing_name}"
                 )
-            continue
-        migration.apply(conn)
-        conn.execute(
-            "INSERT INTO schema_migrations(version, name, applied_at) VALUES(?, ?, ?)",
-            (migration.version, migration.name, now),
+
+        should_check_legacy_events = _should_check_legacy_event_backfill(
+            conn,
+            applied,
         )
-    conn.commit()
+        if (
+            should_check_legacy_events
+            and EVENT_LEDGER_MIGRATION_VERSION not in applied
+            and _table_exists(conn, "events")
+            and _EVENT_LEDGER_REQUIRED_COLUMNS
+            & _columns(conn, "events")
+        ):
+            _ensure_event_ledger_columns(conn)
+            _assert_prepopulated_event_ledger_metadata_matches(
+                conn,
+                max_rows=(
+                    None
+                    if allow_legacy_event_backfill
+                    else MAX_STARTUP_LEGACY_EVENT_BACKFILL
+                ),
+            )
+        affected_event_count = (
+            _legacy_event_backfill_affected_event_count(conn)
+            if should_check_legacy_events
+            else 0
+        )
+        if affected_event_count:
+            if (
+                not allow_legacy_event_backfill
+                and affected_event_count
+                > MAX_STARTUP_LEGACY_EVENT_BACKFILL
+            ):
+                raise LegacyEventLedgerBackfillRequired(
+                    _legacy_event_backfill_message(
+                        conn,
+                        affected_event_count=affected_event_count,
+                    )
+                )
+            _ensure_event_ledger_columns(conn)
+            _backfill_event_ledger_single_pass(conn)
+
+        now = _sqlite_now_s(conn)
+        for migration in MIGRATIONS:
+            existing_name = applied.get(migration.version)
+            if existing_name is not None:
+                continue
+            if migration.version == STORAGE_INTEGRITY_V2_MIGRATION_VERSION:
+                _migration_storage_integrity_v2(
+                    conn,
+                    max_affected_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS
+                    ),
+                    max_event_scan_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS
+                    ),
+                    max_trend_scan_rows=(
+                        None
+                        if allow_quality_projection_backfill
+                        else MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS
+                    ),
+                )
+            else:
+                migration.apply(conn)
+            conn.execute(
+                """INSERT INTO schema_migrations(version, name, applied_at)
+                   VALUES(?, ?, ?)""",
+                (migration.version, migration.name, now),
+            )
+        _migration_workflow_job_process_identity(conn)
+        _repair_required_integrity_objects(conn)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def applied_migrations(conn: sqlite3.Connection) -> list[dict[str, int | str]]:
@@ -189,6 +380,162 @@ def _migration_workflow_job_dispatcher_leases(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_workflow_job_process_identity(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = _columns(conn, "dual_agent_workflow_jobs")
+    identity_columns = {
+        "worker_pgid",
+        "worker_started_at",
+        "worker_containment_id",
+        "worker_reaped_at",
+    }
+    if not identity_columns <= columns and "pid" in columns:
+        predicates = ["pid IS NOT NULL"]
+        if "terminal_outcome_json" in columns:
+            predicates.append("terminal_outcome_json IS NULL")
+        if "recovery_point" in columns:
+            predicates.append("recovery_point != 'terminal'")
+        if "status" in columns:
+            predicates.append(
+                "status NOT IN "
+                "('accepted', 'blocked', 'cancelled', 'completed', "
+                "'denied', 'failed')"
+            )
+        row = conn.execute(
+            """SELECT job_id, pid
+                 FROM dual_agent_workflow_jobs
+                WHERE """
+            + " AND ".join(predicates)
+            + " ORDER BY job_id ASC LIMIT 1"
+        ).fetchone()
+        if row is not None:
+            raise RuntimeError(
+                "workflow process-identity migration requires quiescence: "
+                f"job_id={_row_str(row, 'job_id', 0)} "
+                f"pid={_row_int(row, 'pid', 1)} is potentially live; "
+                "stop/reap pre-identity workers and clear pid or record a "
+                "terminal outcome before retrying"
+            )
+    if "worker_pgid" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN worker_pgid INTEGER"
+        )
+    if "worker_started_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN worker_started_at REAL"
+        )
+    if "worker_containment_id" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN worker_containment_id TEXT"
+        )
+    if "worker_reaped_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN worker_reaped_at INTEGER"
+        )
+
+
+def _migration_workflow_job_spawn_ownership(
+    conn: sqlite3.Connection,
+) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = _columns(conn, "dual_agent_workflow_jobs")
+    if "worker_prepared_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN worker_prepared_at REAL"
+        )
+    if "cleanup_attempts" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN cleanup_attempts INTEGER NOT NULL DEFAULT 0"
+        )
+    if "cleanup_escalated_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs "
+            "ADD COLUMN cleanup_escalated_at INTEGER"
+        )
+    conn.execute(
+        "DROP INDEX IF EXISTS idx_dual_agent_workflow_jobs_dispatchable"
+    )
+    conn.execute(
+        """CREATE INDEX idx_dual_agent_workflow_jobs_dispatchable
+           ON dual_agent_workflow_jobs(
+             status, recovery_point, next_dispatch_at, lease_expires_at
+           )
+           WHERE recovery_point IN ('reserved', 'request_written')
+             AND terminal_outcome_json IS NULL
+             AND (pid IS NULL OR worker_reaped_at IS NOT NULL)"""
+    )
+
+
+def _migration_historical_operation_claims(
+    conn: sqlite3.Connection,
+) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS historical_operation_claims (
+             operation_id  TEXT PRIMARY KEY,
+             request_hash  TEXT NOT NULL,
+             operation     TEXT NOT NULL
+               CHECK(operation IN ('rerun', 'regrade', 'replay')),
+             status        TEXT NOT NULL
+               CHECK(status IN ('running', 'completed', 'failed')),
+             terminal_event_id INTEGER,
+             created_at    INTEGER NOT NULL,
+             updated_at    INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_historical_operation_claims_status
+           ON historical_operation_claims(status, updated_at)"""
+    )
+
+
+def _migration_historical_operation_execution_ownership(
+    conn: sqlite3.Connection,
+) -> None:
+    if not _table_exists(conn, "historical_operation_claims"):
+        return
+    running_claim = conn.execute(
+        """SELECT operation_id
+             FROM historical_operation_claims
+            WHERE status='running'
+            ORDER BY operation_id ASC
+            LIMIT 1"""
+    ).fetchone()
+    if running_claim is not None:
+        raise RuntimeError(
+            "historical execution-ownership migration requires quiescence: "
+            f"operation_id={_row_str(running_claim, 'operation_id', 0)} "
+            "is running; complete or fail every historical operation "
+            "before retrying"
+        )
+    columns = _columns(conn, "historical_operation_claims")
+    if "execution_owner_token" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_owner_token TEXT"
+        )
+    if "execution_generation" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_generation INTEGER NOT NULL DEFAULT 0"
+        )
+    if "execution_heartbeat_at" not in columns:
+        conn.execute(
+            "ALTER TABLE historical_operation_claims "
+            "ADD COLUMN execution_heartbeat_at REAL"
+        )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS
+             idx_historical_operation_claims_execution_owner
+           ON historical_operation_claims(execution_owner_token)
+           WHERE execution_owner_token IS NOT NULL"""
+    )
+
+
 def _migration_supervisor_lessons(conn: sqlite3.Connection) -> None:
     conn.execute(
         """CREATE TABLE IF NOT EXISTS supervisor_lessons (
@@ -296,9 +643,1358 @@ def _migration_policy_overlay_trend_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE supervisor_lessons ADD COLUMN {column} {ddl}")
 
 
+def _migration_quality_trend_audits(conn: sqlite3.Connection) -> None:
+    _ensure_quality_trend_audit_table(conn)
+    _backfill_quality_trend_audits(conn)
+
+
+def _ensure_quality_trend_audit_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS quality_trend_audits (
+             run_id                         TEXT NOT NULL,
+             gate                           TEXT NOT NULL,
+             sample_size                    INTEGER NOT NULL,
+             false_accept_count             INTEGER NOT NULL,
+             false_accept_denominator       INTEGER NOT NULL,
+             false_accept_rate              REAL NOT NULL,
+             audit_details_json             TEXT NOT NULL DEFAULT '{}',
+             computed_at                    INTEGER NOT NULL,
+             PRIMARY KEY(run_id, gate, computed_at),
+             CHECK (
+                  sample_size >= 0
+              AND false_accept_count >= 0
+              AND false_accept_denominator >= 0
+              AND false_accept_count <= false_accept_denominator
+              AND false_accept_denominator <= sample_size
+              AND false_accept_rate >= 0.0
+              AND false_accept_rate <= 1.0
+              AND false_accept_rate = CASE
+                    WHEN false_accept_denominator = 0 THEN 0.0
+                    ELSE CAST(false_accept_count AS REAL)
+                         / CAST(false_accept_denominator AS REAL)
+                  END
+             )
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_quality_trend_audits_run_gate
+           ON quality_trend_audits(run_id, gate, computed_at)"""
+    )
+
+
+def _backfill_quality_trend_audits(conn: sqlite3.Connection) -> None:
+    trend_columns = _columns(conn, "supervisor_quality_trends")
+    required_columns = {
+        "run_id",
+        "gate",
+        "p11_audit_sample_size",
+        "false_accept_count",
+        "false_accept_denominator",
+        "false_accept_rate",
+        "details_json",
+        "computed_at",
+    }
+    if not required_columns <= trend_columns:
+        return
+    rows = conn.execute(
+        """SELECT run_id, gate, p11_audit_sample_size,
+                  false_accept_count, false_accept_denominator,
+                  false_accept_rate, details_json, computed_at
+             FROM supervisor_quality_trends"""
+    ).fetchall()
+    for row in rows:
+        try:
+            details = json.loads(_row_str(row, "details_json", 6) or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        has_audit_details = (
+            isinstance(details, dict)
+            and "p11_audit" in details
+            and isinstance(details.get("p11_audit"), dict)
+        )
+        audit_details = details.get("p11_audit") if has_audit_details else {}
+        sample_size = _row_int(row, "p11_audit_sample_size", 2)
+        false_accept_count = _row_int(row, "false_accept_count", 3)
+        false_accept_denominator = _row_int(row, "false_accept_denominator", 4)
+        if (
+            sample_size == 0
+            and false_accept_count == 0
+            and false_accept_denominator == 0
+            and not has_audit_details
+        ):
+            continue
+        if (
+            sample_size < 0
+            or false_accept_count < 0
+            or false_accept_denominator < 0
+            or false_accept_count > false_accept_denominator
+            or false_accept_denominator > sample_size
+        ):
+            raise RuntimeError(
+                "invalid legacy quality audit counts: "
+                f"run_id={_row_str(row, 'run_id', 0)} "
+                f"gate={_row_str(row, 'gate', 1)}"
+            )
+        false_accept_rate = (
+            false_accept_count / false_accept_denominator
+            if false_accept_denominator
+            else 0.0
+        )
+        run_id = _row_str(row, "run_id", 0)
+        gate = _row_str(row, "gate", 1)
+        computed_at = _row_int(row, "computed_at", 7)
+        existing = conn.execute(
+            """SELECT sample_size, false_accept_count,
+                      false_accept_denominator, false_accept_rate,
+                      audit_details_json
+                 FROM quality_trend_audits
+                WHERE run_id=? AND gate=? AND computed_at=?""",
+            (run_id, gate, computed_at),
+        ).fetchone()
+        if existing is not None:
+            try:
+                existing_details = json.loads(
+                    _row_str(existing, "audit_details_json", 4) or "{}"
+                )
+            except json.JSONDecodeError:
+                existing_details = None
+            if (
+                _row_int(existing, "sample_size", 0) != sample_size
+                or _row_int(existing, "false_accept_count", 1)
+                != false_accept_count
+                or _row_int(existing, "false_accept_denominator", 2)
+                != false_accept_denominator
+                or _row_float(existing, "false_accept_rate", 3)
+                != false_accept_rate
+                or existing_details != audit_details
+            ):
+                raise RuntimeError(
+                    "conflicting immutable quality audit history: "
+                    f"run_id={run_id} gate={gate} "
+                    f"computed_at={computed_at}"
+                )
+            continue
+        conn.execute(
+            """INSERT INTO quality_trend_audits(
+                 run_id, gate, sample_size, false_accept_count,
+                 false_accept_denominator, false_accept_rate,
+                 audit_details_json, computed_at)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                gate,
+                sample_size,
+                false_accept_count,
+                false_accept_denominator,
+                false_accept_rate,
+                json.dumps(audit_details, sort_keys=True),
+                computed_at,
+            ),
+        )
+
+
+def _migration_evidence_ledger(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "events"):
+        return
+    _ensure_event_ledger_columns(conn)
+    affected_event_count = _legacy_event_backfill_affected_event_count(conn)
+    if affected_event_count:
+        raise LegacyEventLedgerBackfillRequired(
+            _legacy_event_backfill_message(
+                conn,
+                affected_event_count=affected_event_count,
+            )
+        )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_hash
+           ON events(event_hash)"""
+    )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_sequence
+           ON events(run_id, event_sequence)"""
+    )
+
+
+def _migration_storage_integrity_v2(
+    conn: sqlite3.Connection,
+    *,
+    max_affected_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_AFFECTED_ROWS
+    ),
+    max_event_scan_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_EVENT_SCAN_ROWS
+    ),
+    max_trend_scan_rows: int | None = (
+        MAX_STARTUP_QUALITY_PROJECTION_TREND_SCAN_ROWS
+    ),
+) -> None:
+    _backfill_canonical_quality_projection_evidence(
+        conn,
+        max_affected_rows=max_affected_rows,
+        max_event_scan_rows=max_event_scan_rows,
+        max_trend_scan_rows=max_trend_scan_rows,
+    )
+    _repair_required_integrity_objects(conn)
+
+
+_EVENT_LEDGER_COLUMN_DDL = {
+    "event_sequence": "INTEGER",
+    "previous_event_hash": "TEXT",
+    "event_hash": "TEXT",
+    "canonical_payload_hash": "TEXT",
+    "artifact_manifest_hash": "TEXT",
+    "ledger_genesis_kind": "TEXT",
+}
+_EVENT_LEDGER_REQUIRED_COLUMNS = frozenset(_EVENT_LEDGER_COLUMN_DDL)
+
+
+def _ensure_event_ledger_columns(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "events"):
+        return
+    columns = _columns(conn, "events")
+    for column, ddl in _EVENT_LEDGER_COLUMN_DDL.items():
+        if column not in columns:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {column} {ddl}")
+
+
+def _legacy_event_backfill_predicate() -> str:
+    return """
+           event_sequence IS NULL
+        OR event_sequence <= 0
+        OR event_hash IS NULL
+        OR canonical_payload_hash IS NULL
+        OR artifact_manifest_hash IS NULL
+        OR (
+             event_sequence = 1
+         AND (
+                  previous_event_hash IS NOT NULL
+               OR ledger_genesis_kind IS NULL
+               OR ledger_genesis_kind NOT IN ('native', 'legacy-import')
+             )
+           )
+        OR (
+             event_sequence > 1
+         AND (
+                  previous_event_hash IS NULL
+               OR ledger_genesis_kind IS NOT NULL
+             )
+           )
+    """
+
+
+def _should_check_legacy_event_backfill(
+    conn: sqlite3.Connection,
+    applied: dict[int, str],
+) -> bool:
+    if not _table_exists(conn, "events"):
+        return False
+    if EVENT_LEDGER_MIGRATION_VERSION not in applied:
+        return True
+    if not _EVENT_LEDGER_REQUIRED_COLUMNS <= _columns(conn, "events"):
+        return True
+    if not _index_exists(conn, "idx_events_event_hash"):
+        return True
+    return conn.execute(
+        "SELECT 1 FROM events WHERE event_hash IS NULL LIMIT 1"
+    ).fetchone() is not None
+
+
+def _legacy_event_backfill_affected_event_count(
+    conn: sqlite3.Connection,
+) -> int:
+    if not _table_exists(conn, "events"):
+        return 0
+    total_row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
+    total = int(total_row[0]) if total_row is not None else 0
+    if total == 0:
+        return 0
+    if not _EVENT_LEDGER_REQUIRED_COLUMNS <= _columns(conn, "events"):
+        return total
+    row = conn.execute(
+        f"""SELECT COUNT(*)
+              FROM events
+             WHERE run_id IN (
+                   SELECT DISTINCT run_id
+                     FROM events
+                    WHERE {_legacy_event_backfill_predicate()}
+             )"""
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _load_legacy_event_payload(
+    raw_payload_text: str,
+    *,
+    run_id: str,
+    event_id: int,
+) -> dict[str, object]:
+    try:
+        return strict_json_object_loads(raw_payload_text)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise RuntimeError(
+            "event payload is invalid or ambiguous JSON during ledger "
+            f"migration: run_id={run_id} event_id={event_id}: {exc}"
+        ) from exc
+
+
+def _ledger_fields_for_event_row(
+    *,
+    run_id: str,
+    event_sequence: int,
+    ts: int,
+    source: str,
+    kind: str,
+    payload: dict[str, object],
+    raw_payload_text: str,
+    previous_event_hash: str | None,
+    genesis_kind: str | None,
+    use_legacy_raw_commitment: bool,
+    observed_event_hash: str | None,
+):
+    def build_for_schema(schema_version: str):
+        if use_legacy_raw_commitment:
+            return build_legacy_import_ledger_fields(
+                run_id=run_id,
+                event_sequence=event_sequence,
+                ts=ts,
+                source=source,
+                kind=kind,
+                payload=payload,
+                raw_payload_json=raw_payload_text,
+                previous_event_hash=previous_event_hash,
+                ledger_genesis_kind=genesis_kind,
+                event_hash_schema_version=schema_version,
+            )
+        return build_ledger_fields(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=ts,
+            source=source,
+            kind=kind,
+            payload=payload,
+            previous_event_hash=previous_event_hash,
+            ledger_genesis_kind=genesis_kind,
+            event_hash_schema_version=schema_version,
+        )
+
+    if observed_event_hash is not None:
+        matches = [
+            (schema_version, fields)
+            for schema_version in supported_event_hash_schema_versions()
+            for fields in (build_for_schema(schema_version),)
+            if fields.event_hash == observed_event_hash
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return (
+        EVENT_HASH_SCHEMA_VERSION,
+        build_for_schema(EVENT_HASH_SCHEMA_VERSION),
+    )
+
+
+def _assert_prepopulated_event_ledger_metadata_matches(
+    conn: sqlite3.Connection,
+    *,
+    max_rows: int | None = MAX_STARTUP_LEGACY_EVENT_BACKFILL,
+) -> None:
+    if max_rows is not None:
+        total_row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
+        total = int(total_row[0]) if total_row is not None else 0
+        if total > max_rows:
+            raise LegacyEventLedgerBackfillRequired(
+                _legacy_event_backfill_message(
+                    conn,
+                    affected_event_count=total,
+                )
+            )
+    rows = conn.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events
+            ORDER BY run_id ASC, event_id ASC"""
+    )
+    current_run_id: str | None = None
+    event_sequence = 0
+    previous_event_hash: str | None = None
+    previous_event_hash_schema_version: str | None = None
+    legacy_import_run = False
+    for row in rows:
+        run_id = _row_str(row, "run_id", 1)
+        if run_id != current_run_id:
+            current_run_id = run_id
+            event_sequence = 0
+            previous_event_hash = None
+            previous_event_hash_schema_version = None
+            legacy_import_run = False
+        event_sequence += 1
+        raw_payload_text = _row_str(row, "payload_json", 6)
+        payload = _load_legacy_event_payload(
+            raw_payload_text,
+            run_id=run_id,
+            event_id=_row_int(row, "event_id", 0),
+        )
+        observed_genesis = _row_optional_str(
+            row,
+            "ledger_genesis_kind",
+            11,
+        )
+        genesis_kind = (
+            observed_genesis
+            if event_sequence == 1 and observed_genesis in GENESIS_KINDS
+            else LEGACY_IMPORT_GENESIS if event_sequence == 1 else None
+        )
+        if event_sequence == 1:
+            legacy_import_run = genesis_kind == LEGACY_IMPORT_GENESIS
+        event_hash_schema_version, fields = _ledger_fields_for_event_row(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=_row_int(row, "ts", 3),
+            source=_row_str(row, "source", 4),
+            kind=_row_str(row, "kind", 5),
+            payload=payload,
+            raw_payload_text=raw_payload_text,
+            previous_event_hash=previous_event_hash,
+            genesis_kind=genesis_kind,
+            use_legacy_raw_commitment=legacy_import_run,
+            observed_event_hash=_row_optional_str(row, "event_hash", 8),
+        )
+        if (
+            previous_event_hash_schema_version is not None
+            and not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
+            )
+        ):
+            raise RuntimeError(
+                "pre-populated event ledger has a disallowed event-hash "
+                "schema transition: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                f"{previous_event_hash_schema_version} -> "
+                f"{event_hash_schema_version}"
+            )
+        normalized_payload = prepare_event_payload(
+            run_id=run_id,
+            source=_row_str(row, "source", 4),
+            kind=_row_str(row, "kind", 5),
+            payload=payload,
+            event_hash_schema_version=event_hash_schema_version,
+        )
+        if normalized_payload != payload:
+            raise RuntimeError(
+                "legacy event payload requires redaction or trace "
+                "normalization; refusing to rewrite historical evidence: "
+                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
+            )
+        expected = {
+            "event_sequence": fields.event_sequence,
+            "previous_event_hash": fields.previous_event_hash,
+            "event_hash": fields.event_hash,
+            "canonical_payload_hash": fields.canonical_payload_hash,
+            "artifact_manifest_hash": fields.artifact_manifest_hash,
+            "ledger_genesis_kind": fields.ledger_genesis_kind,
+        }
+        field_indexes = {
+            "event_sequence": 2,
+            "previous_event_hash": 7,
+            "event_hash": 8,
+            "canonical_payload_hash": 9,
+            "artifact_manifest_hash": 10,
+            "ledger_genesis_kind": 11,
+        }
+        for field, expected_value in expected.items():
+            try:
+                observed_value = row[field]  # type: ignore[index]
+            except (TypeError, IndexError):
+                observed_value = row[field_indexes[field]]
+            if observed_value is None:
+                continue
+            if field == "event_sequence":
+                observed_value = int(observed_value)
+            else:
+                observed_value = str(observed_value)
+            if observed_value != expected_value:
+                raise RuntimeError(
+                    "conflicting pre-populated event ledger metadata: "
+                    f"run_id={run_id} "
+                    f"event_id={_row_int(row, 'event_id', 0)} "
+                    f"field={field}"
+                )
+        previous_event_hash = fields.event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
+
+
+def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "events"):
+        return
+    _ensure_event_ledger_columns(conn)
+    if _legacy_event_backfill_affected_event_count(conn) == 0:
+        return
+    conn.execute("DROP TRIGGER IF EXISTS events_no_update")
+    rows = conn.execute(
+        f"""SELECT e.event_id, e.run_id, e.ts, e.source, e.kind,
+                   e.payload_json, e.event_hash, e.ledger_genesis_kind
+              FROM events AS e
+              JOIN (
+                    SELECT DISTINCT run_id
+                      FROM events
+                     WHERE {_legacy_event_backfill_predicate()}
+                   ) AS affected
+                ON affected.run_id = e.run_id
+             ORDER BY e.run_id ASC, e.event_id ASC"""
+    ).fetchall()
+    current_run_id: str | None = None
+    event_sequence = 0
+    previous_event_hash: str | None = None
+    previous_event_hash_schema_version: str | None = None
+    first_genesis = LEGACY_IMPORT_GENESIS
+    for row in rows:
+        run_id = _row_str(row, "run_id", 1)
+        if run_id != current_run_id:
+            current_run_id = run_id
+            event_sequence = 0
+            previous_event_hash = None
+            previous_event_hash_schema_version = None
+            observed_genesis = _row_optional_str(
+                row,
+                "ledger_genesis_kind",
+                7,
+            )
+            first_genesis = (
+                observed_genesis
+                if observed_genesis in GENESIS_KINDS
+                else LEGACY_IMPORT_GENESIS
+            )
+        event_sequence += 1
+        raw_payload_text = _row_str(row, "payload_json", 5)
+        payload = _load_legacy_event_payload(
+            raw_payload_text,
+            run_id=run_id,
+            event_id=_row_int(row, "event_id", 0),
+        )
+        genesis_kind = first_genesis if event_sequence == 1 else None
+        observed_event_hash = _row_optional_str(row, "event_hash", 6)
+        event_hash_schema_version, fields = _ledger_fields_for_event_row(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=_row_int(row, "ts", 2),
+            source=_row_str(row, "source", 3),
+            kind=_row_str(row, "kind", 4),
+            payload=payload,
+            raw_payload_text=raw_payload_text,
+            previous_event_hash=previous_event_hash,
+            genesis_kind=genesis_kind,
+            use_legacy_raw_commitment=(
+                first_genesis == LEGACY_IMPORT_GENESIS
+            ),
+            observed_event_hash=observed_event_hash,
+        )
+        if (
+            observed_event_hash is not None
+            and fields.event_hash != observed_event_hash
+        ):
+            raise RuntimeError(
+                "conflicting pre-populated event ledger metadata: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                "field=event_hash"
+            )
+        if (
+            previous_event_hash_schema_version is not None
+            and not event_hash_schema_transition_allowed(
+                previous_event_hash_schema_version,
+                event_hash_schema_version,
+            )
+        ):
+            raise RuntimeError(
+                "event ledger backfill would create a disallowed "
+                "event-hash schema transition: "
+                f"run_id={run_id} "
+                f"event_id={_row_int(row, 'event_id', 0)} "
+                f"{previous_event_hash_schema_version} -> "
+                f"{event_hash_schema_version}"
+            )
+        normalized_payload = prepare_event_payload(
+            run_id=run_id,
+            source=_row_str(row, "source", 3),
+            kind=_row_str(row, "kind", 4),
+            payload=payload,
+            event_hash_schema_version=event_hash_schema_version,
+        )
+        if normalized_payload != payload:
+            raise RuntimeError(
+                "legacy event payload requires redaction or trace "
+                "normalization; refusing to rewrite historical evidence: "
+                f"run_id={run_id} event_id={_row_int(row, 'event_id', 0)}"
+            )
+        conn.execute(
+            """UPDATE events
+                  SET event_sequence=?,
+                      previous_event_hash=?,
+                      event_hash=?,
+                      canonical_payload_hash=?,
+                      artifact_manifest_hash=?,
+                      ledger_genesis_kind=?
+                WHERE event_id=?""",
+            (
+                fields.event_sequence,
+                fields.previous_event_hash,
+                fields.event_hash,
+                fields.canonical_payload_hash,
+                fields.artifact_manifest_hash,
+                fields.ledger_genesis_kind,
+                _row_int(row, "event_id", 0),
+            ),
+        )
+        previous_event_hash = fields.event_hash
+        previous_event_hash_schema_version = event_hash_schema_version
+    remaining = _legacy_event_backfill_affected_event_count(conn)
+    if remaining:
+        raise RuntimeError(
+            "legacy event ledger backfill did not converge: "
+            f"affected_event_count={remaining}"
+        )
+
+
+def _legacy_event_backfill_message(
+    conn: sqlite3.Connection,
+    *,
+    affected_event_count: int,
+) -> str:
+    database_path = _sqlite_main_database_path(conn)
+    target = repr(database_path or "/path/to/state.db")
+    return (
+        "legacy event ledger backfill requires offline maintenance: "
+        f"{affected_event_count} historical events need ledger metadata; "
+        "normal State startup will not rewrite historical evidence. "
+        "Stop all supervisor processes, then run "
+        "`uv run python -c \"from supervisor.schema_migrations import "
+        "migrate_legacy_event_ledger_offline; "
+        f"migrate_legacy_event_ledger_offline({target})\"`. "
+        "The offline import preserves payload_json and marks historical "
+        "chain genesis as legacy-import."
+    )
+
+
+def _sqlite_main_database_path(conn: sqlite3.Connection) -> str:
+    for row in conn.execute("PRAGMA database_list").fetchall():
+        name = _row_str(row, "name", 1)
+        if name == "main":
+            return _row_str(row, "file", 2)
+    return ""
+
+
+def _quality_projection_backfill_message(
+    conn: sqlite3.Connection,
+    *,
+    affected_row_count: int,
+    event_scan_count: int,
+    projection_event_count: int,
+    trend_scan_count: int,
+    reason: str,
+) -> str:
+    database_path = _sqlite_main_database_path(conn)
+    target = repr(database_path or "/path/to/state.db")
+    return (
+        "canonical quality projection evidence backfill requires offline "
+        f"maintenance: reason={reason}; affected_rows={affected_row_count}; "
+        f"event_rows_scanned={event_scan_count}; "
+        f"projection_events={projection_event_count}; "
+        f"trend_rows_scanned={trend_scan_count}. Normal State startup will "
+        "not perform an unbounded projection backfill. "
+        "Stop all supervisor processes, then run "
+        "`uv run python -c \"from supervisor.schema_migrations import "
+        "migrate_quality_projection_evidence_offline; "
+        f"migrate_quality_projection_evidence_offline({target})\"`."
+    )
+
+
+def _backfill_canonical_quality_projection_evidence(
+    conn: sqlite3.Connection,
+    *,
+    max_affected_rows: int | None = None,
+    max_event_scan_rows: int | None = None,
+    max_trend_scan_rows: int | None = None,
+) -> None:
+    if not _table_exists(conn, "events"):
+        return
+    if not _QUALITY_PROJECTION_REQUIRED_TREND_COLUMNS <= _columns(
+        conn,
+        "supervisor_quality_trends",
+    ):
+        return
+    if conn.execute(
+        "SELECT 1 FROM supervisor_quality_trends LIMIT 1"
+    ).fetchone() is None:
+        return
+    _ensure_event_ledger_columns(conn)
+    if max_event_scan_rows is None:
+        event_scan_count_row = conn.execute(
+            "SELECT COUNT(*) FROM events"
+        ).fetchone()
+        event_scan_count = int(
+            event_scan_count_row[0]
+            if event_scan_count_row is not None
+            else 0
+        )
+    else:
+        event_scan_limit = max(0, int(max_event_scan_rows))
+        event_scan_rows = conn.execute(
+            """SELECT event_id
+                 FROM events
+                ORDER BY event_id ASC
+                LIMIT ?""",
+            (event_scan_limit + 1,),
+        ).fetchall()
+        event_scan_count = len(event_scan_rows)
+        if event_scan_count > event_scan_limit:
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=0,
+                    event_scan_count=event_scan_count,
+                    projection_event_count=0,
+                    trend_scan_count=0,
+                    reason="event_scan_limit_exceeded",
+                )
+            )
+    current_projection_payloads: dict[tuple[str, str], str] = {}
+    projection_event_rows = conn.execute(
+        """SELECT run_id, payload_json
+             FROM events
+            WHERE kind=?
+            ORDER BY event_id ASC""",
+        (QUALITY_TREND_PROJECTION_EVENT,),
+    ).fetchall()
+    projection_event_count = len(projection_event_rows)
+    for event_row in projection_event_rows:
+        try:
+            observed = json.loads(
+                _row_str(event_row, "payload_json", 1)
+            )
+        except json.JSONDecodeError:
+            continue
+        projection_row = (
+            observed.get("projection_row")
+            if isinstance(observed, dict)
+            else None
+        )
+        if not isinstance(projection_row, dict):
+            continue
+        gate = str(projection_row.get("gate") or "")
+        if not gate:
+            continue
+        current_projection_payloads[
+            (_row_str(event_row, "run_id", 0), gate)
+        ] = json.dumps(
+            observed,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+
+    trend_query = """SELECT run_id, task_id, task_class, gate, accepted,
+                            first_pass_accepted, revision_rounds,
+                            time_to_accepted_outcome_s, p11_audit_sample_size,
+                            false_accept_count, false_accept_denominator,
+                            false_accept_rate, policy_overlay_hash,
+                            policy_proposal_id, details_json, computed_at
+                       FROM supervisor_quality_trends
+                      ORDER BY run_id ASC, gate ASC"""
+    if max_trend_scan_rows is None:
+        rows = conn.execute(trend_query)
+    else:
+        rows = conn.execute(
+            trend_query + " LIMIT ?",
+            (max(0, int(max_trend_scan_rows)) + 1,),
+        )
+    affected: list[tuple[str, dict[str, object]]] = []
+    trend_scan_count = 0
+    for row in rows:
+        trend_scan_count += 1
+        if (
+            max_trend_scan_rows is not None
+            and trend_scan_count > max_trend_scan_rows
+        ):
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=len(affected),
+                    event_scan_count=event_scan_count,
+                    projection_event_count=projection_event_count,
+                    trend_scan_count=trend_scan_count,
+                    reason="trend_scan_limit_exceeded",
+                )
+            )
+        try:
+            details = json.loads(_row_str(row, "details_json", 14) or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        projection_row = canonical_quality_trend_projection_row(
+            {
+                "run_id": _row_str(row, "run_id", 0),
+                "task_id": _row_str(row, "task_id", 1),
+                "task_class": _row_str(row, "task_class", 2),
+                "gate": _row_str(row, "gate", 3),
+                "accepted": bool(_row_int(row, "accepted", 4)),
+                "first_pass_accepted": bool(
+                    _row_int(row, "first_pass_accepted", 5)
+                ),
+                "revision_rounds": _row_int(row, "revision_rounds", 6),
+                "time_to_accepted_outcome_s": _row_optional_float(
+                    row,
+                    "time_to_accepted_outcome_s",
+                    7,
+                ),
+                "p11_audit_sample_size": _row_int(
+                    row,
+                    "p11_audit_sample_size",
+                    8,
+                ),
+                "false_accept_count": _row_int(
+                    row,
+                    "false_accept_count",
+                    9,
+                ),
+                "false_accept_denominator": _row_int(
+                    row,
+                    "false_accept_denominator",
+                    10,
+                ),
+                "false_accept_rate": _row_float(
+                    row,
+                    "false_accept_rate",
+                    11,
+                ),
+                "policy_overlay_hash": _row_str(
+                    row,
+                    "policy_overlay_hash",
+                    12,
+                ),
+                "policy_proposal_id": _row_str(
+                    row,
+                    "policy_proposal_id",
+                    13,
+                ),
+                "details": details if isinstance(details, dict) else {},
+                "computed_at": _row_int(row, "computed_at", 15),
+            }
+        )
+        payload = prepare_event_payload(
+            run_id=projection_row["run_id"],
+            source="schema_migration",
+            kind=QUALITY_TREND_PROJECTION_EVENT,
+            payload=quality_trend_projection_event_payload(projection_row),
+        )
+        expected = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        identity = (
+            str(projection_row["run_id"]),
+            str(projection_row["gate"]),
+        )
+        if current_projection_payloads.get(identity) == expected:
+            continue
+        affected.append((str(projection_row["run_id"]), payload))
+        if (
+            max_affected_rows is not None
+            and len(affected) > max_affected_rows
+        ):
+            raise QualityProjectionBackfillRequired(
+                _quality_projection_backfill_message(
+                    conn,
+                    affected_row_count=len(affected),
+                    event_scan_count=event_scan_count,
+                    projection_event_count=projection_event_count,
+                    trend_scan_count=trend_scan_count,
+                    reason="affected_row_limit_exceeded",
+                )
+            )
+    for run_id, payload in affected:
+        _append_legacy_quality_projection_event(
+            conn,
+            run_id=run_id,
+            payload=payload,
+        )
+
+
+def _append_legacy_quality_projection_event(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    payload: dict[str, object],
+) -> None:
+    prepared_payload = prepare_event_payload(
+        run_id=run_id,
+        source="schema_migration",
+        kind=QUALITY_TREND_PROJECTION_EVENT,
+        payload=payload,
+    )
+    head = conn.execute(
+        """SELECT event_sequence, event_hash
+             FROM events
+            WHERE run_id=?
+            ORDER BY event_sequence DESC
+            LIMIT 1""",
+        (run_id,),
+    ).fetchone()
+    event_sequence = (
+        _row_int(head, "event_sequence", 0) + 1
+        if head is not None
+        else 1
+    )
+    previous_event_hash = (
+        _row_str(head, "event_hash", 1)
+        if head is not None
+        else None
+    )
+    event_ts = _sqlite_now_s(conn)
+    fields = build_ledger_fields(
+        run_id=run_id,
+        event_sequence=event_sequence,
+        ts=event_ts,
+        source="schema_migration",
+        kind=QUALITY_TREND_PROJECTION_EVENT,
+        payload=prepared_payload,
+        previous_event_hash=previous_event_hash,
+        ledger_genesis_kind=(
+            LEGACY_IMPORT_GENESIS if previous_event_hash is None else None
+        ),
+    )
+    conn.execute(
+        """INSERT INTO events(
+             run_id, event_sequence, ts, source, kind, payload_json,
+             previous_event_hash, event_hash, canonical_payload_hash,
+             artifact_manifest_hash, ledger_genesis_kind)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            event_sequence,
+            event_ts,
+            "schema_migration",
+            QUALITY_TREND_PROJECTION_EVENT,
+            json.dumps(
+                prepared_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ),
+            fields.previous_event_hash,
+            fields.event_hash,
+            fields.canonical_payload_hash,
+            fields.artifact_manifest_hash,
+            fields.ledger_genesis_kind,
+        ),
+    )
+
+
+def _validate_quality_trend_audits(conn: sqlite3.Connection) -> None:
+    invalid_audit = conn.execute(
+        """SELECT run_id, gate
+             FROM quality_trend_audits
+            WHERE sample_size < 0
+               OR false_accept_count < 0
+               OR false_accept_denominator < 0
+               OR false_accept_count > false_accept_denominator
+               OR false_accept_denominator > sample_size
+               OR false_accept_rate < 0.0
+               OR false_accept_rate > 1.0
+               OR false_accept_rate != CASE
+                    WHEN false_accept_denominator = 0 THEN 0.0
+                    ELSE CAST(false_accept_count AS REAL)
+                         / CAST(false_accept_denominator AS REAL)
+                  END
+            LIMIT 1"""
+    ).fetchone()
+    if invalid_audit is not None:
+        raise RuntimeError(
+            "invalid legacy quality audit counts or derived rate: "
+            f"run_id={_row_str(invalid_audit, 'run_id', 0)} "
+            f"gate={_row_str(invalid_audit, 'gate', 1)}"
+        )
+
+
+def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
+    _ensure_event_idempotency_claim_objects(conn)
+    if _table_exists(conn, "verdicts"):
+        _migration_verdict_decision_id(conn)
+    if _table_exists(conn, "events"):
+        _ensure_event_ledger_columns(conn)
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_hash
+               ON events(event_hash)"""
+        )
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_sequence
+               ON events(run_id, event_sequence)"""
+        )
+        for trigger_name in (
+            "events_no_replace",
+            "events_require_ledger_fields",
+            "events_no_update",
+            "events_no_delete",
+        ):
+            conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+        conn.execute(
+            """CREATE TRIGGER events_no_replace
+               BEFORE INSERT ON events
+               WHEN EXISTS (
+                    SELECT 1
+                      FROM events
+                     WHERE event_id = NEW.event_id
+                        OR event_hash = NEW.event_hash
+                        OR (
+                             run_id = NEW.run_id
+                         AND event_sequence = NEW.event_sequence
+                           )
+               )
+               BEGIN
+                 SELECT RAISE(ABORT, 'events are append-only');
+               END"""
+        )
+        conn.execute(
+            """CREATE TRIGGER events_require_ledger_fields
+               BEFORE INSERT ON events
+               WHEN NEW.event_sequence IS NULL
+                 OR NEW.event_sequence <= 0
+                 OR NEW.event_hash IS NULL
+                 OR NEW.canonical_payload_hash IS NULL
+                 OR NEW.artifact_manifest_hash IS NULL
+                 OR (
+                      NEW.event_sequence = 1
+                      AND (
+                           NEW.previous_event_hash IS NOT NULL
+                           OR NEW.ledger_genesis_kind IS NULL
+                           OR NEW.ledger_genesis_kind
+                              NOT IN ('native', 'legacy-import')
+                      )
+                    )
+                 OR (
+                      NEW.event_sequence > 1
+                      AND (
+                           NEW.previous_event_hash IS NULL
+                           OR NEW.ledger_genesis_kind IS NOT NULL
+                      )
+                    )
+               BEGIN
+                 SELECT RAISE(ABORT, 'event ledger fields are required');
+               END"""
+        )
+        conn.execute(
+            """CREATE TRIGGER events_no_update
+               BEFORE UPDATE ON events
+               BEGIN
+                 SELECT RAISE(ABORT, 'events are append-only');
+               END"""
+        )
+        conn.execute(
+            """CREATE TRIGGER events_no_delete
+               BEFORE DELETE ON events
+               BEGIN
+                 SELECT RAISE(ABORT, 'events are append-only');
+               END"""
+        )
+
+    _ensure_quality_trend_audit_table(conn)
+    _validate_quality_trend_audits(conn)
+    for trigger_name in (
+        "quality_trend_audits_no_replace",
+        "quality_trend_audits_validate_insert",
+        "quality_trend_audits_no_update",
+        "quality_trend_audits_no_delete",
+    ):
+        conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+    conn.execute(
+        """CREATE TRIGGER quality_trend_audits_no_replace
+           BEFORE INSERT ON quality_trend_audits
+           WHEN EXISTS (
+                SELECT 1
+                  FROM quality_trend_audits
+                 WHERE run_id = NEW.run_id
+                   AND gate = NEW.gate
+                   AND computed_at = NEW.computed_at
+           )
+           BEGIN
+             SELECT RAISE(ABORT, 'quality trend audits are immutable');
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER quality_trend_audits_validate_insert
+           BEFORE INSERT ON quality_trend_audits
+           WHEN NEW.sample_size < 0
+             OR NEW.false_accept_count < 0
+             OR NEW.false_accept_denominator < 0
+             OR NEW.false_accept_count > NEW.false_accept_denominator
+             OR NEW.false_accept_denominator > NEW.sample_size
+             OR NEW.false_accept_rate < 0.0
+             OR NEW.false_accept_rate > 1.0
+             OR NEW.false_accept_rate != CASE
+                  WHEN NEW.false_accept_denominator = 0 THEN 0.0
+                  ELSE CAST(NEW.false_accept_count AS REAL)
+                       / CAST(NEW.false_accept_denominator AS REAL)
+                END
+           BEGIN
+             SELECT RAISE(ABORT, 'invalid quality audit counts or rate');
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER quality_trend_audits_no_update
+           BEFORE UPDATE ON quality_trend_audits
+           BEGIN
+             SELECT RAISE(ABORT, 'quality trend audits are immutable');
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER quality_trend_audits_no_delete
+           BEFORE DELETE ON quality_trend_audits
+           BEGIN
+             SELECT RAISE(ABORT, 'quality trend audits are immutable');
+           END"""
+    )
+
+    if _table_exists(conn, "dual_agent_workflow_jobs"):
+        required_columns = {
+            "job_id",
+            "run_id",
+            "task_id",
+            "result_path",
+            "status",
+            "recovery_point",
+            "terminal_status",
+            "terminal_outcome_json",
+            "terminal_outcome_recorded_at",
+            "returncode",
+            "error",
+            "pid",
+            "worker_pgid",
+            "worker_started_at",
+            "worker_prepared_at",
+            "worker_containment_id",
+            "worker_reaped_at",
+            "cleanup_attempts",
+            "cleanup_escalated_at",
+        }
+        if required_columns <= _columns(conn, "dual_agent_workflow_jobs"):
+            conn.execute(
+                "DROP TRIGGER IF EXISTS "
+                "dual_agent_workflow_jobs_terminal_freeze"
+            )
+            conn.execute(
+                "DROP TRIGGER IF EXISTS "
+                "dual_agent_workflow_jobs_terminal_no_delete"
+            )
+            conn.execute(
+                "DROP TRIGGER IF EXISTS "
+                "dual_agent_workflow_jobs_worker_reaped_once"
+            )
+            conn.execute(
+                """CREATE TRIGGER dual_agent_workflow_jobs_terminal_freeze
+                   BEFORE UPDATE ON dual_agent_workflow_jobs
+                   WHEN OLD.terminal_outcome_json IS NOT NULL
+                    AND (
+                         NEW.job_id IS NOT OLD.job_id
+                      OR NEW.run_id IS NOT OLD.run_id
+                      OR NEW.task_id IS NOT OLD.task_id
+                      OR NEW.result_path IS NOT OLD.result_path
+                      OR NEW.status IS NOT OLD.status
+                      OR NEW.recovery_point IS NOT OLD.recovery_point
+                      OR NEW.terminal_status IS NOT OLD.terminal_status
+                      OR NEW.terminal_outcome_json IS NOT OLD.terminal_outcome_json
+                      OR NEW.terminal_outcome_recorded_at
+                           IS NOT OLD.terminal_outcome_recorded_at
+                      OR NEW.returncode IS NOT OLD.returncode
+                      OR NEW.error IS NOT OLD.error
+                      OR NEW.pid IS NOT OLD.pid
+                      OR NEW.worker_pgid IS NOT OLD.worker_pgid
+                      OR NEW.worker_started_at IS NOT OLD.worker_started_at
+                      OR NEW.worker_prepared_at IS NOT OLD.worker_prepared_at
+                      OR NEW.worker_containment_id
+                           IS NOT OLD.worker_containment_id
+                      OR NEW.cleanup_attempts IS NOT OLD.cleanup_attempts
+                      OR NEW.cleanup_escalated_at
+                           IS NOT OLD.cleanup_escalated_at
+                    )
+                   BEGIN
+                     SELECT RAISE(
+                       ABORT,
+                       'terminal workflow job fields are immutable'
+                     );
+                   END"""
+            )
+            conn.execute(
+                """CREATE TRIGGER dual_agent_workflow_jobs_terminal_no_delete
+                   BEFORE DELETE ON dual_agent_workflow_jobs
+                   WHEN OLD.terminal_outcome_json IS NOT NULL
+                     OR OLD.recovery_point = 'terminal'
+                     OR OLD.status IN (
+                          'accepted', 'blocked', 'cancelled', 'completed',
+                          'denied', 'failed'
+                        )
+                   BEGIN
+                     SELECT RAISE(
+                       ABORT,
+                       'terminal workflow job is immutable'
+                     );
+                   END"""
+            )
+            conn.execute(
+                """CREATE TRIGGER dual_agent_workflow_jobs_worker_reaped_once
+                   BEFORE UPDATE ON dual_agent_workflow_jobs
+                   WHEN OLD.worker_reaped_at IS NOT NULL
+                    AND NEW.worker_reaped_at IS NOT OLD.worker_reaped_at
+                    AND NOT (
+                         OLD.terminal_outcome_json IS NULL
+                     AND OLD.recovery_point = 'request_written'
+                     AND NEW.recovery_point = 'spawn_prepared'
+                     AND NEW.worker_reaped_at IS NULL
+                     AND NEW.pid IS NULL
+                     AND NEW.worker_pgid IS NULL
+                     AND NEW.worker_started_at IS NULL
+                     AND NEW.worker_containment_id IS NOT NULL
+                     AND NEW.worker_containment_id
+                          IS NOT OLD.worker_containment_id
+                    )
+                   BEGIN
+                     SELECT RAISE(
+                       ABORT,
+                       'worker_reaped_at is immutable once recorded'
+                     );
+                   END"""
+    )
+
+
+def _ensure_event_idempotency_claim_objects(
+    conn: sqlite3.Connection,
+) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS event_idempotency_claims (
+             run_id          TEXT NOT NULL,
+             kind            TEXT NOT NULL,
+             idempotency_key TEXT NOT NULL,
+             event_id        INTEGER NOT NULL,
+             source          TEXT NOT NULL,
+             payload_sha256  TEXT NOT NULL,
+             created_at      INTEGER NOT NULL,
+             PRIMARY KEY(run_id, kind, idempotency_key),
+             UNIQUE(event_id),
+             CHECK(event_id > 0)
+           )"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_update
+           BEFORE UPDATE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_delete
+           BEFORE DELETE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
+
+
+def _migration_event_idempotency_claims(
+    conn: sqlite3.Connection,
+) -> None:
+    _ensure_event_idempotency_claim_objects(conn)
+    if not _table_exists(conn, "events"):
+        return
+    rows = conn.execute(
+        """SELECT event_id, run_id, source, kind, payload_json,
+                  canonical_payload_hash, ts
+             FROM events
+            WHERE kind='dual_agent_production_trace_recorded'
+            ORDER BY event_id ASC"""
+    ).fetchall()
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        try:
+            payload = strict_json_object_loads(
+                _row_str(row, "payload_json", 4)
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                "cannot backfill event idempotency from invalid payload JSON"
+            ) from exc
+        source_event_hash = str(
+            payload.get("source_event_hash") or ""
+        ).strip()
+        if not source_event_hash:
+            raise RuntimeError(
+                "production trace event lacks source_event_hash for "
+                "idempotency backfill"
+            )
+        identity = (
+            _row_str(row, "run_id", 1),
+            _row_str(row, "kind", 3),
+            f"production-trace:{source_event_hash}",
+        )
+        if identity in seen:
+            raise RuntimeError(
+                "duplicate production trace events require manual repair "
+                "before idempotency migration"
+            )
+        seen.add(identity)
+        expected = (
+            _row_int(row, "event_id", 0),
+            _row_str(row, "source", 2),
+            _row_str(row, "canonical_payload_hash", 5),
+        )
+        existing = conn.execute(
+            """SELECT event_id, source, payload_sha256
+                 FROM event_idempotency_claims
+                WHERE run_id=? AND kind=? AND idempotency_key=?""",
+            identity,
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """INSERT INTO event_idempotency_claims(
+                     run_id, kind, idempotency_key, event_id, source,
+                     payload_sha256, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    identity[0],
+                    identity[1],
+                    identity[2],
+                    *expected,
+                    _row_int(row, "ts", 6),
+                ),
+            )
+        elif (
+            _row_int(existing, "event_id", 0),
+            _row_str(existing, "source", 1),
+            _row_str(existing, "payload_sha256", 2),
+        ) != expected:
+            raise RuntimeError(
+                "event idempotency claim conflicts with the immutable event"
+            )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
+def _index_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
         (name,),
     ).fetchone()
     return row is not None
@@ -308,7 +2004,7 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     if not _table_exists(conn, table):
         return set()
     return {
-        row["name"]
+        _row_str(row, "name", 1)
         for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
     }
 
@@ -332,6 +2028,49 @@ def _row_str(row: sqlite3.Row | tuple, key: str, index: int) -> str:
         return str(row[key])  # type: ignore[index]
     except (TypeError, IndexError):
         return str(row[index])
+
+
+def _row_optional_str(
+    row: sqlite3.Row | tuple,
+    key: str,
+    index: int,
+) -> str | None:
+    try:
+        value = row[key]  # type: ignore[index]
+    except (TypeError, IndexError):
+        value = row[index]
+    return None if value is None else str(value)
+
+
+def _row_float(row: sqlite3.Row | tuple, key: str, index: int) -> float:
+    try:
+        return float(row[key])  # type: ignore[index]
+    except (TypeError, IndexError):
+        return float(row[index])
+
+
+def _row_optional_float(
+    row: sqlite3.Row | tuple,
+    key: str,
+    index: int,
+) -> float | None:
+    try:
+        value = row[key]  # type: ignore[index]
+    except (TypeError, IndexError):
+        value = row[index]
+    return None if value is None else float(value)
+
+
+def _migration_verdict_decision_id(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "verdicts"):
+        return
+    if "decision_id" not in _columns(conn, "verdicts"):
+        conn.execute("ALTER TABLE verdicts ADD COLUMN decision_id TEXT")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_verdicts_decision_id
+           ON verdicts(decision_id)
+           WHERE decision_id IS NOT NULL"""
+    )
 
 
 MIGRATIONS: tuple[SchemaMigration, ...] = (
@@ -380,5 +2119,50 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         10,
         "supervisor_quality_trends.policy_overlay_columns",
         _migration_policy_overlay_trend_columns,
+    ),
+    SchemaMigration(
+        11,
+        "quality_trend_audits",
+        _migration_quality_trend_audits,
+    ),
+    SchemaMigration(
+        12,
+        "events.tamper_evident_ledger",
+        _migration_evidence_ledger,
+    ),
+    SchemaMigration(
+        13,
+        "storage.integrity_v2",
+        _migration_storage_integrity_v2,
+    ),
+    SchemaMigration(
+        14,
+        "dual_agent_workflow_jobs.process_identity",
+        _migration_workflow_job_process_identity,
+    ),
+    SchemaMigration(
+        15,
+        "historical_operation_claims",
+        _migration_historical_operation_claims,
+    ),
+    SchemaMigration(
+        16,
+        "event_idempotency_claims",
+        _migration_event_idempotency_claims,
+    ),
+    SchemaMigration(
+        17,
+        "dual_agent_workflow_jobs.spawn_ownership",
+        _migration_workflow_job_spawn_ownership,
+    ),
+    SchemaMigration(
+        18,
+        "historical_operation_claims.execution_ownership",
+        _migration_historical_operation_execution_ownership,
+    ),
+    SchemaMigration(
+        19,
+        "verdicts.decision_id",
+        _migration_verdict_decision_id,
     ),
 )

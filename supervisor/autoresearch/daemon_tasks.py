@@ -7,7 +7,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from .generator import run_runnable_autoresearch_experiments
+from .generator import (
+    PolicyClaimAuthorityResolver,
+    run_runnable_autoresearch_experiments,
+)
 from ..quality_trends import run_weekly_p11_audit_if_due
 from ..runtime_health import record_subsystem_health
 
@@ -25,12 +28,18 @@ class AutoResearchRunnerTask:
         repo_root: str | Path,
         output_root: str | Path | None = None,
         runner: Callable[..., list[dict[str, Any]]] = run_runnable_autoresearch_experiments,
+        policy_claim_authority_resolver: (
+            PolicyClaimAuthorityResolver | None
+        ) = None,
     ):
         self.cfg = cfg
         self.state = state
         self.repo_root = Path(repo_root).expanduser().resolve()
         self.output_root = Path(output_root or (self.repo_root / ".scratch" / "autoresearch-auto-runs"))
         self.runner = runner
+        self.policy_claim_authority_resolver = (
+            policy_claim_authority_resolver
+        )
 
     async def run(self) -> None:
         interval = max(1, int(getattr(self.cfg.autoresearch, "runner_interval_s", 3600)))
@@ -42,13 +51,20 @@ class AutoResearchRunnerTask:
     async def tick_once(self, *, now: int | None = None) -> dict[str, Any]:
         timestamp = int(time.time()) if now is None else int(now)
         cap = int(getattr(self.cfg.autoresearch, "max_runnable_experiments_per_week", 2))
+        runner_kwargs: dict[str, Any] = {
+            "state": self.state,
+            "repo_root": self.repo_root,
+            "output_root": self.output_root,
+            "run_id_prefix": f"autoresearch-daemon-{timestamp}",
+            "max_runnable_per_week": cap,
+            "now": timestamp,
+        }
+        if self.policy_claim_authority_resolver is not None:
+            runner_kwargs["policy_claim_authority_resolver"] = (
+                self.policy_claim_authority_resolver
+            )
         results = self.runner(
-            state=self.state,
-            repo_root=self.repo_root,
-            output_root=self.output_root,
-            run_id_prefix=f"autoresearch-daemon-{timestamp}",
-            max_runnable_per_week=cap,
-            now=timestamp,
+            **runner_kwargs,
         )
         record_subsystem_health(
             self.state,
@@ -74,11 +90,13 @@ class WeeklyP11AuditTask:
         cfg: Any,
         state: Any,
         *,
+        repo_root: str | Path,
         run_id_provider: Callable[[], list[str]] | None = None,
         auditor: Callable[..., dict[str, Any]] = run_weekly_p11_audit_if_due,
     ):
         self.cfg = cfg
         self.state = state
+        self.repo_root = Path(repo_root).expanduser().resolve()
         self.run_id_provider = run_id_provider or self._candidate_run_ids
         self.auditor = auditor
 
@@ -97,6 +115,7 @@ class WeeklyP11AuditTask:
             results.append(self.auditor(
                 self.state,
                 run_id=run_id,
+                repo_root=self.repo_root,
                 now=timestamp,
                 cadence_s=cadence,
             ))

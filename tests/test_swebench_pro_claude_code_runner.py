@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -16,9 +15,9 @@ def _write_fake_claude(path: Path, *, marker: str = "accept") -> None:
         "if '--version' in sys.argv:\n"
         "    print('2.1.114 (Claude Code)')\n"
         "    raise SystemExit(0)\n"
-        "assert os.environ['ANTHROPIC_BASE_URL'] == 'https://uai-litellm.internal.unity.com'\n"
         "assert os.environ['ANTHROPIC_API_KEY'] == 'route-secret'\n"
-        "assert os.environ['ANTHROPIC_AUTH_TOKEN'] == 'route-secret'\n"
+        "assert 'ANTHROPIC_AUTH_TOKEN' not in os.environ\n"
+        "assert 'ANTHROPIC_BASE_URL' not in os.environ\n"
         "Path = __import__('pathlib').Path\n"
         "Path('solver_file.txt').write_text('changed by fake claude\\n')\n"
         "print(json.dumps({\n"
@@ -48,7 +47,7 @@ def _packet(tmp_path: Path) -> Path:
     return path
 
 
-def test_claude_code_runner_writes_attempt_output_with_pinned_route(
+def test_claude_code_runner_writes_attempt_output_with_direct_route(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -62,9 +61,12 @@ def test_claude_code_runner_writes_attempt_output_with_pinned_route(
     output = tmp_path / "attempt_output.json"
     monkeypatch.setenv(runner.PUBLIC_PACKET_ENV, str(_packet(tmp_path)))
     monkeypatch.setenv(runner.ATTEMPT_OUTPUT_ENV, str(output))
-    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "stale-proxy-token")
+    monkeypatch.setenv(
+        "ANTHROPIC_BASE_URL",
+        "https://uai-litellm.internal.unity.com",
+    )
     monkeypatch.chdir(tmp_path)
 
     rc = runner.main([
@@ -75,81 +77,65 @@ def test_claude_code_runner_writes_attempt_output_with_pinned_route(
         "--model",
         "claude-3-5-haiku-20241022",
         "--provider",
-        "anthropic_via_unity_litellm",
+        "anthropic_direct",
         "--runner-label",
-        "claude-code-litellm-haiku-real-swebench-pro-pilot",
+        "claude-code-direct-haiku-real-swebench-pro-pilot",
     ])
 
     assert rc == 0
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["accept"] is True
     assert payload["candidate_id"] == "instance_repo__proj-abc-attempt-2"
-    assert payload["provider"] == "anthropic_via_unity_litellm"
-    assert payload["runner_label"] == "claude-code-litellm-haiku-real-swebench-pro-pilot"
-    assert payload["route"]["base_url"] == "https://uai-litellm.internal.unity.com"
-    assert payload["route"]["secret_env"] == "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN"
+    assert payload["provider"] == "anthropic_direct"
+    assert payload["runner_label"] == "claude-code-direct-haiku-real-swebench-pro-pilot"
+    assert payload["route"] == {
+        "kind": "anthropic_direct",
+        "credential_env": "ANTHROPIC_API_KEY",
+        "proxy_fields_removed": [
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_BASE_URL",
+        ],
+    }
     assert payload["claude_code"]["version"] == "2.1.114 (Claude Code)"
     assert payload["token_usage"]["context_window"] == 200000
     assert "route-secret" not in output.read_text(encoding="utf-8")
 
 
-def test_claude_env_overrides_preexisting_anthropic_token_when_equal(
+def test_direct_claude_env_removes_proxy_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "route-secret")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "proxy-token")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.invalid")
 
-    env = runner._claude_env(
-        "https://uai-litellm.internal.unity.com",
-        "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
-    )
+    env = runner._direct_claude_env("ANTHROPIC_API_KEY")
 
-    assert env["ANTHROPIC_AUTH_TOKEN"] == "route-secret"
     assert env["ANTHROPIC_API_KEY"] == "route-secret"
-    assert env["ANTHROPIC_BASE_URL"] == "https://uai-litellm.internal.unity.com"
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    assert "ANTHROPIC_BASE_URL" not in env
 
 
-def test_claude_env_fails_closed_when_preexisting_api_key_disagrees(
+def test_direct_claude_env_fails_closed_without_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "operators-personal-key")
-
-    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-        runner._claude_env(
-            "https://uai-litellm.internal.unity.com",
-            "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
-        )
-
-
-def test_claude_env_fails_closed_when_preexisting_auth_token_disagrees(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "operators-anthropic-token")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    with pytest.raises(ValueError, match="ANTHROPIC_AUTH_TOKEN"):
-        runner._claude_env(
-            "https://uai-litellm.internal.unity.com",
-            "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
-        )
+    with pytest.raises(ValueError, match="direct Anthropic credential"):
+        runner._direct_claude_env("ANTHROPIC_API_KEY")
 
 
-def test_claude_env_overrides_preexisting_when_token_absent(
+def test_direct_claude_env_can_copy_named_secret_to_anthropic_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "operators-personal-key")
+    monkeypatch.setenv("CUSTOM_ANTHROPIC_KEY", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "stale-token")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.invalid")
 
-    env = runner._claude_env(
-        "https://uai-litellm.internal.unity.com",
-        "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
-    )
+    env = runner._direct_claude_env("CUSTOM_ANTHROPIC_KEY")
 
-    assert env["ANTHROPIC_AUTH_TOKEN"] == "operators-personal-key"
+    assert env["ANTHROPIC_API_KEY"] == "route-secret"
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    assert "ANTHROPIC_BASE_URL" not in env
 
 
 def test_decision_from_result_uses_last_marker() -> None:
@@ -181,9 +167,7 @@ def test_claude_code_runner_requires_explicit_decision_marker(
     output = tmp_path / "attempt_output.json"
     monkeypatch.setenv(runner.PUBLIC_PACKET_ENV, str(_packet(tmp_path)))
     monkeypatch.setenv(runner.ATTEMPT_OUTPUT_ENV, str(output))
-    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "route-secret")
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="SWEBENCH_SOLVER_DECISION"):

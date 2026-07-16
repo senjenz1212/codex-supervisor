@@ -131,6 +131,13 @@ class CursorSdkTimeoutError(TimeoutError):
     """Raised when the supervisor-side watchdog bounds Cursor SDK execution."""
 
 
+class CursorSdkWorkerLeakedError(CursorSdkTimeoutError):
+    """Raised when a timed-out Cursor SDK worker thread could not be joined."""
+
+
+_CURSOR_SDK_WORKER_JOIN_GRACE_S = 5.0
+
+
 def select_cursor_model(
     *,
     quality: ModelQuality,
@@ -579,8 +586,15 @@ def _run_cursor_sdk_with_infra_retries(
 
     for infra_attempt in range(1, max_attempts + 1):
         try:
-            with _cursor_sdk_timeout(request.timeout_s):
-                transcript, metadata = _run_cursor_sdk(request)
+            transcript, metadata = _run_cursor_sdk_bounded(request)
+        except CursorSdkWorkerLeakedError:
+            attempts.append({
+                "attempt": infra_attempt,
+                "reason": "cursor_sdk_timeout",
+                "timeout_s": max(1, int(request.timeout_s)),
+                "worker_leaked": True,
+            })
+            break
         except CursorSdkTimeoutError:
             attempts.append({
                 "attempt": infra_attempt,
@@ -722,16 +736,59 @@ def _result_diagnostics(result: CursorInvocationResult) -> dict[str, Any]:
     return payload
 
 
+def _run_cursor_sdk_bounded(
+    request: CursorInvocationRequest,
+) -> tuple[str, dict[str, Any]]:
+    if (
+        threading.current_thread() is threading.main_thread()
+        and hasattr(signal, "SIGALRM")
+        and hasattr(signal, "setitimer")
+    ):
+        with _cursor_sdk_timeout(request.timeout_s):
+            return _run_cursor_sdk(request)
+
+    seconds = max(1, int(request.timeout_s))
+    outcome: dict[str, Any] = {}
+    done = threading.Event()
+
+    def _target() -> None:
+        try:
+            outcome["value"] = _run_cursor_sdk(request)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    worker = threading.Thread(
+        target=_target,
+        name="cursor-sdk-timeout-watchdog",
+        daemon=True,
+    )
+    worker.start()
+    if not done.wait(timeout=seconds):
+        worker.join(timeout=_CURSOR_SDK_WORKER_JOIN_GRACE_S)
+        if worker.is_alive():
+            raise CursorSdkWorkerLeakedError(
+                f"cursor_sdk_timeout after {seconds}s; worker thread is still "
+                "running and further attempts against the same cwd are unsafe"
+            )
+        raise CursorSdkTimeoutError(f"cursor_sdk_timeout after {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 @contextlib.contextmanager
 def _cursor_sdk_timeout(timeout_s: int):
     seconds = max(1, int(timeout_s))
-    if (
-        threading.current_thread() is not threading.main_thread()
-        or not hasattr(signal, "SIGALRM")
-        or not hasattr(signal, "setitimer")
-    ):
-        yield
-        return
+    if threading.current_thread() is not threading.main_thread():
+        raise CursorSdkTimeoutError(
+            "cursor_sdk_timeout cannot be enforced outside the main thread"
+        )
+    if not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        raise CursorSdkTimeoutError(
+            "cursor_sdk_timeout is unsupported on this platform"
+        )
 
     previous_handler = signal.getsignal(signal.SIGALRM)
     previous_timer = signal.getitimer(signal.ITIMER_REAL)

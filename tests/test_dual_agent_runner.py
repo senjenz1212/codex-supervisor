@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor.agent_runtime import AgentRunHandle, AgentRunResult, AgentTask
 from supervisor.dual_agent import GateRound, ProbeResult
 from supervisor.dual_agent_runner import (
     DualAgentGateSpec,
@@ -24,6 +25,7 @@ from supervisor.dual_agent_runner import (
     write_replay_fixture_family,
 )
 from supervisor.dual_agent_lead import PlanningArtifact, compute_file_sha256
+from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 
 
@@ -54,6 +56,42 @@ def _outcome_block(
     if critical_review is not None:
         payload["critical_review"] = critical_review
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
+
+
+def _runtime_execution(
+    task: AgentTask,
+    transcript: str,
+    *,
+    attempt: int,
+    runtime: str = "codex",
+) -> RuntimeExecution:
+    handle = AgentRunHandle(
+        run_id=f"runtime-run-{attempt}",
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=f"runtime-session-{attempt}",
+        capabilities={"cancel": True},
+    )
+    result = AgentRunResult(
+        run_id=handle.run_id,
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=handle.session_id,
+        status="completed",
+        output=transcript,
+        events=(),
+        started_at_ms=100 * attempt,
+        ended_at_ms=(100 * attempt) + 25,
+        cost_usd=0.42,
+        resolved_model="provider-neutral-model-v1",
+        result_hash=f"runtime-result-{attempt}",
+        token_usage={"tokens_in": 66, "tokens_out": 44},
+        model_provenance="fake_runtime.model",
+        cost_provenance="fake_runtime.cost",
+        token_provenance="fake_runtime.usage",
+        metadata={"returncode": 0, "stderr": ""},
+    )
+    return RuntimeExecution(handle=handle, events=(), result=result)
 
 
 def _planning_artifact_fixture(kind: str, fixture_name: str = "good") -> PlanningArtifact:
@@ -160,6 +198,155 @@ def test_run_dual_agent_gate_blocks_stub_prd_before_claude_invocation(tmp_path):
     assert result.attempts == 0
     assert result.probes["P_planning"].reason == "planning_validation_failed"
     assert calls == 0
+
+
+def test_run_dual_agent_gate_can_require_trace_closure_fail_closed(tmp_path):
+    calls = 0
+
+    def fake_runner(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-trace-required",
+            run_id="run-trace-required",
+            gate="intent",
+            instruction="Do not execute without trace closure.",
+            cwd=tmp_path,
+            trace_closure_required=True,
+        ),
+        runner=fake_runner,
+    )
+
+    assert result.status == "blocked"
+    assert result.attempts == 0
+    assert result.probes["P_planning"].reason == "planning_validation_failed"
+    assert result.probes["P_planning"].details["checks"]["TRACE-001"].startswith(
+        "fail:"
+    )
+    assert calls == 0
+
+
+def test_gate_runner_propagates_runtime_runner_through_corrective_retry(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        tasks.append(task)
+        transcript = (
+            "<dual_agent_outcome>{bad}</dual_agent_outcome>"
+            if len(tasks) == 1
+            else "Corrected.\n" + _outcome_block("gate-runtime-retry")
+        )
+        return _runtime_execution(task, transcript, attempt=len(tasks))
+
+    def legacy_runner_must_not_run(*args, **kwargs):
+        raise AssertionError("runtime path must not invoke the legacy runner")
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-runtime-retry",
+            run_id="run-runtime-retry",
+            gate="outcome_review",
+            instruction="Review the outcome.",
+            cwd=tmp_path,
+            planning_artifacts=_write_good_planning_artifacts(tmp_path),
+            expected_specialists=("Planner",),
+            expected_decisions=("accept plan",),
+            expected_objections=(),
+            model="provider-neutral-request-model",
+        ),
+        runner=legacy_runner_must_not_run,
+        runtime_runner=fake_runtime_runner,
+        state=state,
+    )
+
+    assert result.status == "accepted"
+    assert result.attempts == 2
+    assert len(tasks) == 2
+    assert tasks[0].model == tasks[1].model == "provider-neutral-request-model"
+    assert "Corrective retry:" not in tasks[0].instruction
+    assert "Corrective retry:" in tasks[1].instruction
+    assert result.lead_result is not None
+    assert result.lead_result.runtime == "codex"
+    assert result.lead_result.runtime_result_hash == "runtime-result-2"
+    assert result.lead_result.model_provenance == "fake_runtime.model"
+    assert result.lead_result.cost_provenance == "fake_runtime.cost"
+    assert result.lead_result.token_provenance == "fake_runtime.usage"
+
+    messages = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("run-runtime-retry")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    request = next(
+        message for message in messages
+        if message["message_type"] == "gate_request"
+    )
+    response = next(
+        message for message in messages
+        if message["message_type"] == "gate_response"
+    )
+    runtime_calls = response["trace_envelope"]["tool_calls"][:2]
+
+    assert request["recipient"] == "lead_runtime"
+    assert response["sender"] == "lead_runtime"
+    assert response["persona_id"] == "lead_runtime.lead_worker"
+    assert response["raw_transcript_refs"][0]["kind"] == "runtime_output"
+    assert [call["name"] for call in runtime_calls] == [
+        "invoke_runtime_lead",
+        "invoke_runtime_lead",
+    ]
+    assert runtime_calls[-1]["runtime"] == "codex"
+    assert runtime_calls[-1]["runtime_result_hash"] == "runtime-result-2"
+    assert runtime_calls[-1]["model_provenance"] == "fake_runtime.model"
+    assert runtime_calls[-1]["cost_provenance"] == "fake_runtime.cost"
+    assert runtime_calls[-1]["token_provenance"] == "fake_runtime.usage"
+
+
+def test_execution_gate_corrective_retry_does_not_repeat_implementation(
+    tmp_path: Path,
+) -> None:
+    tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        tasks.append(task)
+        transcript = (
+            "<dual_agent_outcome>{bad}</dual_agent_outcome>"
+            if len(tasks) == 1
+            else "Corrected.\n" + _outcome_block(
+                "gate-execution-retry",
+                decision="accept implementation complete",
+            )
+        )
+        return _runtime_execution(task, transcript, attempt=len(tasks))
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-execution-retry",
+            run_id="run-execution-retry",
+            gate="execution",
+            instruction="Implement the accepted task.",
+            cwd=tmp_path,
+            planning_artifacts=_write_good_planning_artifacts(tmp_path),
+            expected_specialists=("Planner",),
+            expected_decisions=("accept implementation complete",),
+            model="provider-neutral-request-model",
+        ),
+        runtime_runner=fake_runtime_runner,
+    )
+
+    assert result.status == "accepted"
+    assert result.attempts == 2
+    assert "IMPLEMENTATION CONTRACT (execution gate)" in tasks[0].instruction
+    assert "Corrective retry:" not in tasks[0].instruction
+    assert "Corrective retry:" in tasks[1].instruction
+    assert "Do not make further file changes" in tasks[1].instruction
+    assert "Edit real worktree files" not in tasks[1].instruction
 
 
 @pytest.mark.asyncio

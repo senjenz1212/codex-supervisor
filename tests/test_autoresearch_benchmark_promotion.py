@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from supervisor.autoresearch.benchmark_promotion import (
     promote_benchmark_report_to_autoresearch_report,
@@ -10,6 +9,7 @@ from supervisor.autoresearch.policy_evolution import (
     derive_policy_evolution_proposals_from_report,
     report_contains_derivable_policy_record,
 )
+from supervisor.claim_gate import ClaimGate
 
 
 def test_benchmark_backed_evidence_conversion_blocks_without_aeb0_or_evaluator_hash(
@@ -47,6 +47,9 @@ def test_benchmark_backed_evidence_conversion_blocks_without_aeb0_or_evaluator_h
     assert record["gate_advanced"] is False
     assert report["metric_applyable"] is False
     assert report["improvement_claim_allowed"] is False
+    assert report["powered_improvement_claim_allowed"] is False
+    assert report["claim_gate"]["max_claim_level"] is None
+    assert ClaimGate.validate_derived_report(report) is None
     assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
     assert derive_policy_evolution_proposals_from_report(
         report,

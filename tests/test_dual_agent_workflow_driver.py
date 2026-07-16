@@ -18,6 +18,13 @@ import pytest
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
+from supervisor.agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    RuntimeEvent,
+    normalize_runtime_event,
+)
 from supervisor.dual_agent_workflow import (
     cursor_review_gates_for_workflow,
     select_workflow_route,
@@ -27,6 +34,7 @@ from supervisor.dual_agent_workflow import (
 )
 from supervisor.dual_agent_lead import DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES
 from supervisor.receipt_provenance import mark_supervisor_runtime_receipt
+from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 
 
@@ -414,6 +422,7 @@ def _server(
     notifier=None,
     cursor_runner=None,
     codex_runner=None,
+    reviewer_adapters=None,
     no_mistakes_runner=None,
     runtime_materialize: bool = True,
 ):
@@ -462,11 +471,134 @@ def _server(
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=codex_runner or _accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            codex_runner or _accepting_codex_reviewer_runner
+        ),
+        reviewer_adapters=reviewer_adapters,
         cursor_runner=cursor_runner or _accepting_cursor_runner,
         no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
     )
     return server, state
+
+
+def _codex_runtime_runner_from_subprocess_runner(runner):
+    """Adapt the legacy injected reviewer runner to the AgentRuntime contract.
+
+    Workflow-driver tests deliberately use hermetic replay runners. Production
+    still composes the real ``CodexRuntime``; this adapter keeps the test seam
+    explicit now that independent reviewers execute through ``AgentRuntime``.
+    """
+    invocation_count = 0
+
+    def run(task: AgentTask) -> RuntimeExecution:
+        nonlocal invocation_count
+        invocation_count += 1
+        started_at_ms = int(time.time() * 1000)
+        argv = [
+            "codex",
+            "exec",
+            "--json",
+            "-C",
+            str(task.cwd),
+            "-m",
+            task.model,
+            task.instruction,
+        ]
+        completed = runner(
+            argv,
+            cwd=str(task.cwd),
+            timeout=task.timeout_s,
+            capture_output=True,
+            text=True,
+        )
+        raw_events: list[dict] = []
+        events: list[RuntimeEvent] = []
+        session_id = ""
+        for line in str(completed.stdout or "").splitlines():
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                raw = {"type": "agent_message", "message": line}
+            if not isinstance(raw, dict):
+                continue
+            raw_events.append(raw)
+            session_id = session_id or str(
+                raw.get("thread_id")
+                or raw.get("session_id")
+                or ""
+            ).strip()
+            events.append(normalize_runtime_event(raw))
+        output = "\n".join(
+            str(event.payload.get("item", {}).get("text") or "").strip()
+            for event in events
+            if event.kind == "agent.message"
+            and isinstance(event.payload.get("item"), dict)
+            and str(event.payload.get("item", {}).get("text") or "").strip()
+        )
+        if not output:
+            output = "\n".join(
+                str(raw.get("result") or "").strip()
+                for raw in raw_events
+                if isinstance(raw.get("result"), str)
+                and str(raw.get("result") or "").strip()
+            )
+        if not output:
+            output = str(completed.stdout or "")
+        ended_at_ms = int(time.time() * 1000)
+        reported_session_id = session_id
+        session_id = (
+            f"{reported_session_id}-invocation-{invocation_count}"
+            if reported_session_id
+            else (
+                "codex-test-session-"
+                f"{sha256(output.encode()).hexdigest()[:16]}"
+                f"-{invocation_count}"
+            )
+        )
+        run_id = (
+            "codex-test-run-"
+            f"{sha256((task.task_id + task.instruction).encode()).hexdigest()[:16]}"
+            f"-{invocation_count}"
+        )
+        handle = AgentRunHandle(
+            run_id=run_id,
+            task_id=task.task_id,
+            runtime="codex",
+            session_id=session_id,
+            capabilities={"resume": True, "cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=run_id,
+            task_id=task.task_id,
+            runtime="codex",
+            session_id=session_id,
+            status="completed" if completed.returncode == 0 else "failed",
+            output=output,
+            events=tuple(events),
+            started_at_ms=started_at_ms,
+            ended_at_ms=ended_at_ms,
+            cost_usd=0.0,
+            resolved_model=task.model,
+            result_hash=sha256(output.encode("utf-8")).hexdigest(),
+            token_usage={"tokens_in": 1, "tokens_out": 1},
+            model_provenance="test_fixture.requested_model",
+            cost_provenance="test_fixture.zero_cost",
+            token_provenance="test_fixture.synthetic_usage",
+            metadata={
+                "returncode": completed.returncode,
+                "stderr": str(completed.stderr or ""),
+                "raw_event_count": len(raw_events),
+                "reported_fixture_session_id": reported_session_id,
+            },
+        )
+        return RuntimeExecution(
+            handle=handle,
+            events=tuple(events),
+            result=result,
+        )
+
+    return run
 
 
 def _materialize_runtime_evidence_fixture(
@@ -898,10 +1030,10 @@ def _write_reviewer_panel_calibration(
         ),
         ReviewerSpec(
             reviewer_id="independent-reviewer-1",
-            runtime="codex_cli",
+            runtime="codex",
             model="gpt-5.5",
             provider_family="openai",
-            lineage=("openai", "codex_cli", "gpt-5.5"),
+            lineage=("openai", "codex", "gpt-5.5"),
             tool_access="codebase_tools",
             assurance_grade="agentic",
         ),
@@ -935,11 +1067,11 @@ def _write_reviewer_panel_calibration(
             "severity": "important" if decision == "revise" else "none",
             "confidence": 0.9,
             "verdict_present": True,
-            "runtime": "cursor_sdk" if reviewer_id.endswith("-0") else "codex_cli",
+            "runtime": "cursor_sdk" if reviewer_id.endswith("-0") else "codex",
             "model": "composer-2.5" if reviewer_id.endswith("-0") else "gpt-5.5",
             "provider_family": "cursor" if reviewer_id.endswith("-0") else "openai",
             "lineage": ["cursor", "cursor_sdk", "composer-2.5"]
-            if reviewer_id.endswith("-0") else ["openai", "codex_cli", "gpt-5.5"],
+            if reviewer_id.endswith("-0") else ["openai", "codex", "gpt-5.5"],
             "tool_access": "codebase_tools",
             "assurance_grade": "agentic",
             "source_kind": "workflow_transcript_event",
@@ -1936,7 +2068,14 @@ async def test_runtime_evidence_is_exported_before_cursor_review(tmp_path):
 
     def checking_cursor_runner(request) -> CursorInvocationResult:
         observed["review_called"] = True
-        transcript_path = tmp_path / "docs" / "dual-agent" / "workflow-1" / "transcript.jsonl"
+        transcript_path = (
+            tmp_path
+            / "docs"
+            / "dual-agent"
+            / "workflow-1"
+            / "release"
+            / "transcript.jsonl"
+        )
         assert transcript_path.exists()
         assert "dual_agent_runtime_evidence" in transcript_path.read_text(encoding="utf-8")
         return _accepting_cursor_runner(request)
@@ -2062,6 +2201,7 @@ def _cursor_review_result(
 def _codex_reviewer_jsonl(
     task_id: str,
     *,
+    specialist_name: str = "Cursor Reviewer",
     decision: str = "accept",
     severity: str | None = None,
     confidence: float = 0.93,
@@ -2078,7 +2218,7 @@ def _codex_reviewer_jsonl(
     outcome = Outcome(
         task_id=task_id,
         summary="Codex CLI independently reviewed the gate.",
-        specialists=[{"name": "independent-reviewer-1", "decision": decision}],
+        specialists=[{"name": specialist_name, "decision": decision}],
         decisions=[decision],
         objections=[] if decision == "accept" else [objection],
         changed_files=[],
@@ -2721,17 +2861,21 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     ]
     assert all(step["status"] == "accepted" for step in result["steps"])
     assert result["mandatory_artifacts"]["status"] == "ok"
+    task_dir = tmp_path / "docs" / "dual-agent" / "workflow-1"
     for relative in [
         "source/prd.md",
         "source/grill-findings.md",
         "source/issues.md",
         "source/tdd.md",
         "source/implementation-plan.md",
+    ]:
+        assert (task_dir / relative).exists()
+    for relative in [
         "interactions.md",
         "outcome-review.md",
         "transcript.md",
     ]:
-        assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / relative).exists()
+        assert (task_dir / "release" / relative).exists()
 
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
@@ -2875,6 +3019,9 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
         state=state,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -2884,7 +3031,14 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
     assert runner_calls
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
-    assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / "outcome-review.md").exists()
+    assert (
+        tmp_path
+        / "docs"
+        / "dual-agent"
+        / "workflow-1"
+        / "release"
+        / "outcome-review.md"
+    ).exists()
 
 
 @pytest.mark.asyncio
@@ -2894,23 +3048,38 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
 
     server, state = _server(tmp_path)
     popen_calls: list[dict] = []
-    phase_at_spawn: list[str] = []
+    ownership_at_spawn: list[dict[str, object]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
             row = state._conn.execute(
-                "SELECT recovery_point FROM dual_agent_workflow_jobs"
+                """SELECT recovery_point, worker_containment_id, leased_by
+                     FROM dual_agent_workflow_jobs"""
             ).fetchone()
-            phase_at_spawn.append(row["recovery_point"] if row else "missing")
+            ownership_at_spawn.append(
+                dict(row) if row is not None else {"recovery_point": "missing"}
+            )
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
 
     class ForbiddenDispatcher:
         def __init__(self, *args, **kwargs):
             raise AssertionError("poll must not construct a dispatcher")
 
     monkeypatch.setattr(stdio, "WorkflowJobDispatcher", ForbiddenDispatcher, raising=False)
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -2943,7 +3112,7 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
 
     assert poll["status"] == "submitted"
     assert poll["recovery_point"] == "reserved"
-    assert phase_at_spawn == []
+    assert ownership_at_spawn == []
     assert popen_calls == []
     assert not Path(result["request_path"]).exists()
 
@@ -2952,12 +3121,21 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
     )
     dispatch = dispatcher.run_once(job_id=result["job_id"])
 
     assert dispatch["status"] == "spawned"
     assert dispatch["job_id"] == result["job_id"]
-    assert phase_at_spawn == ["request_written"]
+    assert ownership_at_spawn == [
+        {
+            "recovery_point": "spawn_prepared",
+            "worker_containment_id": popen_calls[0]["kwargs"]["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ],
+            "leased_by": "cleanup:dispatcher-test",
+        }
+    ]
     assert popen_calls
     assert popen_calls[0]["argv"][1:3] == ["-m", "mcp_tools.codex_supervisor_workflow_cli"]
     assert popen_calls[0]["kwargs"]["start_new_session"] is True
@@ -3461,18 +3639,41 @@ def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path)
     state = State(str(tmp_path / "state.db"))
     _reserve_dispatcher_test_job(state, tmp_path)
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
+
+    def forbidden_non_atomic_upsert(**_kwargs):
+        raise AssertionError("spawn identity must use the atomic transition")
+
+    monkeypatch.setattr(
+        state,
+        "upsert_dual_agent_workflow_job",
+        forbidden_non_atomic_upsert,
+    )
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
     )
@@ -3504,18 +3705,32 @@ def test_dispatcher_restarts_from_request_written(monkeypatch, tmp_path):
         recovery_point="request_written",
     )
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43211
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
     )
@@ -3593,7 +3808,10 @@ def test_workflow_job_lease_heartbeat_runs_until_worker_lease_rejected():
     assert not heartbeat._thread.is_alive()
 
 
-def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
+def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(
+    monkeypatch,
+    tmp_path,
+):
     from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
     _server(tmp_path)
@@ -3605,18 +3823,32 @@ def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
         lease_expires_at=900,
     )
     popen_calls: list[list[str]] = []
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43212
 
         def __init__(self, argv, **kwargs):
             popen_calls.append(list(argv))
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     dispatcher = WorkflowJobDispatcher(
         state,
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
     )
 
@@ -3646,6 +3878,9 @@ def test_dispatcher_reaper_fails_dead_spawned_worker(tmp_path):
         job_id="job-dispatcher",
         status="running",
         pid=43210,
+        worker_pgid=43210,
+        worker_started_at=time.time(),
+        worker_containment_id="test-dead-worker-containment",
         recovery_point="spawned",
         leased_by="worker:43210",
         lease_expires_at=2000,
@@ -3939,7 +4174,11 @@ def test_dispatcher_cli_once_runs_reaper_and_dispatch(monkeypatch, capsys, tmp_p
             return {"status": "spawned", "job_id": "job-new"}
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -3993,7 +4232,11 @@ def test_dispatcher_cli_once_can_target_job_id(monkeypatch, capsys, tmp_path):
             return {"status": "spawned", "job_id": job_id}
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -4033,7 +4276,11 @@ def test_dispatcher_cli_without_once_runs_long_lived_loop(monkeypatch, capsys, t
             constructed["run_forever_interval_s"] = interval_s
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -4496,17 +4743,30 @@ async def test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_
 
 @pytest.mark.asyncio
 async def test_dispatcher_restart_completes_dead_worker_result_and_catch_up_reports_terminal(
+    monkeypatch,
     tmp_path,
 ):
     from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
     server, state = _server(tmp_path)
+    containment_by_pid: dict[int, str] = {}
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
-            pass
+            containment_by_pid[self.pid] = kwargs["env"][
+                "CODEX_SUPERVISOR_CONTAINMENT_ID"
+            ]
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        WorkflowJobDispatcher,
+        "_process_containment_id",
+        staticmethod(lambda pid: containment_by_pid[int(pid)]),
+    )
 
     submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -4524,6 +4784,7 @@ async def test_dispatcher_restart_completes_dead_worker_result_and_catch_up_repo
         dispatcher_id="dispatcher-before-kill",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, time.time()),
         now=lambda: 1000,
         lease_ttl_s=1,
     )
@@ -4624,6 +4885,9 @@ async def test_poll_dual_agent_workflow_job_leaves_result_file_recovery_to_dispa
         cwd=str(tmp_path),
         status="running",
         pid=987654,
+        worker_pgid=987654,
+        worker_started_at=time.time(),
+        worker_containment_id="test-result-recovery-containment",
         request_path=str(request_path),
         result_path=str(result_path),
         log_path=str(log_path),
@@ -4687,7 +4951,7 @@ async def test_poll_dual_agent_workflow_job_reads_ledger_result_when_result_file
         task_id="workflow-1",
         cwd=str(tmp_path),
         status="running",
-        pid=987654,
+        pid=None,
         request_path=str(request_path),
         result_path=str(result_path),
         log_path=str(log_path),
@@ -4749,6 +5013,48 @@ def test_workflow_cli_records_terminal_outcome_in_ledger(tmp_path):
     ]
     assert terminal_events
     assert terminal_events[-1]["payload"]["job_id"] == "job-cli"
+
+
+def test_workflow_cli_does_not_publish_terminal_for_prepared_worker(tmp_path):
+    from mcp_tools.codex_supervisor_workflow_cli import (
+        persist_detached_workflow_terminal_outcome,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-cli-prepared"
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-cli-prepared",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path=str(job_dir / "request.json"),
+        result_path=str(job_dir / "result.json"),
+        log_path=str(job_dir / "worker.log"),
+        recovery_point="spawn_prepared",
+        worker_containment_id="containment-cli-prepared",
+    )
+    terminal_outcome = {
+        "status": "accepted",
+        "run_id": "workflow-run",
+        "task_id": "workflow-1",
+    }
+
+    assert (
+        persist_detached_workflow_terminal_outcome(
+            request_payload={"job_id": "job-cli-prepared"},
+            result=terminal_outcome,
+            state=state,
+            output_path=job_dir / "result.json",
+            returncode=0,
+        )
+        is False
+    )
+
+    job = state.get_dual_agent_workflow_job(job_id="job-cli-prepared")
+    assert job is not None
+    assert job["recovery_point"] == "spawn_prepared"
+    assert job["terminal_outcome_json"] is None
 
 
 @pytest.mark.asyncio
@@ -5040,6 +5346,9 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5091,6 +5400,9 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5143,6 +5455,9 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5235,6 +5550,9 @@ async def test_agentic_required_blocks_solo_execution_before_lead(tmp_path):
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5302,6 +5620,9 @@ async def test_run_dual_agent_workflow_required_policy_still_blocks_without_exec
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5370,7 +5691,11 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
     }
 
     def fake_runner(argv, **kwargs):
-        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        prompt = (
+            argv[argv.index("-p") + 1]
+            if "-p" in argv
+            else str(argv[-1])
+        )
         if "Agentic worker roster planning" in prompt:
             planner_calls.append(argv)
             return subprocess.CompletedProcess(
@@ -5400,7 +5725,13 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        lead_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            fake_runner
+        ),
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5434,6 +5765,16 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
     assert productions
     assert productions[-1]["status"] == "passed"
     assert productions[-1]["receipts"][0]["transcript_ref"].startswith(".handoff/agentic-workers/")
+    agentic_registrations = productions[-1]["target_run_registrations"]
+    assert len(agentic_registrations) == 2
+    assert {
+        registration["gate"]
+        for registration in agentic_registrations
+    } == {"workflow_start"}
+    assert all(
+        state.get_run(registration["target_run_id"]) is not None
+        for registration in agentic_registrations
+    )
 
     validations = [
         json.loads(row["payload_json"])
@@ -5508,6 +5849,9 @@ async def test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5584,6 +5928,9 @@ async def test_run_dual_agent_workflow_allowed_policy_runs_producer_without_bloc
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5652,6 +5999,9 @@ async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_pa
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5750,6 +6100,9 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5935,6 +6288,17 @@ async def test_run_dual_agent_workflow_emits_review_packet_roster_and_worker_eve
     )
     assert cross_vendor["implementation_provider_family"] == "anthropic"
     assert cross_vendor["selected_provider_family"] != "anthropic"
+    reviewer_event = next(
+        payload
+        for kind, payload in events
+        if kind == "independent_reviewer_review"
+    )
+    reviewer_registrations = reviewer_event["target_run_registrations"]
+    assert reviewer_registrations
+    assert all(
+        state.get_run(registration["target_run_id"]) is not None
+        for registration in reviewer_registrations
+    )
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
@@ -6027,6 +6391,7 @@ def test_review_packet_changed_files_use_actual_name_status_not_declared_claim(t
 @pytest.mark.asyncio
 async def test_roster_preflight_filters_missing_codex_cli_before_dispatch(tmp_path, monkeypatch):
     import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.reviewer_registry import configured_reviewers
 
     cursor_calls = []
 
@@ -6043,10 +6408,17 @@ async def test_roster_preflight_filters_missing_codex_cli_before_dispatch(tmp_pa
         return f"/usr/bin/{command}"
 
     monkeypatch.setattr(stdio.shutil, "which", missing_codex)
+    reviewer_adapters = configured_reviewers(
+        reviewer_output_mode="cursor_sdk",
+        reviewer_model="composer-2.5",
+        runner=fake_cursor_runner,
+        codex_runner=subprocess.run,
+    )
     server, state = _server(
         tmp_path,
         cursor_runner=fake_cursor_runner,
         codex_runner=subprocess.run,
+        reviewer_adapters=reviewer_adapters,
     )
 
     result = await _maybe_await(_run_dual_agent_workflow_direct(server,
@@ -6212,7 +6584,7 @@ async def test_workflow_exposes_independent_reviewer_results_and_dual_writes_eve
     assert reviewer["output_sha256"]
     codex_reviewer = panel[1]
     assert codex_reviewer["reviewer_id"] == "independent-reviewer-1"
-    assert codex_reviewer["runtime"] == "codex_cli"
+    assert codex_reviewer["runtime"] == "codex"
     assert codex_reviewer["model"] == "gpt-5.5"
     assert codex_reviewer["provider_family"] == "openai"
     assert codex_reviewer["tool_access"] == "codebase_tools"
@@ -6374,7 +6746,10 @@ def test_codex_cli_reviewer_parses_typed_outcome_with_hashes(tmp_path):
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1"),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+            ),
             stderr="",
         )
 
@@ -6431,7 +6806,10 @@ def test_codex_cli_reviewer_retries_recoverable_infra_failure_then_succeeds(tmp_
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1"),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+            ),
             stderr="",
         )
 
@@ -6481,7 +6859,11 @@ def test_codex_cli_reviewer_without_command_evidence_is_not_agentic(tmp_path):
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1", include_command=False),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+                include_command=False,
+            ),
             stderr="",
         )
 
@@ -7000,7 +7382,11 @@ async def test_independent_reviewer_adjudication_event_and_transcript_export(tmp
         output_dir=str(output_dir),
         screenshots=[],
     ))
-    assert export["status"] == "ok"
+    # Earlier gates in this blocked workflow were accepted without the exact
+    # runtime/component provenance required by the hardened replay manifest.
+    # Artifact export still succeeds, but it must not mislabel that evidence
+    # bundle as release-complete.
+    assert export["status"] == "incomplete"
     interactions = (output_dir / "interactions.md").read_text(encoding="utf-8")
     raw_transcript = (output_dir / "transcript.md").read_text(encoding="utf-8")
     for text in (interactions, raw_transcript):
@@ -7814,6 +8200,9 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -7905,6 +8294,9 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -8002,6 +8394,9 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -8113,9 +8508,10 @@ async def test_run_dual_agent_workflow_auto_visual_policy_accepts_computer_use_e
     assert result["status"] == "accepted"
     assert result["visual_evidence_policy"]["required"] is True
     assert result["final_gate_result"]["artifact_rigor"]["visual_validation"]["status"] == "ok"
-    assert "docs/dual-agent/workflow-1/screenshots/01-vela-slack-final-state.png" in (
-        result["artifact_export"]["files"]
-    )
+    assert (
+        "docs/dual-agent/workflow-1/release/screenshots/"
+        "01-vela-slack-final-state.png"
+    ) in result["artifact_export"]["files"]
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["user_facing"] == 1
 

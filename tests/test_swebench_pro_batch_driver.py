@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from scripts import swebench_pro_batch_driver as batch
+from supervisor.claim_gate import ClaimGate
 
 
 def _record(instance_id: str, *, public_worktree_ref: str = "/tmp/public") -> dict:
@@ -211,9 +212,9 @@ def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -
         scripts_dir="/tmp/run_scripts",
         python_executable="/venv/bin/python",
         runner_command="/repo/scripts/swebench_pro_claude_code_runner.py --model claude-3-5-haiku-20241022",
-        solver="claude-code-litellm-haiku-real-swebench-pro-pilot",
+        solver="claude-code-direct-haiku-real-swebench-pro-pilot",
         model="claude-3-5-haiku-20241022",
-        provider="anthropic_via_unity_litellm",
+        provider="anthropic_direct",
         k=9,
         max_budget_usd=1.5,
         min_good=30,
@@ -248,6 +249,33 @@ def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -
     assert manifest["metric_applyable"] is False
 
 
+def test_batch_cli_summary_carries_valid_claim_gate_receipt(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    instance_id = "instance_good"
+    records_path = tmp_path / "records.jsonl"
+    records_path.write_text(
+        json.dumps(_record(instance_id)) + "\n",
+        encoding="utf-8",
+    )
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, instance_id)
+
+    exit_code = batch.main([
+        "--records",
+        str(records_path),
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--swe-bench-pro-scripts-dir",
+        str(scripts_dir),
+    ])
+
+    assert exit_code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert ClaimGate.validate_derived_report(summary) is None
+
+
 def test_solver_spend_requires_phase0_gate_decision(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR", raising=False)
     monkeypatch.delenv("SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S", raising=False)
@@ -280,7 +308,7 @@ def test_generator_input_requires_materialized_public_worktree() -> None:
         batch._generator_input(
             {"instance_id": "instance_without_bundle", "problem_statement": "Fix."},
             model="claude-3-5-haiku-20241022",
-            provider="anthropic_via_unity_litellm",
+            provider="anthropic_direct",
             budget=1.0,
         )
     except ValueError as exc:

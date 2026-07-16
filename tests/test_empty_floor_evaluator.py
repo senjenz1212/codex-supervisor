@@ -6,8 +6,13 @@ from pathlib import Path
 
 from supervisor.autoresearch.evaluator import run_evaluator_trials
 from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
+from supervisor.autoresearch.policy_evolution import PolicyClaimAuthority
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.state import State
+from tests.test_claim_gate import (
+    _authoritative_causal_bundle,
+    _claim_gate_kwargs,
+)
 
 
 BASE_OVERLAY = (
@@ -161,6 +166,28 @@ def _write_fixture(root: Path, *, experiment: AutoresearchExperiment, attempt: A
     return fixture
 
 
+def _policy_claim_authority(root: Path) -> PolicyClaimAuthority:
+    evidence_root = root / "claim-authority"
+    evidence, fixture_authority = _authoritative_causal_bundle(
+        evidence_root
+    )
+    claim_kwargs = _claim_gate_kwargs(fixture_authority)
+    return PolicyClaimAuthority(
+        evidence_bundle=evidence,
+        evidence_root=evidence_root,
+        ledger_verification_resolver=claim_kwargs.get(
+            "ledger_verification_resolver"
+        ),
+        trusted_verifier_attestors=claim_kwargs.get(
+            "trusted_verifier_attestors"
+        ),
+        grade_authority=claim_kwargs.get("grade_authority"),
+        trusted_external_authorities=claim_kwargs.get(
+            "trusted_external_authorities"
+        ),
+    )
+
+
 def test_empty_floor_metric_populated_from_real_run(tmp_path):
     candidate = _write_policy_workspace(tmp_path)
     evaluator_ref, evaluator_hash = _write_evaluator(tmp_path, crash_once=True)
@@ -259,6 +286,8 @@ def test_orchestrator_propagates_metric_before_after_delta(tmp_path):
         "metric_delta": 0.35,
         "k_trials": 3,
     }
+    assert report["derived_policy_proposals"] == []
+    assert report["improvement_claim_allowed"] is False
 
     durable_result = json.loads(
         (tmp_path / "out" / "evaluator-jobs" / "empty-floor-attempt" / "result.json").read_text(
@@ -286,6 +315,7 @@ def test_live_run_yields_draft_proposal_with_quality_controls(tmp_path):
         repo_root=tmp_path,
         output_dir=tmp_path / "out",
         execution_mode="live",
+        policy_claim_authority=_policy_claim_authority(tmp_path),
     )
 
     record = report["records"][0]

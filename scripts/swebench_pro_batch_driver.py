@@ -17,7 +17,6 @@ writes a plan/manifest and refuses to spend solver or oracle budget.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import shlex
@@ -28,8 +27,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from supervisor.claim_gate import ClaimGate
 from supervisor.swe_bench_mergeability import (
-    SwebenchMergeabilityFixtureRunnerError,
     build_swe_bench_pro_candidate_corpus,
     swebench_mergeability_powered_factorial_runner,
 )
@@ -41,16 +40,15 @@ from supervisor.swe_bench_official_oracle import (
 
 AUTHORITY_FLAGS = {
     "metric_applyable": False,
-    "improvement_claim_allowed": False,
-    "powered_improvement_claim_allowed": False,
+    **ClaimGate.derived_claim_flags(),
     "human_mergeability_claim_allowed": False,
     "default_change_allowed": False,
     "policy_mutated": False,
     "gate_advanced": False,
 }
-DEFAULT_RUNNER_LABEL = "claude-code-litellm-haiku-real-swebench-pro-pilot"
+DEFAULT_RUNNER_LABEL = "claude-code-direct-haiku-real-swebench-pro-pilot"
 DEFAULT_MODEL = "claude-3-5-haiku-20241022"
-DEFAULT_PROVIDER = "anthropic_via_unity_litellm"
+DEFAULT_PROVIDER = "anthropic_direct"
 
 
 @dataclass(frozen=True)
@@ -266,7 +264,7 @@ def curate_roster(
         if isinstance(entry.get("dry_oracle"), Mapping)
         and entry["dry_oracle"].get("rc_nonzero_resolved") is True
     )
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-swebench-pro-roster-curation/v1",
         "status": "completed",
         "preflight": preflight,
@@ -281,7 +279,7 @@ def curate_roster(
             "rc_nonzero_resolved_count": rc_nonzero_resolved_count,
         },
         **AUTHORITY_FLAGS,
-    }
+    })
 
 
 def _public_worktree_ref(record: Mapping[str, Any]) -> str:
@@ -424,13 +422,13 @@ def run_solver_batch(
         results.append(_run_solver_for_record(record, config=config, solver_output_dir=solver_output_dir))
         if config.prune_docker_between_instances:
             prunes.append(_run_prune(config.docker_prune_command, cwd=config.output_dir))
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-swebench-pro-solver-batch/v1",
         "status": "completed" if all(r["status"] == "completed" for r in results) else "partial",
         "results": results,
         "docker_prunes": prunes,
         **AUTHORITY_FLAGS,
-    }
+    })
 
 
 def _load_solver_attempts(paths: Sequence[str | Path]) -> list[dict[str, Any]]:
@@ -598,7 +596,7 @@ def _assert_powered_predictions_ready(path: Path) -> None:
 
 
 def _config_manifest(config: BatchConfig, records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-swebench-pro-batch-driver-pin/v1",
         "status": "planned",
         "records_path": str(config.records_path),
@@ -640,7 +638,7 @@ def _config_manifest(config: BatchConfig, records: Sequence[Mapping[str, Any]]) 
             "report_only": True,
         },
         **AUTHORITY_FLAGS,
-    }
+    })
 
 
 def _parse_args(argv: list[str] | None) -> BatchConfig:
@@ -813,7 +811,17 @@ def main(argv: list[str] | None = None) -> int:
             alpha=config.alpha,
         )
 
-    summary = {
+    for produced_report in (
+        manifest,
+        roster,
+        solver_report,
+        corpus_report,
+        powered_report,
+    ):
+        if produced_report is not None:
+            ClaimGate.validate_derived_report(produced_report)
+
+    summary = ClaimGate.govern_report({
         "status": "completed",
         "manifest": str(config.output_dir / "batch-driver-manifest.json"),
         "curated_roster": str(config.output_dir / "curated-roster.json"),
@@ -823,7 +831,8 @@ def main(argv: list[str] | None = None) -> int:
         "candidate_corpus_report": str(config.output_dir / "candidate-corpus-report.json") if corpus_report else "",
         "powered_report": powered_report.get("report_path") if powered_report else "",
         **AUTHORITY_FLAGS,
-    }
+    })
+    ClaimGate.validate_derived_report(summary)
     print(_json_dumps(summary), end="")
     return 0
 

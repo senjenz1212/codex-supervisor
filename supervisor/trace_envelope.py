@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+import hashlib
+import json
 import time
 from typing import Any, Callable, Iterator
 
@@ -22,19 +24,36 @@ def stamp_trace_envelope(
     """Return a payload copy with a non-breaking trace envelope attached."""
     stamped = deepcopy(payload)
     if "trace_envelope" in stamped:
+        envelope_scope = _trace_envelope_scope(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=stamped,
+        )
         envelope = stamped.get("trace_envelope")
         if isinstance(envelope, dict):
             tool_calls = envelope.get("tool_calls")
             if isinstance(tool_calls, list):
                 envelope["tool_calls"] = [
-                    ensure_tool_call_timing(item)
-                    for item in tool_calls
+                    ensure_tool_call_timing(
+                        item,
+                        fallback_started_at_ms=0,
+                        ordinal=index,
+                        envelope_scope=envelope_scope,
+                    )
+                    for index, item in enumerate(tool_calls)
                     if isinstance(item, dict)
                 ]
         return stamped
     if source != "dual_agent" and not kind.startswith(("dual_agent_", "tri_agent_")):
         return stamped
 
+    envelope_scope = _trace_envelope_scope(
+        run_id=run_id,
+        source=source,
+        kind=kind,
+        payload=stamped,
+    )
     gate = _text(stamped.get("gate"))
     task_id = _text(stamped.get("task_id"))
     failure_taxonomy = failure_taxonomy_for_payload(kind=kind, payload=stamped)
@@ -47,7 +66,10 @@ def stamp_trace_envelope(
         "event_kind": kind,
         "policy_verdict": _policy_verdict(stamped, failure_taxonomy),
         "failure_taxonomy": failure_taxonomy,
-        "tool_calls": _tool_calls(stamped),
+        "tool_calls": _tool_calls(
+            stamped,
+            envelope_scope=envelope_scope,
+        ),
         "artifacts": _artifacts(stamped),
         "claims": _claims(stamped),
         "receipts": _receipts(stamped),
@@ -67,13 +89,35 @@ def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | 
     return "observed"
 
 
-def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _tool_calls(
+    payload: dict[str, Any],
+    *,
+    envelope_scope: str,
+) -> list[dict[str, Any]]:
     direct = payload.get("tool_calls")
     if isinstance(direct, list):
-        return [ensure_tool_call_timing(item) for item in direct if isinstance(item, dict)]
+        return [
+            ensure_tool_call_timing(
+                item,
+                fallback_started_at_ms=0,
+                ordinal=index,
+                envelope_scope=envelope_scope,
+            )
+            for index, item in enumerate(direct)
+            if isinstance(item, dict)
+        ]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
-    return [ensure_tool_call_timing(item) for item in calls if isinstance(item, dict)] if isinstance(calls, list) else []
+    return [
+        ensure_tool_call_timing(
+            item,
+            fallback_started_at_ms=0,
+            ordinal=index,
+            envelope_scope=envelope_scope,
+        )
+        for index, item in enumerate(calls)
+        if isinstance(item, dict)
+    ] if isinstance(calls, list) else []
 
 
 @contextmanager
@@ -112,7 +156,13 @@ def timed_tool_call(
         record.setdefault("tool_call_id", _default_tool_call_id(record))
 
 
-def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
+def ensure_tool_call_timing(
+    call: dict[str, Any],
+    *,
+    fallback_started_at_ms: int | None = None,
+    ordinal: int | None = None,
+    envelope_scope: str | None = None,
+) -> dict[str, Any]:
     """Return a tool-call record with the standard timing fields present."""
     record = dict(call)
     result_summary = record.get("result_summary")
@@ -130,13 +180,18 @@ def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
     duration = _int_or_none(record.get("duration_ms"))
     duration_us = _int_or_none(record.get("duration_us"))
     ended = _int_or_none(record.get("ended_at_ms"))
-    if started is None and ended is not None and duration is not None:
-        started = max(0, ended - duration)
-    if started is None:
-        started = _current_time_ms()
     if duration is None and duration_us is not None:
         duration = duration_us // 1_000
-    if duration is None and ended is not None:
+    if started is None and ended is not None and duration is not None:
+        started = max(0, ended - duration)
+    has_real_start = started is not None
+    if started is None:
+        started = (
+            _current_time_ms()
+            if fallback_started_at_ms is None
+            else int(fallback_started_at_ms)
+        )
+    if duration is None and ended is not None and has_real_start:
         duration = max(0, ended - started)
     if duration is None:
         duration = 0
@@ -148,11 +203,23 @@ def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
     record["duration_ms"] = int(duration)
     record["duration_us"] = int(duration_us)
     record["ended_at_ms"] = int(ended)
-    record.setdefault("tool_call_id", _default_tool_call_id(record))
+    record.setdefault(
+        "tool_call_id",
+        _default_tool_call_id(
+            record,
+            ordinal=ordinal if not has_real_start else None,
+            envelope_scope=envelope_scope if not has_real_start else None,
+        ),
+    )
     return record
 
 
-def _default_tool_call_id(record: dict[str, Any]) -> str:
+def _default_tool_call_id(
+    record: dict[str, Any],
+    *,
+    ordinal: int | None = None,
+    envelope_scope: str | None = None,
+) -> str:
     name = _slug(_text(record.get("name")) or "tool")
     started = _int_or_none(record.get("started_at_ms")) or 0
     duration_us = _int_or_none(record.get("duration_us"))
@@ -161,7 +228,33 @@ def _default_tool_call_id(record: dict[str, Any]) -> str:
     raw_probe = _text(record.get("probe_id"))
     probe = _slug(raw_probe) if raw_probe else ""
     suffix = f"#{probe}" if probe else ""
+    if ordinal is not None:
+        suffix += f"#{int(ordinal)}"
+    if envelope_scope:
+        suffix += f"#envelope_{envelope_scope}"
     return f"{name}#{started}#{duration_us}{suffix}"
+
+
+def _trace_envelope_scope(
+    *,
+    run_id: str,
+    source: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> str:
+    canonical = json.dumps(
+        {
+            "run_id": run_id,
+            "source": source,
+            "kind": kind,
+            "payload": payload,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _slug(value: str) -> str:

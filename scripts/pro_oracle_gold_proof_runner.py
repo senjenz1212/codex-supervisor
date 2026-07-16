@@ -9,6 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from supervisor.claim_gate import ClaimGate
 from supervisor.swe_bench_official_oracle import (
     _pro_test_list,
     run_swe_bench_pro_oracle,
@@ -17,8 +18,7 @@ from supervisor.swe_bench_official_oracle import (
 
 AUTHORITY_FLAGS = {
     "metric_applyable": False,
-    "improvement_claim_allowed": False,
-    "powered_improvement_claim_allowed": False,
+    **ClaimGate.derived_claim_flags(),
     "human_mergeability_claim_allowed": False,
     "default_change_allowed": False,
     "policy_mutated": False,
@@ -203,7 +203,7 @@ def _manifest(
     if not selected:
         blockers.append("selected_tests_empty")
 
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-pro-oracle-gold-proof/v1",
         "status": "completed" if not blockers else "unavailable",
         "blocked_reasons": blockers,
@@ -238,7 +238,7 @@ def _manifest(
         "preflight": preflight,
         "context_sha256": _sha256_json(context),
         "authority_flags": dict(AUTHORITY_FLAGS),
-    }
+    })
 
 
 def _blocked_manifest(
@@ -250,7 +250,7 @@ def _blocked_manifest(
     preflight: Mapping[str, Any],
     reason: str,
 ) -> dict[str, Any]:
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-pro-oracle-gold-proof/v1",
         "status": "unavailable",
         "blocked_reasons": [reason],
@@ -261,7 +261,7 @@ def _blocked_manifest(
         "artifacts": _artifact_index(output_dir, {}),
         "preflight": preflight,
         "authority_flags": dict(AUTHORITY_FLAGS),
-    }
+    })
 
 
 def _artifact_index(output_dir: Path, artifact_paths: Any) -> dict[str, dict[str, Any]]:

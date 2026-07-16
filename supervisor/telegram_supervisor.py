@@ -1,19 +1,23 @@
-"""Conversational Telegram supervisor powered by Claude Agent SDK."""
+"""Conversational Telegram supervisor behind provider-neutral runtime seams."""
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
+from pathlib import Path
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
+from .agent_runtime import AgentRuntime, AgentTask
 from .connectors import (
     connector_allowed_tools,
     connector_disallowed_tools,
     external_mcp_servers,
 )
 from .config import Config
-from .provider_routing import direct_anthropic_env
+from .model_client import ModelClient, ModelMessage, ModelRequest
 from .redaction import redact, redact_for_telegram
+from .runtime_cleanup import cancel_runtime_after_failure
 from .state import State
 from .supervisor_tools import SupervisorToolAPI
 
@@ -102,10 +106,30 @@ class SupervisorRuntime(Protocol):
 
 
 class ClaudeAgentSupervisorRuntime:
-    def __init__(self, cfg: Config, state: State):
+    def __init__(
+        self,
+        cfg: Config,
+        state: State,
+        *,
+        agent_runtime: AgentRuntime,
+        summary_client: ModelClient,
+        agent_environment: Mapping[str, str] | None = None,
+        inherit_agent_environment: bool = True,
+        supervisor_mcp_factory: Callable[
+            [Config, State, SupervisorToolAPI],
+            Any,
+        ] | None = None,
+    ):
         self.cfg = cfg
         self.state = state
         self.model = cfg.models.post_run_eval_model
+        self.agent_runtime = agent_runtime
+        self.summary_client = summary_client
+        self.agent_environment = dict(agent_environment or {})
+        self.inherit_agent_environment = bool(inherit_agent_environment)
+        self.supervisor_mcp_factory = (
+            supervisor_mcp_factory or _build_supervisor_mcp_server
+        )
 
     async def answer(
         self,
@@ -114,29 +138,64 @@ class ClaudeAgentSupervisorRuntime:
         tool_api: SupervisorToolAPI,
         conversation_context: dict[str, Any],
     ) -> dict[str, Any]:
-        from claude_agent_sdk import ClaudeSDKClient
-
-        options = self._build_options(tool_api, conversation_context=conversation_context)
-        outputs: list[str] = []
-        claude_session_id: str | None = None
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(_message_with_context(message, conversation_context))
-            async for msg in client.receive_response():
-                session_id = getattr(msg, "session_id", None)
-                if isinstance(session_id, str) and session_id:
-                    claude_session_id = session_id
-                if hasattr(msg, "content"):
-                    for block in getattr(msg, "content", []) or []:
-                        text = getattr(block, "text", None)
-                        if text:
-                            outputs.append(text)
-        text = "\n".join(outputs).strip() or "I checked, but I did not get a usable supervisor response."
-        return {
-            "text": text,
-            "tool_outputs": [],
-            "proposed_actions": [],
-            "claude_session_id": claude_session_id,
-        }
+        metadata = self._build_runtime_metadata(
+            tool_api,
+            conversation_context=conversation_context,
+        )
+        handle = await self.agent_runtime.start(
+            AgentTask(
+                task_id=str(
+                    conversation_context.get("active_run_id")
+                    or conversation_context.get("chat_id")
+                    or "telegram-supervisor"
+                ),
+                instruction=_message_with_context(message, conversation_context),
+                cwd=Path.cwd(),
+                model=self.model,
+                timeout_s=900,
+                env=self.agent_environment,
+                inherit_env=self.inherit_agent_environment,
+                metadata=metadata,
+            )
+        )
+        try:
+            outputs: list[str] = []
+            async for event in self.agent_runtime.stream(handle):
+                if event.kind != "agent.message":
+                    continue
+                text = event.payload.get("message")
+                if text:
+                    outputs.append(str(text))
+            result = await self.agent_runtime.collect(handle)
+            if result.status != "completed":
+                raise RuntimeError(
+                    "telegram supervisor runtime ended "
+                    f"{result.status}: "
+                    f"{result.metadata.get('stderr') or result.output}"
+                )
+            if not outputs and result.output:
+                outputs.append(result.output)
+            text = (
+                "\n".join(outputs).strip()
+                or "I checked, but I did not get a usable supervisor response."
+            )
+            return {
+                "text": text,
+                "tool_outputs": [],
+                "proposed_actions": [],
+                "claude_session_id": (
+                    result.session_id
+                    if result.session_id != handle.run_id
+                    else None
+                ),
+            }
+        except BaseException:
+            await cancel_runtime_after_failure(
+                self.agent_runtime,
+                handle,
+                logger=log,
+            )
+            raise
 
     async def summarize_conversation(
         self,
@@ -144,8 +203,6 @@ class ClaudeAgentSupervisorRuntime:
         conversation_context: dict[str, Any],
         recent_turns: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-
         prompt = (
             "<existing_conversation_context>\n"
             f"{json.dumps(conversation_context, indent=2, default=str)}\n"
@@ -154,35 +211,31 @@ class ClaudeAgentSupervisorRuntime:
             f"{json.dumps(redact(recent_turns), indent=2, default=str)}\n"
             "</recent_turns>"
         )
-        options = ClaudeAgentOptions(
-            system_prompt=SUMMARY_PROMPT,
-            model=self.model,
-            max_turns=1,
-            permission_mode="dontAsk",
-            effort="medium",
-            env=direct_anthropic_env(),
+        response = await self.summary_client.complete(
+            ModelRequest(
+                model=self.model,
+                messages=(
+                    ModelMessage(role="system", content=SUMMARY_PROMPT),
+                    ModelMessage(role="user", content=prompt),
+                ),
+                max_tokens=512,
+                temperature=0.0,
+                metadata={
+                    "max_turns": 1,
+                    "permission_mode": "dontAsk",
+                    "effort": "medium",
+                },
+            )
         )
-        outputs: list[str] = []
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(prompt)
-            async for msg in client.receive_response():
-                if hasattr(msg, "content"):
-                    for block in getattr(msg, "content", []) or []:
-                        text = getattr(block, "text", None)
-                        if text:
-                            outputs.append(text)
-        return _parse_summary_result("\n".join(outputs))
+        return _parse_summary_result(response.text)
 
-    def _build_options(
+    def _build_runtime_metadata(
         self,
         tool_api: SupervisorToolAPI,
         *,
         conversation_context: dict[str, Any] | None = None,
-    ):
-        from claude_agent_sdk import ClaudeAgentOptions
-        from mcp_tools.supervisor_tools import build_supervisor_mcp_server
-
-        mcp = build_supervisor_mcp_server(self.cfg, self.state, tool_api)
+    ) -> dict[str, Any]:
+        mcp = self.supervisor_mcp_factory(self.cfg, self.state, tool_api)
         mcp_servers = {"supervisor": mcp}
         mcp_servers.update(external_mcp_servers(self.cfg))
         resume = None
@@ -190,19 +243,27 @@ class ClaudeAgentSupervisorRuntime:
             candidate = conversation_context.get("claude_session_id")
             if isinstance(candidate, str) and _looks_like_uuid(candidate):
                 resume = candidate
-        options = ClaudeAgentOptions(
-            system_prompt=SYSTEM_PROMPT,
-            model=self.model,
-            max_turns=10,
-            resume=resume,
-            mcp_servers=mcp_servers,
-            allowed_tools=connector_allowed_tools(self.cfg),
-            disallowed_tools=connector_disallowed_tools(self.cfg),
-            permission_mode="dontAsk",
-            effort="medium",
-            env=direct_anthropic_env(),
-        )
-        return options
+        return {
+            "system_prompt": SYSTEM_PROMPT,
+            "max_turns": 10,
+            "resume_session_id": resume,
+            "mcp_servers": mcp_servers,
+            "allowed_tools": connector_allowed_tools(self.cfg),
+            "disallowed_tools": connector_disallowed_tools(self.cfg),
+            "permission_mode": "dontAsk",
+            "effort": "medium",
+        }
+
+
+def _build_supervisor_mcp_server(
+    cfg: Config,
+    state: State,
+    tool_api: SupervisorToolAPI,
+) -> Any:
+    """Load the Claude SDK-specific MCP adapter only at the provider edge."""
+    from mcp_tools.supervisor_tools import build_supervisor_mcp_server
+
+    return build_supervisor_mcp_server(cfg, state, tool_api)
 
 
 class TelegramChatSupervisor:
@@ -211,7 +272,7 @@ class TelegramChatSupervisor:
         cfg: Config,
         state: State,
         *,
-        runtime: SupervisorRuntime | None = None,
+        runtime: SupervisorRuntime,
         tool_api: SupervisorToolAPI | None = None,
         target_adapter: Any | None = None,
         telegram_sender: Any | None = None,
@@ -225,7 +286,7 @@ class TelegramChatSupervisor:
             telegram_sender=telegram_sender,
             steering_mode=cfg.modes.steering_injection,
         )
-        self.runtime = runtime or ClaudeAgentSupervisorRuntime(cfg, state)
+        self.runtime = runtime
 
     async def handle_message(self, text: str, *, telegram_message: dict[str, Any]) -> str:
         chat_id = str((telegram_message.get("chat") or {}).get("id", ""))

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor.claim_gate import ClaimGate
 from supervisor.swe_bench_mergeability import (
     SwebenchMergeabilityFixtureRunnerError,
     swebench_mergeability_powered_factorial_runner,
@@ -142,6 +143,7 @@ def test_cli_exposes_power_thresholds(tmp_path, capsys):
         "min_discordant": 1,
         "alpha": 1.0,
     }
+    assert ClaimGate.validate_derived_report(summary) is None
 
 
 def test_factorial_runner_consumes_pro_corpus(tmp_path):
@@ -166,6 +168,11 @@ def test_factorial_runner_consumes_pro_corpus(tmp_path):
     assert report["candidate_count"] == len(rows)
     assert {row["candidate_id"]: row["candidate_hash"] for row in report["per_task_results"]} == expected_hashes
     assert report["arms"]["single_agent_baseline"]["availability_status"] == "available"
+    assert all(
+        arm["improvement_claim_allowed"] is False
+        for arm in report["arms"].values()
+    )
+    assert ClaimGate.validate_derived_report(report) is None
     assert (tmp_path / "powered" / "powered_factorial_report.json").exists()
 
 

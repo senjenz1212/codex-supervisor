@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+
+from .claim_gate import ClaimGate
 
 
 AUTO_EVOLVE_BENCHMARK_LEDGER_SCHEMA_VERSION = (
@@ -15,8 +17,7 @@ AUTO_EVOLVE_BENCHMARK_LEDGER_SCHEMA_VERSION = (
 
 AUTHORITY_FLAGS_FALSE: dict[str, bool] = {
     "metric_applyable": False,
-    "improvement_claim_allowed": False,
-    "powered_improvement_claim_allowed": False,
+    **ClaimGate.derived_claim_flags(),
     "human_mergeability_claim_allowed": False,
     "default_change_allowed": False,
     "policy_mutated": False,
@@ -59,7 +60,9 @@ def append_auto_evolve_benchmark_event(
     aeb0_ref = str(aeb0_artifact_ref or "")
     record: dict[str, Any] = {
         "schema_version": AUTO_EVOLVE_BENCHMARK_LEDGER_SCHEMA_VERSION,
-        "recorded_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "recorded_at": (
+            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        ),
         "stage": str(stage),
         "promise_ids": [str(promise_id) for promise_id in promise_ids],
         "status": str(status),
@@ -93,6 +96,7 @@ def append_auto_evolve_benchmark_event(
     errors = validate_auto_evolve_benchmark_ledger_record(record)
     if errors:
         raise ValueError("; ".join(errors))
+    record = ClaimGate.govern_report(record)
     record["record_sha256"] = _sha256_json({
         key: value for key, value in record.items() if key != "record_sha256"
     })

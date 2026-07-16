@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1222,6 +1223,64 @@ def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
     assert result.failure_classification == "reviewer_infrastructure_unavailable"
     assert result.reviewer_assurance == "unavailable"
     assert result.diagnostics["fallback"]["attempted"] is False
+
+
+def test_cursor_sdk_runs_off_main_thread_with_enforced_timeout(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls = 0
+
+    def fast_run(request: CursorInvocationRequest):
+        nonlocal calls
+        calls += 1
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {}
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fast_run)
+    request = CursorInvocationRequest(
+        task_id="threaded-cursor-review",
+        gate="outcome_review",
+        instruction="Review.",
+        cwd=tmp_path,
+        timeout_s=30,
+        reviewer_infra_retry_limit=0,
+        contract_retry_limit=0,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(invoke_cursor_agent, request).result(timeout=10)
+
+    assert calls == 1
+    assert result.probe.ok
+    assert result.outcome is not None
+
+
+def test_cursor_sdk_timeout_enforced_off_main_thread(
+    tmp_path: Path,
+    monkeypatch,
+):
+    def slow_run(_request: CursorInvocationRequest):
+        time.sleep(5)
+        return "", {}
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", slow_run)
+    request = CursorInvocationRequest(
+        task_id="threaded-cursor-review",
+        gate="outcome_review",
+        instruction="Review.",
+        cwd=tmp_path,
+        timeout_s=1,
+        reviewer_infra_retry_limit=0,
+        contract_retry_limit=0,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(invoke_cursor_agent, request).result(timeout=10)
+
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["original_reason"] == "cursor_sdk_timeout"
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
 
 
 def test_cursor_sdk_access_denied_does_not_retry_or_fallback(tmp_path: Path, monkeypatch):

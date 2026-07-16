@@ -1,21 +1,42 @@
 """Supervisor-owned execution and bookkeeping for agentic lead worker processes."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import signal
-import subprocess
 import time
+import uuid
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable
 
+import psutil
+
+from .agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    RuntimeEvent,
+)
+from .agentic_legacy_provider_edge import (
+    LegacyRunner,
+    execute_legacy_agent_task,
+)
+from .runtime_execution import (
+    RuntimeExecution,
+    RuntimeFactory,
+    RuntimeTaskRunner,
+    runtime_task_runner,
+)
+
 
 PidProbe = Callable[[int], bool]
 Terminator = Callable[[int, int], None]
-WorkerRunner = Callable[..., subprocess.CompletedProcess[str]]
+WorkerRunner = LegacyRunner
 
 
 @dataclass(frozen=True)
@@ -25,13 +46,17 @@ class AgenticWorkerSpec:
     role: str
     command: tuple[str, ...]
     cwd: str | Path
+    instruction: str = ""
+    model: str = ""
     persona_id: str = ""
-    agent_runtime: str = "claude_code"
+    agent_runtime: str = "runtime"
     agent_id: str = ""
     permission_mode: str = "readOnly"
     tool_pins: tuple[str, ...] = field(default_factory=tuple)
     timeout_s: int = 600
     budget_usd: float = 0.0
+    runtime_env: Mapping[str, str] = field(default_factory=dict)
+    runtime_metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 def worker_log_ref(*, cwd: str | Path, task_id: str, worker_id: str) -> str:
@@ -51,19 +76,34 @@ def worker_runtime_ref(*, cwd: str | Path, task_id: str, worker_id: str) -> str:
 def run_agentic_worker(
     spec: AgenticWorkerSpec,
     *,
-    runner: WorkerRunner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
+    runtime_factory: RuntimeFactory | None = None,
+    runner: WorkerRunner | None = None,
     now: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
-    """Spawn one supervisor-owned worker and return a replay-verifiable receipt."""
+    """Run one worker and return a replay-verifiable normalized receipt.
+
+    ``runtime_runner``/``runtime_factory`` are the production seam.  ``runner``
+    is retained only as an explicit legacy provider-edge fallback.
+    """
+    task_runner = _resolve_runtime_runner(
+        runtime_runner=runtime_runner,
+        runtime_factory=runtime_factory,
+    )
+    if task_runner is not None and runner is not None:
+        raise ValueError(
+            "choose a runtime runner/factory or the legacy subprocess runner"
+        )
+    if task_runner is None and runner is None:
+        raise ValueError(
+            "agentic worker execution requires a runtime runner/factory; "
+            "pass runner= only for the explicit legacy fallback"
+        )
+
     cwd_path = Path(spec.cwd).resolve()
     worker_dir = cwd_path / ".handoff" / "agentic-workers" / _safe_segment(spec.task_id) / _safe_segment(spec.worker_id)
     worker_dir.mkdir(parents=True, exist_ok=True)
     started_at_s = now()
-    stdout_text = ""
-    stderr_text = ""
-    exit_code: int | None = None
-    error: str | None = None
-    status = "failed"
     runtime_path = worker_dir / "runtime.json"
     _write_worker_file(
         cwd_path,
@@ -74,11 +114,14 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
+                "termination_scope": "shared_host",
                 "pid": None,
+                "pid_create_time_s": None,
                 "status": "running",
                 "started_at_s": started_at_s,
                 "timeout_s": spec.timeout_s,
                 "budget_usd": spec.budget_usd,
+                "requested_model": spec.model,
                 "log_ref": worker_log_ref(cwd=cwd_path, task_id=spec.task_id, worker_id=spec.worker_id),
             },
             sort_keys=True,
@@ -86,31 +129,72 @@ def run_agentic_worker(
         ) + "\n",
     )
 
+    task = _worker_agent_task(spec, cwd=cwd_path)
+    granted_permission_mode = str(task.metadata.get("permission_mode") or "")
+    granted_tools = [str(item) for item in task.metadata.get("allowed_tools") or ()]
+    granted_disallowed_tools = [
+        str(item) for item in task.metadata.get("disallowed_tools") or ()
+    ]
     try:
-        completed = runner(
-            list(spec.command),
-            cwd=str(cwd_path),
-            capture_output=True,
-            text=True,
-            timeout=spec.timeout_s,
-            check=False,
+        execution = (
+            task_runner(task)
+            if task_runner is not None
+            else execute_legacy_agent_task(
+                task,
+                runner=runner,
+                command=spec.command,
+            )
         )
-        stdout_text = completed.stdout or ""
-        stderr_text = completed.stderr or ""
-        exit_code = int(completed.returncode)
-        status = "passed" if completed.returncode == 0 else "failed"
-    except subprocess.TimeoutExpired as e:
-        stdout_text = _decode_timeout_stream(e.output)
-        stderr_text = _decode_timeout_stream(e.stderr)
-        error = f"timeout after {spec.timeout_s}s"
-        status = "timeout"
-    except OSError as e:
-        error = str(e)
-        status = "failed"
-
-    ended_at_s = now()
-    stdout_ref = _write_worker_file(cwd_path, worker_dir / "stdout.txt", stdout_text)
-    stderr_ref = _write_worker_file(cwd_path, worker_dir / "stderr.txt", stderr_text)
+        _validate_runtime_execution(execution, task=task)
+    except asyncio.CancelledError:
+        _write_worker_file(
+            cwd_path,
+            runtime_path,
+            json.dumps(
+                {
+                    "schema_version": "agentic-worker-runtime/v1",
+                    "task_id": spec.task_id,
+                    "worker_id": spec.worker_id,
+                    "role": spec.role,
+                    "termination_scope": "shared_host",
+                    "pid": None,
+                    "pid_create_time_s": None,
+                    "status": "cancelled",
+                    "started_at_s": started_at_s,
+                    "ended_at_s": now(),
+                    "timeout_s": spec.timeout_s,
+                    "budget_usd": spec.budget_usd,
+                    "requested_model": spec.model,
+                    "log_ref": worker_log_ref(cwd=cwd_path, task_id=spec.task_id, worker_id=spec.worker_id),
+                },
+                sort_keys=True,
+                indent=2,
+            ) + "\n",
+        )
+        raise
+    except Exception as exc:
+        execution = _failed_runtime_execution(
+            task,
+            exc=exc,
+            runtime=spec.agent_runtime,
+            started_at_ms=int(started_at_s * 1000),
+            ended_at_ms=int(now() * 1000),
+        )
+    result = execution.result
+    status = _worker_status(result)
+    error = _runtime_error(result, status=status, timeout_s=spec.timeout_s)
+    exit_code = _int(result.metadata.get("returncode"))
+    ended_at_s = result.ended_at_ms / 1000
+    stdout_ref = _write_worker_file(
+        cwd_path,
+        worker_dir / "stdout.txt",
+        result.output,
+    )
+    stderr_ref = _write_worker_file(
+        cwd_path,
+        worker_dir / "stderr.txt",
+        str(result.metadata.get("stderr") or ""),
+    )
     output_payload = {
         "schema_version": "agentic-worker-output/v1",
         "task_id": spec.task_id,
@@ -120,10 +204,25 @@ def run_agentic_worker(
         "exit_code": exit_code,
         "error": error,
         "persona_id": spec.persona_id,
-        "agent_runtime": spec.agent_runtime,
+        "agent_runtime": result.runtime,
+        "runtime": result.runtime,
+        "runtime_run_id": result.run_id,
+        "session_id": result.session_id,
+        "resolved_model": result.resolved_model,
+        "cost_usd": float(result.cost_usd),
+        "token_usage": dict(result.token_usage),
+        "result_hash": result.result_hash,
+        "runtime_status": result.status,
+        "model_provenance": result.model_provenance,
+        "cost_provenance": result.cost_provenance,
+        "token_provenance": result.token_provenance,
+        "agent_run_result": _agent_run_result_payload(result),
         "agent_id": spec.agent_id or spec.worker_id,
-        "permission_mode": spec.permission_mode,
-        "tool_pins": list(spec.tool_pins),
+        "permission_mode": granted_permission_mode,
+        "tool_pins": granted_tools,
+        "disallowed_tools": granted_disallowed_tools,
+        "requested_permission_mode": spec.permission_mode,
+        "requested_tool_pins": list(spec.tool_pins),
         "timeout_s": spec.timeout_s,
         "budget_usd": spec.budget_usd,
         "stdout_ref": stdout_ref,
@@ -140,11 +239,19 @@ def run_agentic_worker(
             "task_id": spec.task_id,
             "worker_id": spec.worker_id,
             "role": spec.role,
-            "command": list(spec.command),
             "started_at_s": started_at_s,
             "timeout_s": spec.timeout_s,
             "budget_usd": spec.budget_usd,
+            "runtime_task_id": task.task_id,
+            "requested_model": task.model,
         },
+        *[
+            {
+                "event": "runtime_event",
+                **event.to_dict(),
+            }
+            for event in result.events
+        ],
         {
             "event": "worker_finished",
             "task_id": spec.task_id,
@@ -152,11 +259,18 @@ def run_agentic_worker(
             "status": status,
             "exit_code": exit_code,
             "ended_at_s": ended_at_s,
-            "duration_s": max(0.0, ended_at_s - started_at_s),
+            "duration_s": result.duration_ms / 1000,
             "stdout_ref": stdout_ref,
             "stderr_ref": stderr_ref,
             "output_ref": output_ref,
             "error": error,
+            "runtime": result.runtime,
+            "runtime_run_id": result.run_id,
+            "session_id": result.session_id,
+            "resolved_model": result.resolved_model,
+            "cost_usd": float(result.cost_usd),
+            "token_usage": dict(result.token_usage),
+            "result_hash": result.result_hash,
         },
     ]
     transcript_ref = _write_worker_file(
@@ -186,10 +300,20 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
+                "termination_scope": "shared_host",
                 "pid": None,
+                "pid_create_time_s": None,
                 "status": status,
                 "started_at_s": started_at_s,
                 "ended_at_s": ended_at_s,
+                "runtime": result.runtime,
+                "runtime_run_id": result.run_id,
+                "session_id": result.session_id,
+                "resolved_model": result.resolved_model,
+                "cost_usd": float(result.cost_usd),
+                "token_usage": dict(result.token_usage),
+                "result_hash": result.result_hash,
+                "runtime_status": result.status,
                 "timeout_s": spec.timeout_s,
                 "budget_usd": spec.budget_usd,
                 "log_ref": log_ref,
@@ -210,10 +334,25 @@ def run_agentic_worker(
         "decision": "accept" if status == "passed" else "revise",
         "severity": "none" if status == "passed" else "important",
         "objections": [] if status == "passed" else [error or f"worker exited with {exit_code}"],
-        "agent_runtime": spec.agent_runtime,
+        "agent_runtime": result.runtime,
+        "runtime": result.runtime,
+        "runtime_run_id": result.run_id,
+        "session_id": result.session_id,
+        "resolved_model": result.resolved_model,
+        "model": result.resolved_model,
+        "cost_usd": float(result.cost_usd),
+        "token_usage": dict(result.token_usage),
+        "result_hash": result.result_hash,
+        "runtime_status": result.status,
+        "model_provenance": result.model_provenance,
+        "cost_provenance": result.cost_provenance,
+        "token_provenance": result.token_provenance,
         "agent_id": spec.agent_id or spec.worker_id,
-        "permission_mode": spec.permission_mode,
-        "tool_pins": list(spec.tool_pins),
+        "permission_mode": granted_permission_mode,
+        "tool_pins": granted_tools,
+        "disallowed_tools": granted_disallowed_tools,
+        "requested_permission_mode": spec.permission_mode,
+        "requested_tool_pins": list(spec.tool_pins),
         "timeout_s": spec.timeout_s,
         "budget_usd": spec.budget_usd,
         "exit_code": exit_code,
@@ -235,19 +374,274 @@ def run_agentic_worker(
 def run_agentic_worker_fanout(
     specs: list[AgenticWorkerSpec],
     *,
-    runner: WorkerRunner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
+    runtime_factory: RuntimeFactory | None = None,
+    runner: WorkerRunner | None = None,
     max_workers: int | None = None,
 ) -> list[dict[str, Any]]:
     """Run supervisor-owned workers concurrently and return receipts in input order."""
     if not specs:
         return []
+    task_runner = _resolve_runtime_runner(
+        runtime_runner=runtime_runner,
+        runtime_factory=runtime_factory,
+    )
+    if task_runner is not None and runner is not None:
+        raise ValueError(
+            "choose a runtime runner/factory or the legacy subprocess runner"
+        )
+    if task_runner is None and runner is None:
+        raise ValueError(
+            "agentic worker fan-out requires a runtime runner/factory; "
+            "pass runner= only for the explicit legacy fallback"
+        )
     worker_count = max(1, min(len(specs), int(max_workers or len(specs))))
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
         futures = [
-            pool.submit(run_agentic_worker, spec, runner=runner)
+            pool.submit(
+                run_agentic_worker,
+                spec,
+                runtime_runner=task_runner,
+                runner=runner,
+            )
             for spec in specs
         ]
         return [future.result() for future in futures]
+
+
+def _resolve_runtime_runner(
+    *,
+    runtime_runner: RuntimeTaskRunner | None,
+    runtime_factory: RuntimeFactory | None,
+) -> RuntimeTaskRunner | None:
+    if runtime_runner is not None and runtime_factory is not None:
+        raise ValueError("provide runtime_runner or runtime_factory, not both")
+    if runtime_runner is not None:
+        return runtime_runner
+    if runtime_factory is not None:
+        return runtime_task_runner(runtime_factory)
+    return None
+
+
+def _worker_agent_task(
+    spec: AgenticWorkerSpec,
+    *,
+    cwd: Path,
+) -> AgentTask:
+    metadata = {
+        **dict(spec.runtime_metadata),
+        "agentic_execution": {
+            "kind": "worker",
+            "task_id": spec.task_id,
+            "worker_id": spec.worker_id,
+            "role": spec.role,
+        },
+        "worker_id": spec.worker_id,
+        "worker_role": spec.role,
+        "persona_id": spec.persona_id,
+        "agentic_permission_mode": spec.permission_mode,
+        "tool_pins": list(spec.tool_pins),
+        "max_budget_usd": float(spec.budget_usd),
+    }
+    metadata.setdefault("permission_mode", "plan")
+    metadata.setdefault("allowed_tools", ["Read", "Grep", "Glob", "Bash"])
+    metadata.setdefault(
+        "disallowed_tools",
+        ["Edit", "Write", "MultiEdit", "NotebookEdit"],
+    )
+    instruction = spec.instruction.strip() or (
+        f"Read-only agentic worker for task {spec.task_id}. "
+        f"Role: {spec.role}."
+    )
+    return AgentTask(
+        task_id=f"{spec.task_id}::agentic-worker::{spec.worker_id}",
+        instruction=instruction,
+        cwd=cwd,
+        model=spec.model.strip() or "agentic-worker-model",
+        timeout_s=max(0.001, float(spec.timeout_s)),
+        env={
+            str(key): str(value)
+            for key, value in spec.runtime_env.items()
+        },
+        inherit_env=False,
+        metadata=metadata,
+    )
+
+
+def _validate_runtime_execution(
+    execution: RuntimeExecution,
+    *,
+    task: AgentTask,
+) -> None:
+    if not isinstance(execution, RuntimeExecution):
+        raise TypeError("runtime runner must return RuntimeExecution")
+    result = execution.result
+    if result.task_id != task.task_id:
+        raise ValueError(
+            "runtime result task_id does not match the agentic worker task"
+        )
+    if execution.handle.task_id != task.task_id:
+        raise ValueError(
+            "runtime handle task_id does not match the agentic worker task"
+        )
+    if result.run_id != execution.handle.run_id:
+        raise ValueError("runtime result run_id does not match its handle")
+    for field_name, value in (
+        ("runtime", result.runtime),
+        ("run_id", result.run_id),
+        ("session_id", result.session_id),
+        ("result_hash", result.result_hash),
+    ):
+        if not str(value or "").strip():
+            raise ValueError(f"runtime result {field_name} must be non-empty")
+
+
+def _failed_runtime_execution(
+    task: AgentTask,
+    *,
+    exc: BaseException,
+    runtime: str,
+    started_at_ms: int,
+    ended_at_ms: int,
+) -> RuntimeExecution:
+    run_id = f"failed-{uuid.uuid4().hex}"
+    runtime_name = str(runtime or "").strip()
+    if runtime_name in {"", "runtime"}:
+        runtime_name = "runtime_runner"
+    if isinstance(exc, asyncio.CancelledError):
+        reason = "cancelled"
+        result_status = "cancelled"
+        event_kind = "run.cancelled"
+        error = "runtime cancelled"
+    elif isinstance(exc, TimeoutError):
+        reason = "timeout"
+        result_status = "failed"
+        event_kind = "run.failed"
+        error = f"{type(exc).__name__}: {exc}"
+    else:
+        reason = "runtime_exception"
+        result_status = "failed"
+        event_kind = "run.failed"
+        error = f"{type(exc).__name__}: {exc}"
+    event = RuntimeEvent(
+        kind=event_kind,
+        payload={
+            "type": event_kind,
+            "reason": reason,
+            "error": error,
+        },
+        ts_ms=ended_at_ms,
+    )
+    session_id = run_id
+    metadata = {
+        "error": error,
+        "failure_reason": reason,
+        "returncode": None,
+        "stderr": "",
+    }
+    result_payload = {
+        "run_id": run_id,
+        "task_id": task.task_id,
+        "runtime": runtime_name,
+        "session_id": session_id,
+        "status": result_status,
+        "output": "",
+        "events": [event.to_dict()],
+        "started_at_ms": started_at_ms,
+        "ended_at_ms": ended_at_ms,
+        "cost_usd": 0.0,
+        "resolved_model": task.model,
+        "token_usage": {},
+        "metadata": metadata,
+    }
+    handle = AgentRunHandle(
+        run_id=run_id,
+        task_id=task.task_id,
+        runtime=runtime_name,
+        session_id=session_id,
+        capabilities={},
+    )
+    result = AgentRunResult(
+        run_id=run_id,
+        task_id=task.task_id,
+        runtime=runtime_name,
+        session_id=session_id,
+        status=result_status,
+        output="",
+        events=(event,),
+        started_at_ms=started_at_ms,
+        ended_at_ms=ended_at_ms,
+        cost_usd=0.0,
+        resolved_model=task.model,
+        result_hash=_json_sha256(result_payload),
+        token_usage={},
+        metadata=metadata,
+    )
+    return RuntimeExecution(handle=handle, events=(event,), result=result)
+
+
+def _worker_status(result: AgentRunResult) -> str:
+    status = str(result.status or "").strip().lower()
+    if status in {"completed", "passed", "success", "succeeded"}:
+        return "passed"
+    if status in {"cancelled", "canceled"}:
+        return "cancelled"
+    if _runtime_timed_out(result):
+        return "timeout"
+    return "failed"
+
+
+def _agent_run_result_payload(result: AgentRunResult) -> dict[str, Any]:
+    payload = result.to_dict()
+    payload["metadata"] = {
+        key: result.metadata[key]
+        for key in ("returncode", "failure_reason")
+        if key in result.metadata
+    }
+    return payload
+
+
+def _runtime_timed_out(result: AgentRunResult) -> bool:
+    if str(result.status or "").strip().lower() == "timeout":
+        return True
+    if _int(result.metadata.get("returncode")) == 124:
+        return True
+    reasons = [result.metadata.get("failure_reason")]
+    reasons.extend(event.payload.get("reason") for event in result.events)
+    return any(
+        "timeout" in str(value or "").strip().lower()
+        for value in reasons
+    )
+
+
+def _runtime_error(
+    result: AgentRunResult,
+    *,
+    status: str,
+    timeout_s: int = 0,
+) -> str | None:
+    if status == "passed":
+        return None
+    if status == "timeout":
+        return f"timeout after {timeout_s}s"
+    for value in (
+        result.metadata.get("error"),
+        result.metadata.get("stderr"),
+        *(
+            item
+            for event in reversed(result.events)
+            for item in (
+                event.payload.get("error"),
+                event.payload.get("reason"),
+            )
+        ),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    if status == "cancelled":
+        return "runtime cancelled"
+    return f"runtime ended with status={result.status}"
 
 
 def cleanup_orphaned_agentic_workers(
@@ -258,15 +652,27 @@ def cleanup_orphaned_agentic_workers(
     now_s: int | float,
     is_pid_alive: PidProbe | None = None,
     terminate: Terminator | None = None,
+    process_create_time: Callable[[int], float | None] | None = None,
+    exit_wait_s: float = 5.0,
 ) -> dict[str, Any]:
     """Terminate still-running workers that exceeded their timeout.
 
     Fan-out workers record their own refs; this cleanup path handles process
     records from longer-lived workers that outlast their gate.
+
+    Termination is fail-closed: only records that explicitly declare
+    ``termination_scope == "dedicated_process"`` are eligible for kill.
+    ``run_agentic_worker`` executes in-process and records
+    ``termination_scope == "shared_host"`` with ``pid=None``, so its workers
+    (and legacy records lacking a scope, whose recorded pid is the shared
+    host process) are always skipped rather than risk terminating the host.
+    This path stays inert until a spawner that launches workers as dedicated
+    processes records that scope.
     """
     cwd_path = Path(cwd).resolve()
     pid_alive = is_pid_alive or _pid_alive
     kill = terminate or _terminate
+    create_time = process_create_time or _process_create_time
     cleaned: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -276,6 +682,9 @@ def cleanup_orphaned_agentic_workers(
         pid = _int(worker.get("pid"))
         timeout_s = _int(worker.get("timeout_s"))
         started_at_s = _float(worker.get("started_at_s"))
+        recorded_create_time_s = _float(worker.get("pid_create_time_s"))
+        termination_scope = str(worker.get("termination_scope") or "").strip().lower()
+        worker_status = str(worker.get("status") or "").strip().lower()
         budget_usd = worker.get("budget_usd")
         log_ref = str(worker.get("log_ref") or worker_log_ref(
             cwd=cwd_path,
@@ -290,8 +699,25 @@ def cleanup_orphaned_agentic_workers(
             "budget_usd": budget_usd,
             "log_ref": log_ref,
         }
+        if worker_status and worker_status != "running":
+            skipped.append({
+                **base,
+                "reason": "worker_not_running",
+                "worker_status": worker_status,
+            })
+            continue
         if pid is None or timeout_s is None or started_at_s is None:
             skipped.append({**base, "reason": "missing_worker_runtime_fields"})
+            continue
+        if termination_scope != "dedicated_process":
+            skipped.append({
+                **base,
+                "reason": "termination_scope_not_dedicated",
+                "termination_scope": termination_scope or None,
+            })
+            continue
+        if pid == os.getpid():
+            skipped.append({**base, "reason": "worker_hosted_by_cleanup_process"})
             continue
         if not pid_alive(pid):
             skipped.append({**base, "reason": "pid_not_alive"})
@@ -300,12 +726,30 @@ def cleanup_orphaned_agentic_workers(
         if elapsed_s <= timeout_s:
             active.append({**base, "elapsed_s": elapsed_s})
             continue
-        try:
-            kill(pid, signal.SIGTERM)
-            status = "terminated"
-        except OSError as e:
-            status = "terminate_failed"
-            base["error"] = str(e)
+        if recorded_create_time_s is None:
+            skipped.append({**base, "reason": "pid_identity_unverified"})
+            continue
+        observed_create_time_s = create_time(pid)
+        if observed_create_time_s is None:
+            skipped.append({**base, "reason": "pid_identity_unverified"})
+            continue
+        if abs(observed_create_time_s - recorded_create_time_s) > 1.0:
+            skipped.append({
+                **base,
+                "reason": "pid_identity_mismatch",
+                "recorded_create_time_s": recorded_create_time_s,
+                "observed_create_time_s": observed_create_time_s,
+            })
+            continue
+        status = _terminate_and_confirm(
+            pid,
+            pid_alive=pid_alive,
+            kill=kill,
+            exit_wait_s=exit_wait_s,
+            base=base,
+            recorded_create_time_s=recorded_create_time_s,
+            process_create_time=create_time,
+        )
         cleaned.append({
             **base,
             "status": status,
@@ -313,15 +757,90 @@ def cleanup_orphaned_agentic_workers(
             "elapsed_s": elapsed_s,
         })
 
+    unverifiable = [
+        entry
+        for entry in skipped
+        if entry.get("reason") in {
+            "missing_worker_runtime_fields",
+            "termination_scope_not_dedicated",
+            "pid_identity_unverified",
+            "pid_identity_mismatch",
+        }
+    ]
+    if unverifiable and not cleaned and not active:
+        status = "cleanup_skipped_unverifiable_workers"
+    elif any(entry.get("status") != "terminated" for entry in cleaned):
+        status = "cleanup_incomplete"
+    else:
+        status = "cleanup_completed"
     return {
         "schema_version": "agentic-worker-cleanup/v1",
-        "status": "cleanup_completed",
+        "status": status,
         "task_id": task_id,
         "cwd": str(cwd_path),
         "cleaned": cleaned,
         "active": active,
         "skipped": skipped,
+        "cleaned_count": len(cleaned),
+        "active_count": len(active),
+        "skipped_count": len(skipped),
     }
+
+
+def _terminate_and_confirm(
+    pid: int,
+    *,
+    pid_alive: PidProbe,
+    kill: Terminator,
+    exit_wait_s: float,
+    base: dict[str, Any],
+    recorded_create_time_s: float,
+    process_create_time: Callable[[int], float | None],
+) -> str:
+    try:
+        kill(pid, signal.SIGTERM)
+    except OSError as e:
+        base["error"] = str(e)
+        return "terminate_failed"
+    if _confirm_exit(pid, pid_alive=pid_alive, exit_wait_s=exit_wait_s):
+        return "terminated"
+    observed_create_time_s = process_create_time(pid)
+    if observed_create_time_s is None:
+        if not pid_alive(pid):
+            return "terminated"
+        return "termination_unconfirmed"
+    if abs(observed_create_time_s - recorded_create_time_s) > 1.0:
+        return "terminated"
+    try:
+        kill(pid, signal.SIGKILL)
+    except OSError as e:
+        base["error"] = str(e)
+        return "terminate_failed"
+    if _confirm_exit(pid, pid_alive=pid_alive, exit_wait_s=exit_wait_s):
+        return "terminated"
+    return "termination_unconfirmed"
+
+
+def _confirm_exit(
+    pid: int,
+    *,
+    pid_alive: PidProbe,
+    exit_wait_s: float,
+) -> bool:
+    deadline = time.monotonic() + max(0.0, float(exit_wait_s))
+    while True:
+        if not pid_alive(pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _process_create_time(pid: int) -> float | None:
+    try:
+        return float(psutil.Process(int(pid)).create_time())
+    except (psutil.Error, ValueError, TypeError, OSError):
+        return None
 
 
 def discover_agentic_worker_runtime_records(
@@ -361,6 +880,8 @@ def cleanup_agentic_workers_for_task(
     now_s: int | float,
     is_pid_alive: PidProbe | None = None,
     terminate: Terminator | None = None,
+    process_create_time: Callable[[int], float | None] | None = None,
+    exit_wait_s: float = 5.0,
 ) -> dict[str, Any]:
     """Discover and clean stale persisted worker runtime records for a task."""
     return cleanup_orphaned_agentic_workers(
@@ -370,6 +891,8 @@ def cleanup_agentic_workers_for_task(
         now_s=now_s,
         is_pid_alive=is_pid_alive,
         terminate=terminate,
+        process_create_time=process_create_time,
+        exit_wait_s=exit_wait_s,
     )
 
 
@@ -395,6 +918,17 @@ def discover_agentic_worker_receipts(
         worker_id = str(output.get("worker_id") or worker_dir.name)
         role = str(output.get("role") or worker_id)
         status = str(output.get("status") or "failed")
+        agent_run_result = (
+            output.get("agent_run_result")
+            if isinstance(output.get("agent_run_result"), dict)
+            else {}
+        )
+        runtime = str(
+            output.get("runtime")
+            or output.get("agent_runtime")
+            or agent_run_result.get("runtime")
+            or "runtime"
+        )
         output_ref = output_path.resolve().relative_to(cwd_path).as_posix()
         transcript_ref = _existing_ref(cwd_path, worker_dir / "transcript.jsonl")
         stdout_ref = _existing_ref(cwd_path, worker_dir / "stdout.txt")
@@ -413,7 +947,64 @@ def discover_agentic_worker_receipts(
             "decision": "accept" if status in {"passed", "accepted", "success"} else "revise",
             "severity": "none" if status in {"passed", "accepted", "success"} else "important",
             "objections": [] if status in {"passed", "accepted", "success"} else [str(output.get("error") or "worker did not pass")],
-            "agent_runtime": str(output.get("agent_runtime") or "claude_code"),
+            "agent_runtime": runtime,
+            "runtime": runtime,
+            "runtime_run_id": str(
+                output.get("runtime_run_id")
+                or agent_run_result.get("run_id")
+                or ""
+            ),
+            "session_id": str(
+                output.get("session_id")
+                or agent_run_result.get("session_id")
+                or ""
+            ),
+            "resolved_model": str(
+                output.get("resolved_model")
+                or agent_run_result.get("resolved_model")
+                or ""
+            ),
+            "model": str(
+                output.get("resolved_model")
+                or agent_run_result.get("resolved_model")
+                or ""
+            ),
+            "cost_usd": output.get(
+                "cost_usd",
+                agent_run_result.get("cost_usd", 0.0),
+            ),
+            "token_usage": dict(
+                output.get("token_usage")
+                if isinstance(output.get("token_usage"), dict)
+                else agent_run_result.get("token_usage")
+                if isinstance(agent_run_result.get("token_usage"), dict)
+                else {}
+            ),
+            "result_hash": str(
+                output.get("result_hash")
+                or agent_run_result.get("result_hash")
+                or ""
+            ),
+            "runtime_status": str(
+                output.get("runtime_status")
+                or agent_run_result.get("status")
+                or ""
+            ),
+            "model_provenance": str(
+                output.get("model_provenance")
+                or agent_run_result.get("model_provenance")
+                or ""
+            ),
+            "cost_provenance": str(
+                output.get("cost_provenance")
+                or agent_run_result.get("cost_provenance")
+                or ""
+            ),
+            "token_provenance": str(
+                output.get("token_provenance")
+                or agent_run_result.get("token_provenance")
+                or ""
+            ),
             "agent_id": str(output.get("agent_id") or worker_id),
             "permission_mode": str(output.get("permission_mode") or "readOnly"),
             "tool_pins": _list_or_default(output.get("tool_pins"), ["Read"]),
@@ -470,12 +1061,14 @@ def _file_sha256(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
 
 
-def _decode_timeout_stream(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
+def _json_sha256(payload: Mapping[str, Any]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _int(value: Any) -> int | None:

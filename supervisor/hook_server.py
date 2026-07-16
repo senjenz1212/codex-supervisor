@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import time
 import asyncio
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
 from fastapi import FastAPI, Request
 
@@ -33,24 +33,16 @@ from .target.protocol import TargetAgentAdapter
 from .hook_rules import detect_destructive
 from .desktop_visibility import desktop_status_health
 
-if TYPE_CHECKING:
-    # anthropic is only needed by future LLM critique paths. Importing it
-    # under TYPE_CHECKING keeps the hook server importable in test/sandbox
-    # environments that don't have the SDK installed.
-    from anthropic import AsyncAnthropic
-
 log = logging.getLogger(__name__)
 
 
 def build_app(cfg: Config, state: State, *,
               target_adapter: TargetAgentAdapter,
-              anthropic: "AsyncAnthropic | None" = None,
               telegram_notifier: Any | None = None,
               hook_critic: Any | None = None,
               on_hook_seen=None) -> FastAPI:
     """Build the FastAPI app. `target_adapter` is required — the server is
-    target-aware by construction. `anthropic` is reserved for the LLM-critique
-    path added in a later cycle."""
+    target-aware by construction. Model critique arrives through `hook_critic`."""
     app = FastAPI(title="agent-supervisor hooks")
 
     async def _handle_hook(req: Request) -> dict[str, Any]:

@@ -37,6 +37,8 @@ def test_direct_anthropic_key_fd_rejects_invalid_descriptor(monkeypatch) -> None
 def test_direct_anthropic_env_scrubs_proxy_and_oauth_routes() -> None:
     env = direct_anthropic_env(
         {
+            "HOME": "/tmp/home",
+            "PATH": "/usr/bin",
             "ANTHROPIC_API_KEY": "direct-key",
             "ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com",
             "ANTHROPIC_AUTH_TOKEN": "proxy-token",
@@ -45,17 +47,29 @@ def test_direct_anthropic_env_scrubs_proxy_and_oauth_routes() -> None:
             "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",
             "CLAUDE_CODE_USE_BEDROCK": "1",
             "OPENAI_BASE_URL": "https://uai-litellm.internal.unity.com/v1",
+            "OPENAI_API_KEY": "other-provider-secret",
+            "GITHUB_TOKEN": "github-secret",
+            "ARBITRARY_SECRET": "do-not-forward",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+            "CLAUDE_CODE_EXTRA_BODY": '{"thinking":{"type":"adaptive"}}',
         }
     )
 
     assert env["ANTHROPIC_API_KEY"] == "direct-key"
+    assert env["HOME"] == "/tmp/home"
+    assert env["PATH"] == "/usr/bin"
     assert "ANTHROPIC_BASE_URL" not in env
     assert "ANTHROPIC_AUTH_TOKEN" not in env
     assert "ANTHROPIC_TOKEN" not in env
     assert "ANTHROPIC_VERTEX_BASE_URL" not in env
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
     assert "CLAUDE_CODE_USE_BEDROCK" not in env
-    assert env["OPENAI_BASE_URL"] == "https://uai-litellm.internal.unity.com/v1"
+    assert "OPENAI_BASE_URL" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "GITHUB_TOKEN" not in env
+    assert "ARBITRARY_SECRET" not in env
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == '{"thinking":{"type":"adaptive"}}'
 
 
 def test_configure_direct_anthropic_process_env_preserves_other_providers(
@@ -75,7 +89,7 @@ def test_configure_direct_anthropic_process_env_preserves_other_providers(
         assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
         assert os.environ["OPENAI_API_KEY"] == "litellm-key"
         assert child_env["ANTHROPIC_API_KEY"] == "direct-key"
-        assert child_env["OPENAI_API_KEY"] == "litellm-key"
+        assert "OPENAI_API_KEY" not in child_env
     finally:
         configure_direct_anthropic_process_env()
 
@@ -112,3 +126,38 @@ def test_anthropic_model_detection_is_narrow() -> None:
     assert not is_anthropic_model("claudette")
     assert not is_anthropic_model("")
     assert not is_anthropic_model(None)
+
+
+def test_direct_anthropic_env_keeps_supervisor_isolation_layers() -> None:
+    env = direct_anthropic_env(
+        {
+            "HOME": "/tmp/home",
+            "SUPERVISOR_LAUNCH_ID": "launch-1",
+            "SUPERVISOR_LAUNCH_NONCE": "nonce-1",
+            "SUPERVISOR_WORKFLOW_RUN_ID": "workflow-run-1",
+            "SUPERVISOR_WORKFLOW_TASK_ID": "workflow-task-1",
+            "SUPERVISOR_TARGET_KIND": "claude_code",
+            "SUPERVISOR_MEMORY_ROOT": "/tmp/isolated/memory",
+            "SUPERVISOR_LESSON_ROOT": "/tmp/isolated/lessons",
+            "XDG_CONFIG_HOME": "/tmp/isolated/config",
+            "XDG_CACHE_HOME": "/tmp/isolated/cache",
+            "ANTHROPIC_BASE_URL": "https://proxy.example",
+            "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL": "claude-opus-4-8",
+            "OPENAI_API_KEY": "other-provider-secret",
+            "GITHUB_TOKEN": "github-secret",
+        }
+    )
+
+    assert env["SUPERVISOR_LAUNCH_ID"] == "launch-1"
+    assert env["SUPERVISOR_LAUNCH_NONCE"] == "nonce-1"
+    assert env["SUPERVISOR_WORKFLOW_RUN_ID"] == "workflow-run-1"
+    assert env["SUPERVISOR_WORKFLOW_TASK_ID"] == "workflow-task-1"
+    assert env["SUPERVISOR_TARGET_KIND"] == "claude_code"
+    assert env["SUPERVISOR_MEMORY_ROOT"] == "/tmp/isolated/memory"
+    assert env["SUPERVISOR_LESSON_ROOT"] == "/tmp/isolated/lessons"
+    assert env["XDG_CONFIG_HOME"] == "/tmp/isolated/config"
+    assert env["XDG_CACHE_HOME"] == "/tmp/isolated/cache"
+    assert "ANTHROPIC_BASE_URL" not in env
+    assert "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "GITHUB_TOKEN" not in env

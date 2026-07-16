@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import fields
+from pathlib import Path
+from typing import Any
 
 import pytest
 
+from supervisor.agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    ClaudeCodeRuntime,
+    CodexRuntime,
+    RuntimeTransportResult,
+)
 from supervisor.dual_agent_lead import (
     HANDOFF_PACKET_SCHEMA_VERSION,
     CLAUDE_PRIMARY_MODEL,
@@ -16,14 +29,17 @@ from supervisor.dual_agent_lead import (
     PlanningArtifact,
     build_claude_lead_command,
     build_handoff_packet,
+    build_lead_agent_task,
     build_lead_prompt,
     compute_file_sha256,
     invoke_claude_lead,
+    invoke_lead,
     verify_planning_artifact_boundaries,
     select_lead_effort,
     select_lead_model,
     write_handoff_packet,
 )
+from supervisor.runtime_execution import RuntimeExecution, runtime_task_runner
 
 
 def _outcome_block(**overrides: object) -> str:
@@ -46,6 +62,80 @@ def _outcome_block(**overrides: object) -> str:
     }
     payload.update(overrides)
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
+
+
+class _RecordingLeadTransport:
+    def __init__(self, transcript: str) -> None:
+        self.transcript = transcript
+        self.started: list[dict[str, Any]] = []
+        self.cancelled: list[str] = []
+        self._events: dict[str, list[dict[str, Any]]] = {}
+
+    async def start(
+        self,
+        *,
+        run_id: str,
+        argv: tuple[str, ...],
+        cwd: Path,
+        env: dict[str, str],
+        timeout_s: float,
+        metadata: Mapping[str, Any],
+    ) -> str:
+        self.started.append({
+            "run_id": run_id,
+            "argv": argv,
+            "cwd": cwd,
+            "env": env,
+            "timeout_s": timeout_s,
+            "metadata": dict(metadata),
+        })
+        self._events[run_id] = [
+            {"type": "run.started", "session_id": f"session-{run_id}"},
+            {"type": "agent_message", "message": self.transcript},
+            {"type": "run.completed"},
+        ]
+        return run_id
+
+    async def resume(
+        self,
+        token: str,
+        *,
+        argv: tuple[str, ...],
+        cwd: Path,
+        env: dict[str, str],
+        timeout_s: float,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        raise AssertionError("resume is not expected")
+
+    async def cancel(self, token: str) -> None:
+        self.cancelled.append(token)
+
+    async def stream(self, token: str) -> AsyncIterator[dict[str, Any]]:
+        for event in self._events[token]:
+            await asyncio.sleep(0)
+            yield event
+
+    async def collect(self, token: str) -> RuntimeTransportResult:
+        return RuntimeTransportResult(
+            returncode=0,
+            stdout="",
+            stderr="",
+            raw_events=tuple(self._events[token]),
+            started_at_ms=100,
+            ended_at_ms=160,
+            cost_usd=0.42,
+            resolved_model="provider-neutral-model-v1",
+            token_usage={
+                "input_tokens": 60,
+                "output_tokens": 7,
+                "tokens_in": 60,
+                "tokens_out": 7,
+            },
+            model_provenance="fake_transport.model",
+            cost_provenance="fake_transport.cost",
+            token_provenance="fake_transport.usage",
+        )
 
 
 def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_path):
@@ -118,6 +208,297 @@ def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
     assert select_lead_effort("prd_review", quality="best") == "high"
     assert select_lead_effort("execution", quality="balanced") == "high"
     assert select_lead_effort("prd_review", quality="cheap") == "low"
+
+
+def test_runtime_lead_invocation_has_identical_schema_through_claude_and_codex(
+    tmp_path,
+):
+    transcript = "lead prose\n" + _outcome_block()
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD gate.",
+        cwd=tmp_path,
+        expected_specialists=("Planner",),
+        expected_decisions=("keep the gate narrow",),
+        expected_objections=(),
+        model="provider-neutral-request-model",
+        execution_mode="operational",
+    )
+    provider_cases = (
+        (ClaudeCodeRuntime, ("claude", "-p")),
+        (CodexRuntime, ("codex", "exec")),
+    )
+    agent_task = build_lead_agent_task(request)
+    assert agent_task.model == "provider-neutral-request-model"
+    assert agent_task.instruction == build_lead_prompt(request)
+    results = []
+    outcome_schemas = []
+
+    def legacy_runner_must_not_run(*args, **kwargs):
+        raise AssertionError("runtime path must not call the legacy subprocess edge")
+
+    for runtime_cls, argv_prefix in provider_cases:
+        transport = _RecordingLeadTransport(transcript)
+        result = invoke_lead(
+            request,
+            runner=legacy_runner_must_not_run,
+            runtime_runner=runtime_task_runner(
+                lambda runtime_cls=runtime_cls, transport=transport: runtime_cls(
+                    transport=transport
+                )
+            ),
+        )
+
+        assert transport.started[0]["argv"][:2] == argv_prefix
+        assert transport.started[0]["metadata"]["lead_invocation"]["gate"] == "prd_review"
+        assert transport.started[0]["metadata"]["execution_mode"] == "operational"
+        assert transport.started[0]["metadata"]["permission_mode"] == "bypassPermissions"
+        assert result.probe.ok
+        assert result.outcome is not None
+        assert result.command == []
+        assert result.transcript == transcript
+        assert result.model == "provider-neutral-model-v1"
+        assert result.cost_usd == 0.42
+        assert result.tokens_in == 60
+        assert result.tokens_out == 7
+        assert result.model_provenance == "fake_transport.model"
+        assert result.cost_provenance == "fake_transport.cost"
+        assert result.token_provenance == "fake_transport.usage"
+        assert result.runtime_result_hash
+        assert result.runtime_duration_ms == 60
+        assert result.agent_run_result is not None
+        results.append(result)
+        outcome_schemas.append(set(result.outcome.model_dump()))
+
+    assert {result.runtime for result in results} == {"claude_code", "codex"}
+    assert [field.name for field in fields(results[0])] == [
+        field.name for field in fields(results[1])
+    ]
+    assert outcome_schemas[0] == outcome_schemas[1]
+    assert results[0].outcome.model_dump() == results[1].outcome.model_dump()
+
+
+def test_operational_lead_fails_before_legacy_runner_without_runtime_injection(
+    tmp_path,
+):
+    legacy_calls = []
+
+    def legacy_runner(*args, **kwargs):
+        legacy_calls.append((args, kwargs))
+        raise AssertionError("operational mode must not enter the legacy edge")
+
+    request = LeadInvocationRequest(
+        task_id="operational-lead",
+        gate="execution",
+        instruction="Run through the injected provider-neutral runtime.",
+        cwd=tmp_path,
+        execution_mode="operational",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="operational lead execution requires an injected RuntimeTaskRunner",
+    ):
+        invoke_lead(request, runner=legacy_runner)
+
+    assert legacy_calls == []
+
+
+def test_lead_execution_mode_rejects_unknown_provider_edge_mode(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="invalid-lead-mode",
+        gate="execution",
+        instruction="Reject an ambiguous execution mode.",
+        cwd=tmp_path,
+        execution_mode="automatic",  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="unsupported lead execution_mode"):
+        invoke_lead(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("gate", "operator_env", "expected_pin", "expected_effort"),
+    (
+        (
+            "prd_review",
+            {"CODEX_SUPERVISOR_PLANNING_OPUS_MODEL": "claude-opus-4-6"},
+            "claude-opus-4-6",
+            "max",
+        ),
+        ("execution", {}, None, "xhigh"),
+    ),
+)
+async def test_runtime_claude_opus_environment_uses_lead_gate_metadata(
+    tmp_path,
+    gate,
+    operator_env,
+    expected_pin,
+    expected_effort,
+):
+    request = LeadInvocationRequest(
+        task_id=f"runtime-opus-{gate}",
+        gate=gate,
+        instruction="Exercise the runtime environment boundary.",
+        cwd=tmp_path,
+        model="opus",
+        explicit_env={
+            "ANTHROPIC_API_KEY": "direct-key",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": "stale-pin",
+            "CLAUDE_CODE_EXTRA_BODY": '{"thinking":{"type":"old"}}',
+            "OPENAI_API_KEY": "other-provider-secret",
+            **operator_env,
+        },
+    )
+    task = build_lead_agent_task(request)
+    transport = _RecordingLeadTransport(
+        "lead prose\n" + _outcome_block(task_id=request.task_id)
+    )
+
+    await ClaudeCodeRuntime(transport=transport).start(task)
+
+    assert task.metadata["lead_invocation"]["gate"] == gate
+    child_env = transport.started[0]["env"]
+    assert child_env["ANTHROPIC_API_KEY"] == "direct-key"
+    assert child_env.get("ANTHROPIC_DEFAULT_OPUS_MODEL") == expected_pin
+    assert json.loads(child_env["CLAUDE_CODE_EXTRA_BODY"]) == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": expected_effort},
+    }
+    assert "OPENAI_API_KEY" not in child_env
+    assert not any(key in child_env for key in operator_env)
+
+
+def test_runtime_lead_error_cancels_started_runtime_and_returns_failure_probe(
+    tmp_path,
+):
+    class FailingRuntime:
+        kind = "failing-runtime"
+
+        def __init__(self) -> None:
+            self.cancelled: list[str] = []
+
+        async def start(self, task: AgentTask) -> AgentRunHandle:
+            return AgentRunHandle(
+                run_id="runtime-error-run",
+                task_id=task.task_id,
+                runtime=self.kind,
+                session_id="runtime-error-session",
+                capabilities={"cancel": True},
+            )
+
+        async def resume(
+            self,
+            handle: AgentRunHandle,
+            instruction: str,
+        ) -> None:
+            raise AssertionError("resume is not expected")
+
+        async def cancel(self, handle: AgentRunHandle) -> None:
+            self.cancelled.append(handle.run_id)
+
+        async def stream(self, handle: AgentRunHandle):
+            if False:
+                yield
+            raise RuntimeError("provider stream failed")
+
+        async def collect(self, handle: AgentRunHandle) -> AgentRunResult:
+            raise AssertionError("collect is not expected")
+
+    runtime = FailingRuntime()
+    result = invoke_lead(
+        LeadInvocationRequest(
+            task_id="slice0-lead-error",
+            gate="intent",
+            instruction="Review intent.",
+            cwd=tmp_path,
+            model="provider-neutral-request-model",
+        ),
+        runtime_runner=runtime_task_runner(lambda: runtime),
+    )
+
+    assert runtime.cancelled == ["runtime-error-run"]
+    assert not result.probe.ok
+    assert result.probe.reason == "lead_invocation_failed"
+    assert result.probe.details == {
+        "error_type": "RuntimeError",
+        "error": "provider stream failed",
+    }
+    assert result.command == []
+
+
+def test_runtime_lead_cancelled_result_preserves_usage_and_provenance(tmp_path):
+    handle = AgentRunHandle(
+        run_id="cancelled-run",
+        task_id="slice0-lead-cancelled",
+        runtime="codex",
+        session_id="cancelled-session",
+        capabilities={"cancel": True},
+    )
+    agent_result = AgentRunResult(
+        run_id=handle.run_id,
+        task_id=handle.task_id,
+        runtime=handle.runtime,
+        session_id=handle.session_id,
+        status="cancelled",
+        output="partial runtime output",
+        events=(),
+        started_at_ms=100,
+        ended_at_ms=125,
+        cost_usd=0.07,
+        resolved_model="gpt-runtime-model",
+        result_hash="cancelled-result-hash",
+        token_usage={"tokens_in": 9, "tokens_out": 2},
+        model_provenance="cancelled.model",
+        cost_provenance="cancelled.cost",
+        token_provenance="cancelled.usage",
+        metadata={"returncode": 130, "stderr": "cancelled by caller"},
+    )
+
+    result = invoke_lead(
+        LeadInvocationRequest(
+            task_id=handle.task_id,
+            gate="execution",
+            instruction="Implement the task.",
+            cwd=tmp_path,
+            model="gpt-runtime-model",
+        ),
+        runtime_runner=lambda task: RuntimeExecution(
+            handle=handle,
+            events=(),
+            result=agent_result,
+        ),
+    )
+
+    assert result.probe.reason == "lead_invocation_cancelled"
+    assert result.probe.details["runtime_status"] == "cancelled"
+    assert result.cost_usd == 0.07
+    assert result.tokens_in == 9
+    assert result.tokens_out == 2
+    assert result.model_provenance == "cancelled.model"
+    assert result.cost_provenance == "cancelled.cost"
+    assert result.token_provenance == "cancelled.usage"
+    assert result.runtime_result_hash == "cancelled-result-hash"
+    assert result.agent_run_result is agent_result
+
+
+def test_runtime_lead_does_not_swallow_caller_cancellation(tmp_path):
+    def cancelled_runner(task: AgentTask) -> RuntimeExecution:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        invoke_lead(
+            LeadInvocationRequest(
+                task_id="slice0-lead-caller-cancelled",
+                gate="intent",
+                instruction="Review intent.",
+                cwd=tmp_path,
+                model="provider-neutral-request-model",
+            ),
+            runtime_runner=cancelled_runner,
+        )
 
 
 def test_invoke_claude_lead_parses_json_output_and_scrubs_proxy_route(tmp_path):
@@ -522,6 +903,36 @@ def test_execution_gate_prompt_requires_real_implementation_diff(tmp_path):
     assert "The supervisor runtime floor will rerun those tests" in execution_prompt
     assert "IMPLEMENTATION CONTRACT (execution gate)" not in review_prompt
     assert "Keep execution context bounded" not in review_prompt
+
+
+def test_execution_gate_corrective_contract_requires_explicit_flag(tmp_path):
+    quoting_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction=(
+            "Implement the accepted issue. The runner appends "
+            "'Corrective retry:' text when a retry happens."
+        ),
+        cwd=tmp_path,
+    )
+    corrective_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction=(
+            "Implement the accepted issue."
+            "\n\nCorrective retry: return the required outcome block."
+        ),
+        cwd=tmp_path,
+        corrective_retry=True,
+    )
+
+    quoting_prompt = build_lead_prompt(quoting_request)
+    corrective_prompt = build_lead_prompt(corrective_request)
+
+    assert "IMPLEMENTATION CONTRACT (execution gate)" in quoting_prompt
+    assert "CORRECTIVE REPORT CONTRACT" not in quoting_prompt
+    assert "CORRECTIVE REPORT CONTRACT" in corrective_prompt
+    assert "IMPLEMENTATION CONTRACT (execution gate)" not in corrective_prompt
 
 
 def test_execution_gate_prompt_compacts_large_instruction_when_handoff_exists(tmp_path):

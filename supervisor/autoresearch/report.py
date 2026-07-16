@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 from statistics import median
-from typing import Iterable
+from pathlib import Path
+from typing import Any, Iterable, Mapping
 
+from ..claim_gate import (
+    ClaimGate,
+    EvidenceResolver,
+    LedgerVerificationResolver,
+    TrustedVerifierAttestors,
+)
 from .schema import AutoresearchValidationReport, sha256_json
 
 
@@ -27,7 +34,23 @@ def summarize_metric_trials(values: Iterable[float]) -> dict[str, float | int | 
     }
 
 
-def build_autoresearch_report(reports: Iterable[AutoresearchValidationReport]) -> dict:
+def build_autoresearch_report(
+    reports: Iterable[AutoresearchValidationReport],
+    *,
+    claim_evidence_bundle: Mapping[str, Any] | None = None,
+    claim_evidence_root: str | Path | None = None,
+    claim_evidence_resolver: EvidenceResolver | None = None,
+    ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
+) -> dict:
+    """Build a report whose claim authority is always explicit and verifiable.
+
+    No evidence is the normal report-only default.  That still emits a
+    ClaimGate receipt with both managed claim flags set to false, rather than
+    leaving downstream code to infer authority from their absence.  Production
+    callers may supply evidence only together with the resolvers needed for
+    ClaimGate to verify it.
+    """
     records = [report.to_payload() for report in reports]
     accepted = [record for record in records if record["validation_status"] == "accepted"]
     rejected = [record for record in records if record["validation_status"] == "rejected"]
@@ -52,8 +75,27 @@ def build_autoresearch_report(reports: Iterable[AutoresearchValidationReport]) -
             "operator_review_required": True,
         },
     }
-    payload["report_sha256"] = sha256_json(_without_report_sha(payload))
-    return payload
+    governed = ClaimGate.derive_report(
+        payload,
+        claim_evidence_bundle,
+        evidence_root=claim_evidence_root,
+        evidence_resolver=claim_evidence_resolver,
+        ledger_verification_resolver=ledger_verification_resolver,
+        trusted_verifier_attestors=trusted_verifier_attestors,
+    )
+    governed["report_sha256"] = autoresearch_report_sha256(governed)
+    return governed
+
+
+def autoresearch_report_sha256(
+    report: Mapping[str, Any],
+) -> str:
+    """Hash the immutable report body used by events and policy proposals."""
+    body = dict(report)
+    body.pop("report_sha256", None)
+    body.pop("event_ids", None)
+    body.pop("derived_policy_proposals", None)
+    return sha256_json(body)
 
 
 def _iqr(sorted_trials: list[float]) -> float:
@@ -89,9 +131,3 @@ def _recommendation(records: list[dict]) -> dict:
         "reason": "all_attempts_validated_report_only",
         "operator_review_required": True,
     }
-
-
-def _without_report_sha(payload: dict) -> dict:
-    clone = dict(payload)
-    clone.pop("report_sha256", None)
-    return clone

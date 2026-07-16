@@ -3,15 +3,23 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal, Mapping
 
 from .config import PLANNING_RUBRIC_MIN_THRESHOLD
 from .dual_agent import ProbeResult
 from .dual_agent_lead import PlanningArtifact, compute_file_sha256
+from .trace_graph import (
+    DecisionGradeValidator,
+    TraceClosureBinding,
+    TraceGraph,
+    TraceGraphError,
+    TracePlanningArtifactRef,
+)
 
 
-PLANNING_VALIDATOR_VERSION = "1.1.0"
+PLANNING_VALIDATOR_VERSION = "1.4.0"
 PlanningRubricUnavailablePolicy = Literal["block", "proceed_degraded"]
 
 REQUIRED_PLANNING_ARTIFACTS_BY_GATE: dict[str, tuple[str, ...]] = {
@@ -182,6 +190,37 @@ def required_planning_kinds_for_gate(gate: str) -> tuple[str, ...]:
     return REQUIRED_PLANNING_ARTIFACTS_BY_GATE.get(str(gate), ())
 
 
+def build_trace_closure_binding(
+    *,
+    task_id: str,
+    run_id: str,
+    gate: str,
+    planning_artifacts: Iterable[PlanningArtifact],
+) -> TraceClosureBinding:
+    """Hash the exact planning inputs that one trace decision authorizes."""
+    references: list[TracePlanningArtifactRef] = []
+    for artifact in planning_artifacts:
+        path = Path(artifact.path).expanduser()
+        if not path.exists() or not path.is_file():
+            raise TraceGraphError(
+                "trace closure planning artifact is not a readable file: "
+                f"{path}"
+            )
+        references.append(
+            TracePlanningArtifactRef(
+                kind=_normalise_kind(artifact.kind),
+                path=str(path.resolve()),
+                sha256=compute_file_sha256(path),
+            )
+        )
+    return TraceClosureBinding(
+        task_id=task_id,
+        run_id=run_id,
+        gate=gate,
+        planning_artifacts=tuple(references),
+    )
+
+
 def validate_planning_artifacts(
     planning_artifacts: Iterable[PlanningArtifact],
     *,
@@ -190,10 +229,17 @@ def validate_planning_artifacts(
     rubric_threshold: float = 0.6,
     rubric_unavailable_policy: PlanningRubricUnavailablePolicy = "block",
     rubric_runner: Callable[[dict[str, str], tuple[str, ...], float], PlanningRubricResult | None] | None = None,
+    trace_closure_required: bool = False,
+    trace_graph: TraceGraph | None = None,
+    trace_now: datetime | None = None,
+    trace_waiver_keys: Mapping[str, bytes | str] | None = None,
+    trace_binding: TraceClosureBinding | None = None,
+    trace_decision_grade_validator: DecisionGradeValidator | None = None,
 ) -> PlanningValidationResult:
+    planning_artifact_list = tuple(planning_artifacts)
     required = tuple(_normalise_kind(kind) for kind in required_kinds)
     by_kind: dict[str, PlanningArtifact] = {}
-    for artifact in planning_artifacts:
+    for artifact in planning_artifact_list:
         kind = _normalise_kind(artifact.kind)
         by_kind.setdefault(kind, artifact)
 
@@ -247,6 +293,70 @@ def validate_planning_artifacts(
         rubric_runner=rubric_runner,
     )
     checks["RUBRIC-001"] = _rubric_check(rubric)
+    if trace_graph is None and trace_closure_required:
+        checks["TRACE-001"] = _fail(
+            "TRACE-001",
+            "trace closure is required but no trace graph was supplied",
+        )
+    elif trace_graph is not None:
+        bound_binding = trace_graph.expected_binding
+        if (
+            trace_binding is not None
+            and bound_binding is not None
+            and trace_binding != bound_binding
+        ):
+            checks["TRACE-001"] = _fail(
+                "TRACE-001",
+                "trace closure binding differs from the graph-bound context",
+                details={
+                    "submitted_binding": trace_binding.to_dict(),
+                    "graph_bound_binding": bound_binding.to_dict(),
+                },
+            )
+        else:
+            expected_binding = trace_binding or bound_binding
+            if expected_binding is None:
+                checks["TRACE-001"] = _fail(
+                    "TRACE-001",
+                    "trace closure requires expected task_id, run_id, gate, "
+                    "and planning artifact refs/hashes",
+                )
+            else:
+                try:
+                    current_binding = build_trace_closure_binding(
+                        task_id=expected_binding.task_id,
+                        run_id=expected_binding.run_id,
+                        gate=str(gate or expected_binding.gate),
+                        planning_artifacts=planning_artifact_list,
+                    )
+                except TraceGraphError as exc:
+                    checks["TRACE-001"] = _fail(
+                        "TRACE-001",
+                        f"trace closure binding validation failed: {exc}",
+                    )
+                else:
+                    if current_binding != expected_binding:
+                        checks["TRACE-001"] = _fail(
+                            "TRACE-001",
+                            "trace closure binding differs from the current "
+                            "gate or planning artifact refs/hashes",
+                            details={
+                                "expected_binding": (
+                                    expected_binding.to_dict()
+                                ),
+                                "current_binding": current_binding.to_dict(),
+                            },
+                        )
+                    else:
+                        checks["TRACE-001"] = validate_trace_graph_closure(
+                            trace_graph,
+                            now=trace_now,
+                            waiver_keys=trace_waiver_keys,
+                            expected_binding=current_binding,
+                            decision_grade_validator=(
+                                trace_decision_grade_validator
+                            ),
+                        )
 
     return PlanningValidationResult(
         gate=gate,
@@ -254,6 +364,47 @@ def validate_planning_artifacts(
         artifacts=tuple(artifact_results),
         checks=checks,
         rubric=rubric,
+    )
+
+
+def validate_trace_graph_closure(
+    trace_graph: TraceGraph,
+    *,
+    now: datetime | None,
+    waiver_keys: Mapping[str, bytes | str] | None = None,
+    expected_binding: TraceClosureBinding,
+    decision_grade_validator: DecisionGradeValidator | None = None,
+) -> PlanningCheck:
+    """Adapt trace closure into the planning validator's fail-closed check."""
+    if now is None:
+        return _fail(
+            "TRACE-001",
+            "trace closure requires an explicit now",
+        )
+    try:
+        result = trace_graph.validate_closure(
+            now=now,
+            waiver_keys=waiver_keys,
+            expected_binding=expected_binding,
+            decision_grade_validator=decision_grade_validator,
+        )
+    except TraceGraphError as exc:
+        return _fail(
+            "TRACE-001",
+            f"trace closure validation failed: {exc}",
+        )
+    details = result.to_dict()
+    if result.ok:
+        return PlanningCheck(
+            check_id="TRACE-001",
+            status="pass",
+            message="trace graph closure accepted",
+            details=details,
+        )
+    return _fail(
+        "TRACE-001",
+        "trace graph closure blocked",
+        details=details,
     )
 
 

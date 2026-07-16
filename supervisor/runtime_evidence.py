@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+from hashlib import sha256
 import os
 import re
 import shlex
@@ -12,7 +13,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Callable
 
 from .dual_agent import ProbeResult
@@ -26,6 +27,38 @@ _SECRET_ENV_KEY_RE = re.compile(
     r"(api[_-]?key|token|secret|password|credential|auth|private[_-]?key)",
     re.IGNORECASE,
 )
+_RUNTIME_VALIDATION_EXCLUDED_NAMES = frozenset({
+    ".cache",
+    ".codex-supervisor",
+    ".git",
+    ".handoff",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".orchestrator-state",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".runtime-evidence",
+    ".scratch",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "runs",
+    "test-results",
+    "venv",
+})
+_RUNTIME_VALIDATION_PRESERVE_WITHOUT_GIT = frozenset({
+    ".handoff",
+    "build",
+    "dist",
+    "runs",
+    "test-results",
+})
+_RUNTIME_VALIDATION_VIRTUALENV_PREFIXES = (".venv-", "venv-")
 
 
 @dataclass(frozen=True)
@@ -94,6 +127,7 @@ def collect_runtime_evidence(
 
     diff_result = _current_changed_files(
         cwd_path,
+        task_id=task_id,
         baseline_head=baseline_head if baseline_ok else None,
         runner=runner,
     )
@@ -129,6 +163,10 @@ def collect_runtime_evidence(
             "derived_changed_files_from_runtime": bool(committed_changed_files)
             and _text_list(outcome_payload.get("changed_files")) == committed_changed_files,
             "name_status": diff_result.get("name_status", []),
+            "excluded_supervisor_files": diff_result.get(
+                "excluded_supervisor_files",
+                [],
+            ),
             "reason": diff_result.get("reason"),
         },
     ))
@@ -246,6 +284,7 @@ def _receipt(
 def _current_changed_files(
     cwd: Path,
     *,
+    task_id: str,
     baseline_head: str | None = None,
     runner: Runner,
 ) -> dict[str, Any]:
@@ -258,13 +297,25 @@ def _current_changed_files(
             "name_status": [],
             "stderr": _tail(status.stderr),
         }
+    tracked_refs: tuple[str, ...] = (
+        ("HEAD", baseline_head) if baseline_head else ("HEAD",)
+    )
+    tracked_paths = _git_tracked_repo_paths(cwd, runner=runner, refs=tracked_refs)
     entries: list[dict[str, str]] = []
     files: list[str] = []
+    excluded_supervisor_files: list[str] = []
     for line in status.stdout.splitlines():
         parsed = _parse_git_name_status_line(line, status_width=2)
         if parsed is None:
             continue
         code, path_text = parsed
+        if _is_supervisor_owned_runtime_path(
+            path_text,
+            task_id=task_id,
+            tracked_paths=tracked_paths,
+        ):
+            excluded_supervisor_files.append(path_text)
+            continue
         entries.append({"status": code, "path": path_text, "source": "worktree"})
         files.append(path_text)
 
@@ -284,6 +335,13 @@ def _current_changed_files(
                     if parsed is None:
                         continue
                     code, path_text = parsed
+                    if _is_supervisor_owned_runtime_path(
+                        path_text,
+                        task_id=task_id,
+                        tracked_paths=tracked_paths,
+                    ):
+                        excluded_supervisor_files.append(path_text)
+                        continue
                     committed_entries.append({
                         "status": code,
                         "path": path_text,
@@ -312,6 +370,9 @@ def _current_changed_files(
         )),
         "committed_changed_files": sorted(dict.fromkeys(committed_files)),
         "name_status": entries,
+        "excluded_supervisor_files": sorted(
+            dict.fromkeys(excluded_supervisor_files)
+        ),
     }
 
 
@@ -334,21 +395,145 @@ def _parse_git_name_status_line(line: str, *, status_width: int | None) -> tuple
     return code, path_text
 
 
+def _is_supervisor_owned_runtime_path(
+    path_text: str,
+    *,
+    task_id: str,
+    tracked_paths: frozenset[str] | None = None,
+) -> bool:
+    normalized = PurePath(path_text).as_posix()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized:
+        return False
+    tracked_known = tracked_paths is not None
+    tracked = tracked_paths if tracked_paths is not None else frozenset()
+    if normalized == ".handoff" or normalized.startswith(".handoff/"):
+        return (
+            tracked_known
+            and ".handoff" not in tracked
+            and normalized not in tracked
+        )
+    if normalized == "runs" or normalized.startswith("runs/"):
+        return (
+            tracked_known
+            and "runs" not in tracked
+            and normalized not in tracked
+        )
+    if normalized in {
+        "state.db",
+        "state.db-journal",
+        "state.db-shm",
+        "state.db-wal",
+    }:
+        return (
+            tracked_known
+            and "state.db" not in tracked
+            and normalized not in tracked
+        )
+    task_id_text = str(task_id)
+    if (
+        not task_id_text
+        or "/" in task_id_text
+        or "\\" in task_id_text
+        or task_id_text in {".", ".."}
+    ):
+        return False
+    task_prefix = f"docs/dual-agent/{task_id_text}/"
+    if not normalized.startswith(task_prefix):
+        return False
+    relative = normalized[len(task_prefix):]
+    if relative == "runtime-baseline-execution.json":
+        return tracked_known and normalized not in tracked
+    if relative == "release" or relative.startswith("release/"):
+        return (
+            tracked_known
+            and f"{task_prefix}release" not in tracked
+            and normalized not in tracked
+        )
+    return False
+
+
+def _git_tracked_repo_paths(
+    cwd: Path,
+    *,
+    runner: Runner,
+    refs: tuple[str, ...] = (),
+) -> frozenset[str] | None:
+    try:
+        completed = _run_git(cwd, ["ls-files", "-z"], runner=runner)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    listings = [completed.stdout or ""]
+    for ref in dict.fromkeys(ref for ref in refs if ref):
+        try:
+            tree = _run_git(
+                cwd,
+                ["ls-tree", "-r", "-z", "--name-only", ref],
+                runner=runner,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if tree.returncode == 0:
+            listings.append(tree.stdout or "")
+    tracked: set[str] = set()
+    for listing in listings:
+        for raw in listing.split("\0"):
+            if not raw:
+                continue
+            path = PurePath(raw)
+            if path.is_absolute():
+                continue
+            tracked.add(path.as_posix())
+            tracked.update(
+                parent.as_posix()
+                for parent in path.parents
+                if parent.as_posix() != "."
+            )
+    return frozenset(tracked)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _deliverable_checks(cwd: Path, changed_files: list[str]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     for relative in changed_files:
         path = cwd / relative
-        if not path.exists():
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_missing"})
+        try:
+            if not path.exists():
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_missing"})
+                continue
+            if not path.is_file():
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_not_file"})
+                continue
+            size = path.stat().st_size
+            if size <= 0:
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_empty", "size": size})
+                continue
+            digest = _sha256_file(path)
+        except OSError as exc:
+            checks.append({
+                "path": relative,
+                "status": "failed",
+                "reason": "runtime_deliverable_unreadable",
+                "error": f"{type(exc).__name__}: {exc}",
+            })
             continue
-        if not path.is_file():
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_not_file"})
-            continue
-        size = path.stat().st_size
-        if size <= 0:
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_empty", "size": size})
-            continue
-        checks.append({"path": relative, "status": "passed", "reason": "runtime_deliverable_present", "size": size})
+        checks.append({
+            "path": relative,
+            "status": "passed",
+            "reason": "runtime_deliverable_present",
+            "size": size,
+            "sha256": digest,
+        })
     return checks
 
 
@@ -1015,26 +1200,127 @@ def _pytest_environment_unavailable(completed: subprocess.CompletedProcess[str])
     )
 
 
+def _git_ignored_validation_paths(
+    cwd: Path,
+) -> frozenset[str] | None:
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+                "-z",
+            ],
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return frozenset(
+        Path(raw.rstrip("/")).as_posix()
+        for raw in completed.stdout.split("\0")
+        if raw and not Path(raw.rstrip("/")).is_absolute()
+    )
+
+
+def _git_tracked_validation_paths(
+    cwd: Path,
+) -> frozenset[str] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    tracked: set[str] = set()
+    for raw in completed.stdout.split("\0"):
+        if not raw:
+            continue
+        path = Path(raw)
+        if path.is_absolute():
+            continue
+        tracked.add(path.as_posix())
+        tracked.update(
+            parent.as_posix()
+            for parent in path.parents
+            if parent != Path(".")
+        )
+    return frozenset(tracked)
+
+
 def _prepare_validation_copy(cwd: Path) -> dict[str, Any]:
+    source_root = cwd.expanduser().resolve()
     temp_parent = Path(tempfile.mkdtemp(prefix="codex-runtime-evidence-"))
     validation_cwd = temp_parent / "worktree"
+    git_ignored_paths = _git_ignored_validation_paths(source_root)
+    git_tracked_paths = _git_tracked_validation_paths(source_root)
 
     def ignore(_directory: str, names: list[str]) -> set[str]:
-        ignored = {
-            ".git",
-            ".mypy_cache",
-            ".pytest_cache",
-            ".ruff_cache",
-            ".venv",
-            "__pycache__",
-            "node_modules",
+        relative_directory = Path(_directory).relative_to(source_root)
+        candidates = {
+            name: (relative_directory / name).as_posix()
+            for name in names
         }
+        ignored = {
+            name
+            for name, relative in candidates.items()
+            if name in _RUNTIME_VALIDATION_EXCLUDED_NAMES
+            and (
+                (
+                    git_tracked_paths is not None
+                    and relative not in git_tracked_paths
+                )
+                or (
+                    git_tracked_paths is None
+                    and name
+                    not in _RUNTIME_VALIDATION_PRESERVE_WITHOUT_GIT
+                )
+            )
+        }
+        ignored.update(
+            name
+            for name, relative in candidates.items()
+            if name.startswith(_RUNTIME_VALIDATION_VIRTUALENV_PREFIXES)
+            and (
+                git_tracked_paths is None
+                or relative not in git_tracked_paths
+            )
+        )
+        if git_ignored_paths is not None:
+            ignored.update(
+                name
+                for name, relative in candidates.items()
+                if relative in git_ignored_paths
+            )
         if Path(_directory).name == ".cortex":
-            ignored.add("runtime_workspaces")
+            runtime_workspaces = candidates.get("runtime_workspaces")
+            if (
+                runtime_workspaces is not None
+                and (
+                    git_tracked_paths is None
+                    or runtime_workspaces not in git_tracked_paths
+                )
+            ):
+                ignored.add("runtime_workspaces")
         return {name for name in names if name in ignored}
 
-    shutil.copytree(cwd, validation_cwd, ignore=ignore)
-    source_venv = cwd / ".venv"
+    shutil.copytree(source_root, validation_cwd, ignore=ignore)
+    source_venv = source_root / ".venv"
     if source_venv.exists():
         try:
             os.symlink(source_venv, validation_cwd / ".venv", target_is_directory=True)
@@ -1117,7 +1403,7 @@ def _normalise_pytest_targets(text: str, cwd: Path) -> str:
 
 _BARE_PYTEST_TARGET_RE = re.compile(
     r"^(?:(?P<class_name>[A-Za-z_][A-Za-z0-9_]*)::)?"
-    r"(?P<test_name>test_[A-Za-z0-9_]+)(?P<params>\\[.*\\])?$"
+    r"(?P<test_name>test_[A-Za-z0-9_]+)(?P<params>\[.*\])?$"
 )
 _PYTEST_LABEL_TEST_RE = re.compile(r"\b(?P<test_name>test_[A-Za-z0-9_]+)(?!\.py)(?P<params>\[[^\]]+\])?\b")
 _PYTEST_LABEL_FILE_RE = re.compile(r"\b(?P<path>(?:[\w.-]+/)*test_[\w.-]+\.py)(?::\d+)?\b")

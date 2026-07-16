@@ -29,6 +29,68 @@ ANTHROPIC_PROXY_ENV_KEYS: tuple[str, ...] = (
     "CLAUDE_CODE_USE_VERTEX",
 )
 
+DIRECT_ANTHROPIC_SAFE_CONTROL_ENV_KEYS: tuple[str, ...] = (
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "CLAUDE_CODE_EXTRA_BODY",
+)
+
+ANTHROPIC_OPERATOR_CONTROL_ENV_KEYS: tuple[str, ...] = (
+    "CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL",
+    "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL",
+)
+
+# Child processes receive only execution essentials plus the one provider key
+# they are authorized to use.  In particular, credentials for OpenAI, GitHub,
+# cloud providers, package registries, and arbitrary supervisor integrations
+# must never cross into a Claude child merely because they exist in the daemon.
+DIRECT_ANTHROPIC_CHILD_ENV_KEYS: tuple[str, ...] = (
+    "HOME",
+    "PATH",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "CLAUDE_CONFIG_DIR",
+    "SUPERVISOR_TARGET_KIND",
+    "SUPERVISOR_MEMORY_ROOT",
+    "SUPERVISOR_LESSON_ROOT",
+    *DIRECT_ANTHROPIC_SAFE_CONTROL_ENV_KEYS,
+)
+
+# Non-secret supervisor launch attribution and per-run isolation namespaces
+# layered by callers (workflow dispatch, arm isolation) stay with the child.
+DIRECT_ANTHROPIC_CHILD_ENV_PREFIXES: tuple[str, ...] = (
+    "SUPERVISOR_LAUNCH_",
+    "SUPERVISOR_WORKFLOW_",
+    "XDG_",
+)
+
+CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
+CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
+CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
+CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "xhigh"},
+}
+CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "max"},
+}
+
 _direct_anthropic_api_key: str | None = None
 
 
@@ -77,11 +139,18 @@ def direct_anthropic_env(
     *,
     api_key: str | None = None,
 ) -> dict[str, str]:
-    """Return an environment that cannot inherit an Anthropic proxy route."""
-    env = dict(os.environ if source is None else source)
-    source_api_key = env.pop("ANTHROPIC_API_KEY", None)
-    for key in ANTHROPIC_PROXY_ENV_KEYS:
-        env.pop(key, None)
+    """Return a least-privilege environment for a direct Anthropic child."""
+    source_env = dict(os.environ if source is None else source)
+    source_api_key = source_env.get("ANTHROPIC_API_KEY")
+    env = {
+        key: value
+        for key, value in source_env.items()
+        if value
+        and (
+            key in DIRECT_ANTHROPIC_CHILD_ENV_KEYS
+            or key.startswith(DIRECT_ANTHROPIC_CHILD_ENV_PREFIXES)
+        )
+    }
     selected_api_key = (
         api_key
         if api_key is not None
@@ -100,3 +169,44 @@ def configure_direct_anthropic_process_env(*, api_key: str | None = None) -> Non
     os.environ.pop("ANTHROPIC_API_KEY", None)
     for key in ANTHROPIC_PROXY_ENV_KEYS:
         os.environ.pop(key, None)
+
+
+def uses_adaptive_opus_effort(model: str) -> bool:
+    return (
+        model == CLAUDE_OPUS_ULTIMATE_MODEL
+        or model == CLAUDE_OPUS_UNDERLYING_MODEL
+        or model.startswith(f"{CLAUDE_OPUS_UNDERLYING_MODEL}-")
+    )
+
+
+def underlying_opus_model_for_gate(
+    source: Mapping[str, str],
+    gate: str,
+) -> str | None:
+    """Resolve the Opus pin for one gate from operator control variables.
+
+    This is the single source of the planning-versus-execution pin policy;
+    provider edges must not fork their own copies.
+    """
+    if gate == "execution":
+        override = _opus_pin_override(
+            source.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
+        )
+        return override or None
+    override = _opus_pin_override(
+        source.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
+    )
+    return override or CLAUDE_OPUS_UNDERLYING_MODEL
+
+
+def _opus_pin_override(value: str | None) -> str:
+    selected = str(value or "").strip()
+    if selected and not selected.startswith("claude-opus-"):
+        return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
+    return selected
+
+
+def opus_extra_body_for_pin(pin: str | None) -> dict[str, object]:
+    if pin and pin.startswith(CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
+        return CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
+    return CLAUDE_OPUS_ULTIMATE_EXTRA_BODY

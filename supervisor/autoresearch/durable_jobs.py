@@ -128,12 +128,15 @@ def run_durable_evaluator_trials(
         task_id=f"autoresearch:{experiment.task_id}",
         cwd=repo_root_path.as_posix(),
         status="running",
-        pid=os.getpid(),
+        # Evaluator trials run inline in this process. They are lease-replayable
+        # work, not a spawned worker generation, so no process-reap proof is
+        # required before their terminal result is published.
+        pid=None,
         request_path=job_paths["request"].as_posix(),
         result_path=job_paths["result"].as_posix(),
         log_path=job_paths["log"].as_posix(),
         idempotency_token=idempotency_token,
-        recovery_point="spawned",
+        recovery_point="request_written",
         request_payload_json=json.dumps(request_payload, sort_keys=True),
     )
     state.update_dual_agent_workflow_job(
@@ -149,8 +152,7 @@ def run_durable_evaluator_trials(
         job_id=job_id,
         attempt_id=attempt.attempt_id,
         status="running",
-        recovery_point="spawned",
-        pid=os.getpid(),
+        recovery_point="request_written",
     )
 
     try:

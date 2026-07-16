@@ -47,6 +47,68 @@ def test_bare_pytest_test_name_resolves_to_unique_nodeid(tmp_path: Path) -> None
     ]
 
 
+def test_bare_parametrized_pytest_name_resolves_to_nodeid(tmp_path: Path) -> None:
+    _write_test(
+        tmp_path / "tests" / "test_runtime_target.py",
+        "import pytest\n\n"
+        "@pytest.mark.parametrize('value', [1])\n"
+        "def test_runtime_target_value(value):\n"
+        "    assert value\n",
+    )
+
+    assert _test_commands(
+        ["python -m pytest test_runtime_target_value[1] -q"],
+        tmp_path,
+    ) == [
+        f"{shlex.quote(sys.executable)} -m pytest "
+        "'tests/test_runtime_target.py::test_runtime_target_value[1]' -q"
+    ]
+
+
+def test_supervisor_owned_exclusion_rejects_path_separator_task_ids() -> None:
+    from supervisor.runtime_evidence import _is_supervisor_owned_runtime_path
+
+    assert _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/task-1/release/notes.md",
+        task_id="task-1",
+        tracked_paths=frozenset(),
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/task-1/evil/release/notes.md",
+        task_id="task-1/evil",
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent/../secret/release/notes.md",
+        task_id="..",
+    )
+    assert not _is_supervisor_owned_runtime_path(
+        "docs/dual-agent//release/notes.md",
+        task_id="",
+    )
+
+
+def test_supervisor_owned_exclusion_fails_closed_when_tracking_is_unknown(
+) -> None:
+    from supervisor.runtime_evidence import _is_supervisor_owned_runtime_path
+
+    candidates = (
+        ".handoff/packet.json",
+        "runs/run-1/result.json",
+        "state.db",
+    )
+    for path in candidates:
+        assert not _is_supervisor_owned_runtime_path(
+            path,
+            task_id="task-1",
+            tracked_paths=None,
+        )
+        assert _is_supervisor_owned_runtime_path(
+            path,
+            task_id="task-1",
+            tracked_paths=frozenset(),
+        )
+
+
 def test_python_pytest_command_resolves_bare_test_name(tmp_path: Path) -> None:
     _write_test(
         tmp_path / "tests" / "test_runtime_target.py",
@@ -157,6 +219,163 @@ def test_validation_copy_ignores_cortex_runtime_workspaces(tmp_path: Path) -> No
         assert (validation_cwd / "src" / "app.py").exists()
         assert (validation_cwd / ".cortex" / "settings.json").exists()
         assert not (validation_cwd / ".cortex" / "runtime_workspaces").exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_excludes_virtualenv_build_cache_and_runtime_state(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    _write_test(tmp_path / "tests" / "test_app.py", "def test_app():\n    assert True\n")
+    subprocess.run(
+        ["git", "add", "src/app.py", "tests/test_app.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add source"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _write_test(tmp_path / ".venv" / "bin" / "python", "project interpreter\n")
+    excluded_artifacts = (
+        ".venv-review/bin/python",
+        "venv/bin/python",
+        ".tox/py/bin/python",
+        ".nox/tests/bin/python",
+        ".cache/tool/cache.bin",
+        ".pytest_cache/v/cache/nodeids",
+        ".mypy_cache/3.12/cache.json",
+        ".ruff_cache/cache.db",
+        "__pycache__/app.pyc",
+        "node_modules/pkg/index.js",
+        "build/package.whl",
+        "dist/package.whl",
+        ".handoff/workflow-jobs/run/result.json",
+        ".codex-supervisor/state.db",
+        ".scratch/run/output.json",
+        ".runtime-evidence/pytest-0.xml",
+        ".orchestrator-state/run.json",
+        "runs/run-1/result.json",
+        "test-results/results.xml",
+    )
+    for relative in excluded_artifacts:
+        _write_test(tmp_path / relative, "generated\n")
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        assert (validation_cwd / "src" / "app.py").exists()
+        assert (validation_cwd / "tests" / "test_app.py").exists()
+        assert (validation_cwd / ".venv").is_symlink()
+        for relative in excluded_artifacts:
+            assert not (validation_cwd / relative).exists(), relative
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_respects_repository_ignored_paths(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / ".gitignore", "custom-generated/\n")
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    _write_test(tmp_path / "custom-generated" / "large.bin", "generated\n")
+    subprocess.run(
+        ["git", "add", ".gitignore", "src/app.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add source"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        assert (validation_cwd / "src" / "app.py").exists()
+        assert not (validation_cwd / "custom-generated").exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_preserves_tracked_generated_name_paths(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    tracked_paths = (
+        "build/build.py",
+        "dist/package_metadata.py",
+        "runs/runtime.py",
+        ".handoff/contract.json",
+        ".cortex/runtime_workspaces/source/adapter.py",
+    )
+    for relative in tracked_paths:
+        _write_test(tmp_path / relative, f"# tracked: {relative}\n")
+    subprocess.run(
+        ["git", "add", *tracked_paths],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "track generated-name source paths"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        for relative in tracked_paths:
+            assert (validation_cwd / relative).is_file(), relative
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_preserves_broad_source_names_without_git_metadata(
+    tmp_path: Path,
+) -> None:
+    preserved_paths = (
+        "build/build.py",
+        "dist/package_metadata.py",
+        "runs/runtime.py",
+        ".handoff/contract.json",
+    )
+    for relative in preserved_paths:
+        _write_test(tmp_path / relative, f"# source: {relative}\n")
+    _write_test(tmp_path / ".cache" / "tool" / "cache.bin", "cache\n")
+    _write_test(
+        tmp_path / "node_modules" / "pkg" / "index.js",
+        "generated\n",
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        for relative in preserved_paths:
+            assert (validation_cwd / relative).is_file(), relative
+        assert not (validation_cwd / ".cache").exists()
+        assert not (validation_cwd / "node_modules").exists()
     finally:
         import shutil
 
@@ -733,3 +952,115 @@ def test_runtime_evidence_fails_when_tdd_test_name_is_unresolved(tmp_path: Path)
     assert "tdd_test_names_unresolved" in result.probe.details["failures"]
     coverage = result.probe.details["tdd_test_coverage"]
     assert coverage["unresolved_names"] == ["test_tdd_floor_typo"]
+
+
+def test_tracked_runs_and_state_db_changes_stay_in_changed_files_evidence(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / "runs" / "report.py", "VALUE = 1\n")
+    (tmp_path / "state.db").write_text("schema v1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "runs/report.py", "state.db"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "track project runs and state.db"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _write_test(tmp_path / "runs" / "report.py", "VALUE = 2\n")
+    (tmp_path / "state.db").write_text("schema v2\n", encoding="utf-8")
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="tracked-runs-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "changed_files": ["runs/report.py", "state.db"],
+            "claims": [],
+            "decisions": [],
+        },
+        runner=subprocess.run,
+    )
+
+    diff_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["receipt_id"] == "runtime-git-diff-execution-1"
+    )
+    assert result.probe.status == "green"
+    assert "runs/report.py" in diff_receipt["actual_changed_files"]
+    assert "state.db" in diff_receipt["actual_changed_files"]
+    assert diff_receipt["excluded_supervisor_files"] == []
+
+
+def test_untracked_supervisor_runtime_paths_stay_excluded_from_evidence(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(tmp_path / "runs" / "run-1" / "result.json", "{}\n")
+    _write_test(tmp_path / ".handoff" / "packet.json", "{}\n")
+    (tmp_path / "state.db").write_text("supervisor state\n", encoding="utf-8")
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="untracked-runs-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={"changed_files": [], "claims": [], "decisions": []},
+        runner=subprocess.run,
+    )
+
+    diff_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["receipt_id"] == "runtime-git-diff-execution-1"
+    )
+    assert diff_receipt["actual_changed_files"] == []
+    assert set(diff_receipt["excluded_supervisor_files"]) == {
+        ".handoff/packet.json",
+        "runs/run-1/result.json",
+        "state.db",
+    }
+
+
+def test_unreadable_deliverable_degrades_to_failed_check(tmp_path: Path, monkeypatch) -> None:
+    import supervisor.runtime_evidence as runtime_evidence
+
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+
+    def raising_sha256(_path: Path) -> str:
+        raise OSError("device gone mid-read")
+
+    monkeypatch.setattr(runtime_evidence, "_sha256_file", raising_sha256)
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="unreadable-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={"changed_files": ["src/app.py"], "claims": [], "decisions": []},
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "runtime_deliverable_unreadable" in result.probe.details["failures"]
+    deliverable_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["kind"] == "runtime_deliverable_check"
+    )
+    assert deliverable_receipt["status"] == "failed"
+    assert deliverable_receipt["checks"][0]["reason"] == "runtime_deliverable_unreadable"

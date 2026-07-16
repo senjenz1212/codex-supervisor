@@ -36,7 +36,8 @@ Agent-facing calls must stay non-blocking:
   worker, or calls `WorkflowJobDispatcher.run_once`.
 - `catch-up` reads the event tail for the caller-owned cursor.
 - The dispatcher claims `reserved` or `request_written` jobs, writes requests,
-  spawns workers, heartbeats leases, and reaps stale leases.
+  durably records spawn ownership (`spawn_prepared`) before spawning workers,
+  heartbeats leases, and reaps stale leases.
 
 Useful operator commands (JSON is the default automation surface; TOON-lite
 remains the human-readable default when `--json` is omitted):
@@ -51,6 +52,12 @@ codex-supervisor-axi --json experiments activate <experiment_id> --operator <nam
 codex-supervisor-axi --json approve --run-id <run> --proposal-id <proposal_id> --approver <named-human>
 codex-supervisor-axi --json deny --run-id <run> --proposal-id <proposal_id> --approver <named-human>
 ```
+
+`submit` also accepts `--session-id` for target-agent rollout joins, plus the
+Harness v1 trace-closure fields `--trace-closure-required` /
+`--no-trace-closure-required` (default: derived from the task),
+`--trace-graph-store-path`, and `--trace-graph-store-sha256`, which pin the
+trace-graph store a harness task must close against.
 
 `experiments activate`, `experiments park`, `approve`, and `deny` no longer
 default `--operator`/`--approver` to the CLI service identity and reject

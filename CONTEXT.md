@@ -1,9 +1,10 @@
 # Context
 
 This project is a local supervisor for coding-agent sessions. The repository is
-currently named `codex-supervisor`, but the product direction is target-agnostic:
-Claude Code is the first supervised agent target, and Codex can be added later
-through the same adapter boundary.
+named `codex-supervisor`, but the product direction is target-agnostic: Codex
+and Claude Code are both supervised through the same adapter boundary, with
+Codex as the shipped default target (`target.kind: codex` in
+`config.example.yaml`).
 
 ## Glossary
 
@@ -14,8 +15,8 @@ their behavior, and optionally recommends or performs safe corrective actions.
 
 ### Target Agent
 
-The coding agent being supervised. The first target agent is Claude Code. Codex
-is a future target agent.
+The coding agent being supervised. Codex and Claude Code are both implemented
+target agents; the example configuration selects Codex by default.
 
 ### Target Agent Adapter
 

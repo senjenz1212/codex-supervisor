@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
+from supervisor import quality_trends as quality_trends_module
 from supervisor.quality_trends import (
+    HistoricalOperation,
+    historical_operation_contract,
     query_quality_trends,
     record_quality_trends_for_run,
     run_sampled_p11_false_accept_audit,
@@ -24,18 +29,13 @@ def _write_event(
     payload: dict,
     ts: int,
 ) -> int:
-    event_id = state.write_event(
+    return state.write_event(
         run_id=run_id,
         source="dual_agent",
         kind=kind,
         payload=payload,
+        ts=ts,
     )
-    state._conn.execute(
-        "UPDATE events SET ts=? WHERE run_id=? AND event_id=?",
-        (ts, run_id, event_id),
-    )
-    state._conn.commit()
-    return event_id
 
 
 def _gate_result(
@@ -70,6 +70,320 @@ def _init_git_repo(path: Path) -> None:
     (path / "README.md").write_text("baseline\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "commit", "-m", "baseline"], cwd=path, check=True, capture_output=True, text=True)
+
+
+def _git_head(path: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_recorded_checkout_cleanup_does_not_mask_primary_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _init_git_repo(tmp_path)
+    materialized_root = tmp_path / "materialized"
+    materialized_root.mkdir()
+    monkeypatch.setattr(
+        quality_trends_module.tempfile,
+        "mkdtemp",
+        lambda **_kwargs: str(materialized_root),
+    )
+
+    def runner(command, **kwargs):
+        if command[:3] == ["git", "worktree", "remove"]:
+            raise OSError("remove invocation failed")
+        if command[:3] == ["git", "worktree", "prune"]:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="prune failed",
+            )
+        return subprocess.run(command, check=False, **kwargs)
+
+    primary = RuntimeError("primary replay failure")
+    with pytest.raises(RuntimeError, match="primary replay failure") as exc:
+        with quality_trends_module._materialized_recorded_checkout(
+            {
+                "repo": str(tmp_path),
+                "commit": _git_head(tmp_path),
+            },
+            runner=runner,
+        ):
+            raise primary
+
+    assert exc.value is primary
+    cleanup_note = (
+        "\n".join(getattr(primary, "__notes__", ()))
+        or str(getattr(primary, "supervisor_cleanup_error", ""))
+    )
+    assert "recorded_checkout_cleanup_failed" in cleanup_note
+
+
+def test_recorded_checkout_rejects_omitted_snapshot_content(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+
+    with pytest.raises(
+        quality_trends_module.RecordedCheckoutError,
+        match="recorded_snapshot_content_omitted",
+    ):
+        quality_trends_module._apply_snapshot_entry(
+            checkout,
+            {
+                "path": "oversized.bin",
+                "kind": "file",
+                "size": (1024 * 1024) + 1,
+                "sha256": "a" * 64,
+                "content_omitted": "size_limit_exceeded",
+                "content_limit_bytes": 1024 * 1024,
+            },
+        )
+
+    assert not (checkout / "oversized.bin").exists()
+
+
+def _commit_all(path: Path, message: str) -> str:
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return _git_head(path)
+
+
+def _verified_manifest_component(category: str) -> dict:
+    content = f"{category} fixture bytes".encode()
+    digest = sha256(content).hexdigest()
+    return {
+        "component_id": f"{category}:fixture",
+        "kind": category.rstrip("s"),
+        "source": "runtime_component_receipt",
+        "sha256": digest,
+        "details": {
+            "status": "verified",
+            "capture_source": "execution_time",
+            "receipt_ref": f"receipt://runtime-component/{category}/fixture",
+            "declared_sha256": digest,
+            "computed_sha256": digest,
+            "canonical_bytes_base64": base64.b64encode(content).decode("ascii"),
+            "canonical_size_bytes": len(content),
+        },
+    }
+
+
+def _write_recorded_replay_manifest(
+    path: Path,
+    *,
+    repo: Path,
+    commit: str,
+    run_id: str = "trend-run",
+    task_id: str = "trend-task",
+    provenance_status: str = "complete",
+) -> Path:
+    manifest_path = path / "recorded-replay-manifest.json"
+    contract_bytes = (
+        b'{"inputSchema":{"type":"object"},"name":"fixture_tool"}'
+    )
+    contract_sha256 = sha256(contract_bytes).hexdigest()
+    generic_components = {
+        category: [_verified_manifest_component(category)]
+        for category in (
+            "prompts",
+            "containers",
+            "cli",
+            "evaluators",
+        )
+    }
+    manifest_path.write_text(
+        json.dumps({
+            "schema_version": "dual-agent-replay-manifest/v1",
+            "run_id": run_id,
+            "task_id": task_id,
+            "schema_versions": {
+                "execution_provenance": "dual-agent-execution-provenance/v1",
+                "manifest": "dual-agent-replay-manifest/v1",
+                "trace_envelope": "dual-agent-trace-envelope/v1",
+                "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+                "interaction": "dual-agent-interaction/v1",
+                "production_trace_export": (
+                    "dual-agent-production-trace-export/v1"
+                ),
+            },
+            "workspace_snapshot": {
+                "status": "captured",
+                "capture_source": "accepted_gate_event",
+                "root": str(repo),
+                "git": {
+                    "head": commit,
+                    "head_sha": commit,
+                    "status_short": "",
+                    "diff_bytes": 0,
+                },
+            },
+            "execution_provenance": {
+                "schema_version": "dual-agent-execution-provenance/v1",
+                "status": provenance_status,
+                "unresolved_model_lanes": [],
+                "missing_component_categories": [],
+                "missing_tool_contracts": [],
+                "invalid_tool_contracts": [],
+                "workspace_issues": [],
+                "model_resolutions": [{
+                    "lane_id": "test-runtime",
+                    "resolved_model": "provider/model-v1",
+                    "exact_model_identity": True,
+                    "resolution_source": "response_model",
+                    "provider_response_source": (
+                        "receipt://provider-response/fixture"
+                    ),
+                }],
+                "required_tool_contracts": ["fixture_tool"],
+                "component_hashes": {
+                    **generic_components,
+                    "tool_contracts": [{
+                        "component_id": "tool-contract:fixture_tool",
+                        "kind": "tool_contract",
+                        "source": "fixture",
+                        "sha256": contract_sha256,
+                        "details": {
+                            "status": "verified",
+                            "tool_name": "fixture_tool",
+                            "declared_sha256": contract_sha256,
+                            "computed_sha256": contract_sha256,
+                            "canonical_bytes_base64": base64.b64encode(
+                                contract_bytes
+                            ).decode("ascii"),
+                            "canonical_size_bytes": len(contract_bytes),
+                            "media_type": "application/json",
+                            "schema_version": "fixture-tool/v1",
+                            "capture_source": "execution_time",
+                            "receipt_ref": (
+                                "receipt://tool-contract/fixture_tool"
+                            ),
+                        },
+                    }],
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _manifest_route_fields(path: Path) -> dict[str, str]:
+    return {
+        "replay_manifest_path": str(path),
+        "replay_manifest_sha256": sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def _write_runtime_baseline_event(
+    state: State,
+    *,
+    baseline_head: str,
+    run_id: str = "trend-run",
+    gate: str = "outcome_review",
+    receipts: list[dict] | None = None,
+    ts: int = 105,
+) -> int:
+    return _write_event(
+        state,
+        run_id=run_id,
+        kind="dual_agent_runtime_evidence",
+        ts=ts,
+        payload={
+            "gate": gate,
+            "round_index": 1,
+            "probe": {
+                "details": {
+                    "baseline": {
+                        "status": "passed",
+                        "head": baseline_head,
+                        "reason": "git_head_captured",
+                    },
+                },
+            },
+            "receipts": receipts or [],
+        },
+    )
+
+
+def _record_auditable_run(
+    state: State,
+    *,
+    repo: Path,
+    manifest_path: Path,
+    run_id: str = "trend-run",
+    task_id: str = "trend-task",
+) -> None:
+    state.upsert_dual_agent_workflow(
+        run_id=run_id,
+        task_id=task_id,
+        cwd=str(repo),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        run_id=run_id,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": task_id,
+            "run_id": run_id,
+            "lesson_task_class": "source_change",
+            "cwd": str(repo),
+            **_manifest_route_fields(manifest_path),
+        },
+    )
+    _write_event(
+        state,
+        run_id=run_id,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload={
+            **_gate_result(
+                gate="outcome_review",
+                status="accepted",
+                attempts=1,
+                changed_files=["README.md"],
+            ),
+            "task_id": task_id,
+        },
+    )
+
+
+def test_historical_operations_distinguish_rerun_regrade_and_replay():
+    rerun = historical_operation_contract(HistoricalOperation.RERUN)
+    regrade = historical_operation_contract(HistoricalOperation.REGRADE)
+    replay = historical_operation_contract(HistoricalOperation.REPLAY)
+
+    assert rerun["kind"] == "rerun"
+    assert rerun["result_policy"] == "new_execution_result"
+    assert regrade["kind"] == "regrade"
+    assert regrade["input_policy"] == "captured_result"
+    assert replay["kind"] == "replay"
+    assert replay["execution_policy"] == "deterministic_recompute"
+    assert len({
+        json.dumps(rerun, sort_keys=True),
+        json.dumps(regrade, sort_keys=True),
+        json.dumps(replay, sort_keys=True),
+    }) == 3
 
 
 def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_to_accept(tmp_path):
@@ -498,6 +812,11 @@ def test_quality_trends_does_not_keep_stale_acceptance_for_final_block(tmp_path)
 
 def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
     _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
     state = State(str(tmp_path / "state.db"))
     state.upsert_dual_agent_workflow(
         run_id="trend-run",
@@ -518,8 +837,10 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
             "run_id": "trend-run",
             "lesson_task_class": "source_change",
             "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
         },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
     _write_event(
         state,
         kind="dual_agent_gate_result",
@@ -553,12 +874,295 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
     assert summary[0]["false_accept_post_floor_denominator"] == 0
 
 
+def test_sampled_p11_audit_regrades_recorded_commit_after_live_worktree_changes(tmp_path):
+    _init_git_repo(tmp_path)
+    baseline_head = _git_head(tmp_path)
+    (tmp_path / "artifact.txt").write_text("recorded result\n", encoding="utf-8")
+    recorded_head = _commit_all(tmp_path, "record accepted result")
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=recorded_head,
+    )
+
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_runtime_evidence",
+        ts=105,
+        payload={
+            "gate": "outcome_review",
+            "round_index": 1,
+            "probe": {
+                "details": {
+                    "baseline": {
+                        "status": "passed",
+                        "head": baseline_head,
+                        "reason": "git_head_captured",
+                    },
+                },
+            },
+            "receipts": [],
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=["artifact.txt"],
+        ),
+    )
+
+    first = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+    )
+    (tmp_path / "artifact.txt").unlink()
+    second = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+    )
+
+    assert first["false_accept_count"] == 0
+    assert second["false_accept_count"] == first["false_accept_count"]
+    assert second["recorded_checkout"]["commit"] == recorded_head
+    assert second["operation"]["kind"] == "regrade"
+    assert second["operation"]["input_policy"] == "captured_result"
+
+
+def test_sampled_p11_audit_rejects_manifest_replaced_after_ledger_pin(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["workspace_snapshot"]["git"]["head_sha"] = "f" * 40
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_manifest_digest_mismatch"
+    assert audit["audited"] == []
+
+
+def test_sampled_p11_audit_rejects_manifest_bound_to_another_run(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+        run_id="other-run",
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_manifest_run_mismatch"
+    assert audit["audited"] == []
+
+
+def test_sampled_p11_audit_rejects_incomplete_execution_provenance(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+        provenance_status="incomplete",
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_manifest_provenance_incomplete"
+    assert audit["audited"] == []
+
+
+def test_sampled_p11_audit_fails_closed_without_recorded_checkout(tmp_path):
+    _init_git_repo(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=["README.md"],
+        ),
+    )
+
+    def forbidden_runner(*args, **kwargs):
+        raise AssertionError("missing recorded checkout must not execute against live state")
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        runner=forbidden_runner,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_checkout_missing"
+    assert audit["audited"] == []
+    assert audit["false_accept_denominator"] == 0
+
+
+def test_sampled_p11_audit_rejects_dirty_commit_without_immutable_snapshot(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["workspace_snapshot"]["git"]["status_short"] = " M README.md"
+    manifest["workspace_snapshot"]["git"]["diff_bytes"] = 12
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=["README.md"],
+        ),
+    )
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_snapshot_required"
+    assert audit["audited"] == []
+
+
 def test_quality_trends_segments_false_accept_audit_by_runtime_floor_presence(tmp_path):
     state = State(str(tmp_path / "state.db"))
     for run_id, runtime_floor_present in (("pre-floor-run", False), ("post-floor-run", True)):
         repo = tmp_path / run_id
         repo.mkdir()
         _init_git_repo(repo)
+        manifest_path = _write_recorded_replay_manifest(
+            repo,
+            repo=repo,
+            commit=_git_head(repo),
+            run_id=run_id,
+        )
         state.upsert_dual_agent_workflow(
             run_id=run_id,
             task_id="trend-task",
@@ -579,24 +1183,23 @@ def test_quality_trends_segments_false_accept_audit_by_runtime_floor_presence(tm
                 "run_id": run_id,
                 "lesson_task_class": "source_change",
                 "cwd": str(repo),
+                **_manifest_route_fields(manifest_path),
             },
         )
-        if runtime_floor_present:
-            _write_event(
-                state,
-                run_id=run_id,
-                kind="dual_agent_runtime_evidence",
-                ts=105,
-                payload={
-                    "gate": "outcome_review",
-                    "round_index": 1,
-                    "receipts": [{
-                        "receipt_id": "runtime-git-diff-outcome_review-1",
-                        "source": "supervisor",
-                        "evidence_grade": "runtime_native",
-                    }],
-                },
-            )
+        _write_runtime_baseline_event(
+            state,
+            run_id=run_id,
+            baseline_head=_git_head(repo),
+            receipts=(
+                [{
+                    "receipt_id": "runtime-git-diff-outcome_review-1",
+                    "source": "supervisor",
+                    "evidence_grade": "runtime_native",
+                }]
+                if runtime_floor_present
+                else []
+            ),
+        )
         _write_event(
             state,
             run_id=run_id,
@@ -633,6 +1236,11 @@ def test_quality_trends_segments_false_accept_audit_by_runtime_floor_presence(tm
 
 def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):
     _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
     state = State(str(tmp_path / "state.db"))
     state.upsert_dual_agent_workflow(
         run_id="trend-run",
@@ -648,8 +1256,14 @@ def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):
         state,
         kind="dual_agent_workflow_route",
         ts=100,
-        payload={"task_id": "trend-task", "lesson_task_class": "source_change", "cwd": str(tmp_path)},
+        payload={
+            "task_id": "trend-task",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
+        },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path), ts=104)
     _write_event(
         state,
         kind="visual_evidence_override_asserted",
@@ -672,6 +1286,11 @@ def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):
 
 def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
     state = State(str(tmp_path / "state.db"))
     state.upsert_dual_agent_workflow(
         run_id="trend-run",
@@ -692,8 +1311,10 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
             "run_id": "trend-run",
             "lesson_task_class": "source_change",
             "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
         },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
     _write_event(
         state,
         kind="dual_agent_gate_result",
@@ -713,6 +1334,7 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     first = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_000,
@@ -720,6 +1342,7 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     second = run_weekly_p11_audit_if_due(
         state,
         run_id="trend-run",
+        repo_root=tmp_path,
         sample_size=1,
         test_timeout_s=1,
         now=10_001,
@@ -745,6 +1368,57 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
     assert scheduled["payload"]["observational_only"] is True
     [summary] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
     assert summary["false_accept_count"] == 1
+
+
+def test_weekly_p11_audit_skips_when_cadence_slot_already_claimed(
+    tmp_path, monkeypatch
+):
+    state = State(str(tmp_path / "state.db"))
+    cadence_s = 7 * 24 * 60 * 60
+    now = 10_000
+    state.write_event_once(
+        run_id="trend-run",
+        source="supervisor",
+        kind="supervisor_p11_audit_claimed",
+        payload={
+            "schema_version": "supervisor-p11-audit-claim/v1",
+            "scheduled_at": now - 1,
+            "cadence_period": now // cadence_s,
+            "claim_token": "other-daemon",
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        },
+        idempotency_key=f"supervisor-p11-audit:{now // cadence_s}:0",
+    )
+
+    def _fail_audit(*args, **kwargs):
+        raise AssertionError(
+            "expensive audit must not run when the cadence slot is claimed"
+        )
+
+    monkeypatch.setattr(
+        quality_trends_module,
+        "run_sampled_p11_false_accept_audit",
+        _fail_audit,
+    )
+
+    result = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        repo_root=tmp_path,
+        sample_size=1,
+        test_timeout_s=1,
+        now=now,
+    )
+
+    assert result["status"] == "not_due"
+    assert result["reason"] == "cadence_slot_claimed"
+    assert result["gate_authority"] == "unchanged"
+    assert result["observational_only"] is True
+    events = state.read_events_since("trend-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == [
+        "supervisor_p11_audit_claimed"
+    ]
 
 
 def test_quality_trends_query_filters_by_task_class_and_gate_without_writes(tmp_path):
@@ -917,3 +1591,188 @@ def test_quality_trends_prefers_supervisor_final_status_over_claude_status(tmp_p
 
     assert rows[0]["accepted"] is False
     assert rows[0]["first_pass_accepted"] is False
+
+
+def test_sampled_p11_audit_skips_events_without_recorded_runtime_baseline(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+    )
+
+    assert audit["status"] == "no_evidence"
+    assert audit["audited"] == []
+    assert audit["false_accept_count"] == 0
+    assert audit["false_accept_denominator"] == 0
+    assert audit["updated_trend_rows"] == []
+    assert audit["skipped_count"] == 1
+    assert audit["skipped"][0]["status"] == "incompatible"
+    assert audit["skipped"][0]["reason"] == "runtime_baseline_missing"
+    assert audit["skipped"][0]["evaluable"] is False
+
+
+def test_sampled_p11_audit_keeps_results_when_worktree_cleanup_fails(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
+
+    def cleanup_failing_runner(command, **kwargs):
+        if list(command[:3]) == ["git", "worktree", "remove"]:
+            raise OSError("remove invocation failed")
+        return subprocess.run(command, check=False, **kwargs)
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        runner=cleanup_failing_runner,
+    )
+
+    assert audit["status"] == "audited"
+    assert audit["false_accept_denominator"] == 1
+    assert audit["cleanup_failure"]["reason"] == "recorded_checkout_cleanup_failed"
+
+
+def test_sampled_p11_audit_returns_structured_incompatible_when_git_runner_fails(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
+
+    def missing_git_runner(command, **kwargs):
+        raise FileNotFoundError("git executable not found")
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        runner=missing_git_runner,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_checkout_runner_failed"
+    assert audit["audited"] == []
+    assert audit["false_accept_denominator"] == 0
+
+
+def test_weekly_p11_audit_incompatible_run_does_not_consume_cadence_window(tmp_path):
+    _init_git_repo(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=[],
+        ),
+    )
+
+    first = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        repo_root=tmp_path,
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_000,
+    )
+
+    assert first["status"] == "incompatible"
+    assert first["reason"] == "recorded_checkout_missing"
+
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=120,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
+        },
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path), ts=125)
+
+    second = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        repo_root=tmp_path,
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_001,
+    )
+    third = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        repo_root=tmp_path,
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_002,
+    )
+
+    assert second["status"] == "audited"
+    assert third["status"] == "not_due"

@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import Config
 from .state import State
+from .state_factory import build_state
 from .telegram_progress import progress_message
 
 
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = Config.load(args.config)
     chat_id = args.chat_id if args.chat_id is not None else cfg.telegram.chat_id
-    state = State(cfg.supervisor.state_db)
+    state = build_state(cfg)
     result = backfill_progress_context(
         state=state,
         chat_id=chat_id,

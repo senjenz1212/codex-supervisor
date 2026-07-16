@@ -115,9 +115,16 @@ async def test_autoresearch_runner_tick_executes_only_activated_experiments(tmp_
 async def test_autoresearch_runner_tick_respects_weekly_cap(tmp_path):
     state = State(str(tmp_path / "state.db"))
     seen_caps: list[int] = []
+    seen_resolvers: list[object] = []
+
+    def claim_authority_resolver(_row, _repo_root):
+        return None
 
     def fake_runner(**kwargs):
         seen_caps.append(kwargs["max_runnable_per_week"])
+        seen_resolvers.append(
+            kwargs["policy_claim_authority_resolver"]
+        )
         return []
 
     task = AutoResearchRunnerTask(
@@ -125,12 +132,54 @@ async def test_autoresearch_runner_tick_respects_weekly_cap(tmp_path):
         state,
         repo_root=Path.cwd(),
         runner=fake_runner,
+        policy_claim_authority_resolver=claim_authority_resolver,
     )
 
     result = await task.tick_once(now=1_781_000_000)
 
     assert result["executed_count"] == 0
     assert seen_caps == [1]
+    assert seen_resolvers == [claim_authority_resolver]
+
+
+@pytest.mark.asyncio
+async def test_autoresearch_runner_preserves_legacy_injected_runner_signature(
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    calls: list[dict] = []
+
+    def legacy_runner(
+        *,
+        state,
+        repo_root,
+        output_root,
+        run_id_prefix,
+        max_runnable_per_week,
+        now,
+    ):
+        calls.append({
+            "state": state,
+            "repo_root": repo_root,
+            "output_root": output_root,
+            "run_id_prefix": run_id_prefix,
+            "max_runnable_per_week": max_runnable_per_week,
+            "now": now,
+        })
+        return []
+
+    task = AutoResearchRunnerTask(
+        _cfg(tmp_path),
+        state,
+        repo_root=Path.cwd(),
+        runner=legacy_runner,
+    )
+
+    result = await task.tick_once(now=1_781_000_000)
+
+    assert result["executed_count"] == 0
+    assert len(calls) == 1
+    assert calls[0]["max_runnable_per_week"] == 1
 
 
 @pytest.mark.asyncio
@@ -156,6 +205,7 @@ async def test_weekly_p11_audit_tick_writes_scheduled_audit_event(tmp_path):
     task = WeeklyP11AuditTask(
         _cfg(tmp_path),
         state,
+        repo_root=tmp_path,
         run_id_provider=lambda: ["audit-run"],
         auditor=fake_auditor,
     )

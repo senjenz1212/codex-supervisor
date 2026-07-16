@@ -9,6 +9,7 @@ from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
 from supervisor.config import Config
 from supervisor.state import State
 from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+from tests.policy_evolution_test_support import record_test_policy_proposal
 
 
 def _config_path(tmp_path: Path) -> Path:
@@ -76,23 +77,19 @@ def _seed_policy_proposal(state: State, root: Path) -> None:
         "    - Guard request paths.\n",
         encoding="utf-8",
     )
-    state.write_event(
+    proposal = {
+        "proposal_id": "ARP-guard",
+        "changes": [{
+            "target_path": ".supervisor/policy-overlay.yaml",
+            "candidate_ref": "candidates/policy-overlay.yaml",
+            "before_hash": sha256(target.read_bytes()).hexdigest(),
+            "after_hash": sha256(candidate.read_bytes()).hexdigest(),
+        }],
+    }
+    record_test_policy_proposal(
+        state,
         run_id="policy-run",
-        source="autoresearch",
-        kind="autoresearch_policy_proposal_created",
-        payload={
-            "proposal_id": "ARP-guard",
-            "status": "draft",
-            "changes": [{
-                "target_path": ".supervisor/policy-overlay.yaml",
-                "candidate_ref": "candidates/policy-overlay.yaml",
-                "before_hash": sha256(target.read_bytes()).hexdigest(),
-                "after_hash": sha256(candidate.read_bytes()).hexdigest(),
-            }],
-            "default_change_allowed": False,
-            "automatic_policy_mutation": False,
-            "gate_advanced": False,
-        },
+        proposal=proposal,
     )
 
 
@@ -132,9 +129,11 @@ def test_new_mcp_and_cli_verbs_do_not_drive_dispatcher_or_spawn_workers(monkeypa
         "approve",
         "--run-id",
         "policy-run",
-        "--proposal-id",
-        "ARP-guard",
-        "--repo-root",
-        str(tmp_path),
-    ]) == 0
+            "--proposal-id",
+            "ARP-guard",
+            "--approver",
+            "operator@example.com",
+            "--repo-root",
+            str(tmp_path),
+        ]) == 0
     json.loads(capsys.readouterr().out)

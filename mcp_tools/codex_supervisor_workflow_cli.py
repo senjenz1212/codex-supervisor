@@ -12,13 +12,16 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI, Runner
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorRunner
+from supervisor.runtime_execution import RuntimeTaskRunner
 from supervisor.state import State
+from supervisor.state_factory import build_state
 from supervisor.workflow_job_dispatcher import WorkflowJobLeaseHeartbeat
 
 
@@ -61,6 +64,9 @@ WORKFLOW_KEYS = {
     "no_mistakes_policy",
     "no_mistakes_skip_steps",
     "no_mistakes_timeout_s",
+    "trace_closure_required",
+    "trace_graph_store_path",
+    "trace_graph_store_sha256",
 }
 REQUIRED_WORKFLOW_KEYS = {"cwd", "task_id", "run_id", "intent"}
 
@@ -79,6 +85,7 @@ async def run_workflow_payload(
     state: State,
     runner: Runner = subprocess.run,
     codex_runner: Runner = subprocess.run,
+    codex_runtime_runner: RuntimeTaskRunner | None = None,
     cursor_runner: CursorRunner | None = None,
     notifier: Any | None = None,
 ) -> dict[str, Any]:
@@ -87,6 +94,7 @@ async def run_workflow_payload(
         state,
         runner=runner,
         codex_runner=codex_runner,
+        codex_runtime_runner=codex_runtime_runner,
         cursor_runner=cursor_runner,
         notifier=notifier,
     )
@@ -146,7 +154,21 @@ def read_json_payload(path: str) -> dict[str, Any]:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def persist_detached_workflow_terminal_outcome(
@@ -166,6 +188,15 @@ def persist_detached_workflow_terminal_outcome(
         if parent_name.startswith("workflow-"):
             job_id = parent_name
     if not job_id:
+        return False
+    row = state.get_dual_agent_workflow_job(job_id=job_id)
+    if row is not None and (
+        row["pid"] is not None
+        or str(row["recovery_point"] or "")
+        in {"spawn_prepared", "spawned"}
+    ):
+        # Detached workers publish only an atomic result candidate.  The
+        # dispatcher owns process reap and terminal ledger publication.
         return False
     status = str(result.get("status") or "completed")
     state.complete_dual_agent_workflow_job(
@@ -212,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         load_secrets_env(Path(args.secrets).expanduser())
 
     cfg = Config.load(args.config)
-    state = State(cfg.supervisor.state_db)
+    state = build_state(cfg)
     request = read_json_payload(args.request)
     heartbeat: WorkflowJobLeaseHeartbeat | None = None
     job_id = str(request.get("job_id") or "").strip()

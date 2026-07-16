@@ -55,8 +55,10 @@ supervisor:
   # SQLite remains the dev/local default.
   # state_db: postgresql://codex-supervisor-pgbouncer:6432/codex_supervisor
   hook_server_port: 19001
-  # model_first sends every hook to Claude Agent SDK before deterministic
-  # fallback rules. Use deterministic_first if you want cheaper/faster hooks.
+  # model_first sends every hook to the model critic — the direct Anthropic
+  # client when configured, otherwise the Claude Agent SDK — before
+  # deterministic fallback rules. Use deterministic_first for cheaper/faster
+  # hooks.
   hook_critique_strategy: model_first
   rollout_sweep_interval_s: 10
   drift_check_interval_s: 30
@@ -75,6 +77,22 @@ supervisor:
   # accepts are dependence/severity weighted; when absent, the panel falls back
   # to conservative aggregation.
   reviewer_panel_calibration_path: ""
+  ledger_checkpoints:
+    # Diagnostic mode verifies local structure only and cannot support release
+    # or improvement claims. Authoritative mode fails startup unless the
+    # provider returns externally managed signing and rollback-independent pins.
+    mode: diagnostic_only
+    max_events_between_checkpoints: 100
+    checkpoint_store_path: ~/.codex-supervisor/ledger-checkpoints
+    # Operator plugin in module:callable form. It must return CheckpointRuntime.
+    runtime_provider: ""
+  historical_evaluation:
+    # Disabled until an operator supplies model/task-specific executors. The
+    # plugin must resolve pinned evidence and implement distinct rerun,
+    # regrade, and deterministic replay operations.
+    enabled: false
+    runtime_provider: ""
+    claim_stale_after_s: 86400
 
 durable_execution:
   # Report-only spike lane. The default runtime remains the hand-rolled
@@ -166,6 +184,7 @@ telegram:
 drift:
   l1_scope_violation_threshold: 3
   l2_similarity_threshold: 0.4
+  l3_timeout_s: 120.0
   nudge_text_template: |
     Pause. Your original task was:
 

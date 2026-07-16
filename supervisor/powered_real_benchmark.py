@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import Any, Mapping
 
+from .claim_gate import ClaimGate, MANAGED_CLAIM_FIELDS
+
 
 POWERED_REAL_BENCHMARK_DOD_SCHEMA_VERSION = (
     "supervisor-powered-real-benchmark-definition-of-done/v1"
@@ -146,7 +148,14 @@ def _check_authority_flags(
             key=key,
         )
 
-    return {flag: False for flag in REQUIRED_AUTHORITY_FLAGS}
+    return {
+        **{
+            flag: False
+            for flag in REQUIRED_AUTHORITY_FLAGS
+            if flag not in MANAGED_CLAIM_FIELDS
+        },
+        **ClaimGate.derived_claim_flags(),
+    }
 
 
 def _check_source_predictions_path(

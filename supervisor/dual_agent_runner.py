@@ -6,15 +6,22 @@ stops on the first blocked gate. Live process calls remain injectable.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
 import secrets
 import subprocess
+import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
+import psutil
+
+from .agent_runtime import AgentTask
 from .dual_agent import (
     GateRound,
     Outcome,
@@ -42,9 +49,10 @@ from .dual_agent_lead import (
     OutcomeValidationPolicy,
     PlanningArtifact,
     Runner,
+    _GateInvocationCancelled,
     compute_file_sha256,
     handoff_packet_path,
-    invoke_claude_lead,
+    invoke_lead,
     select_lead_model,
     verify_planning_artifact_boundaries,
     write_handoff_packet,
@@ -54,12 +62,40 @@ from .planning_validator import (
     required_planning_kinds_for_gate,
     validate_planning_artifacts,
 )
+from .process_containment import (
+    CONTAINMENT_ENV_VAR,
+    ProcessIdentity,
+    containment_environment,
+    new_containment_id,
+    scan_containment,
+    terminate_containment,
+)
+from .trace_graph import TraceGraph
+from .runtime_execution import RuntimeExecution, RuntimeTaskRunner
 from .state import State
 from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 
 HANDOFF_LOCK_RECLAIM_GRACE_S = 60
 PROJECT_LEAD_SKILL_PATH = Path(".claude") / "skills" / "lead" / "SKILL.md"
+DUAL_AGENT_CANCELLATION_TIMEOUT_S = 60.0
+
+
+class DualAgentCancellationCleanupError(RuntimeError):
+    """Cancellation could not be proven safe before its fixed deadline."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cleanup_quiescent: bool,
+        gate_thread_terminated: bool,
+        phase: str,
+    ) -> None:
+        super().__init__(message)
+        self.cleanup_quiescent = cleanup_quiescent
+        self.gate_thread_terminated = gate_thread_terminated
+        self.phase = phase
 
 
 @dataclass(frozen=True)
@@ -125,6 +161,10 @@ class DualAgentGateSpec:
     policy_overlay_task_class_hash: str = ""
     planning_rubric_threshold: float = 0.6
     planning_rubric_unavailable_policy: str = "block"
+    trace_closure_required: bool = False
+    trace_graph: TraceGraph | None = None
+    trace_now: datetime | None = None
+    trace_waiver_keys: Mapping[str, bytes | str] | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +178,7 @@ class DualAgentGateResult:
     outcome: Outcome | None = None
     attempts: int = 0
     escalation: DeadlockEscalation | ValidationEscalation | None = None
+    tool_calls: tuple[dict[str, Any], ...] = ()
 
 
 def build_lead_replay_stdout(
@@ -191,6 +232,7 @@ def run_dual_agent_gate(
     spec: DualAgentGateSpec,
     *,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
     state: State | None = None,
 ) -> DualAgentGateResult:
     packet_path = handoff_packet_path(spec.cwd, spec.task_id)
@@ -223,6 +265,10 @@ def run_dual_agent_gate(
                 gate=spec.gate,
                 rubric_threshold=spec.planning_rubric_threshold,
                 rubric_unavailable_policy=spec.planning_rubric_unavailable_policy,  # type: ignore[arg-type]
+                trace_closure_required=spec.trace_closure_required,
+                trace_graph=spec.trace_graph,
+                trace_now=spec.trace_now,
+                trace_waiver_keys=spec.trace_waiver_keys,
             )
         planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
         planning_event_id: int | None = None
@@ -257,7 +303,14 @@ def run_dual_agent_gate(
                         recipient="codex",
                         message_type="gate_blocked_before_worker",
                         persona_id="supervisor.planning_validator",
-                        content="Planning validation blocked the gate before Claude Code /lead was invoked.",
+                        content=(
+                            "Planning validation blocked the gate before the "
+                            + (
+                                "runtime lead was invoked."
+                                if runtime_runner is not None
+                                else "Claude Code /lead was invoked."
+                            )
+                        ),
                         addresses=_addresses(
                             f"event:{planning_event_id}" if planning_event_id is not None else "",
                         ),
@@ -322,7 +375,11 @@ def run_dual_agent_gate(
                     task_id=spec.task_id,
                     gate=spec.gate,
                     sender="codex",
-                    recipient="claude_code",
+                    recipient=(
+                        "lead_runtime"
+                        if runtime_runner is not None
+                        else "claude_code"
+                    ),
                     message_type="gate_request",
                     persona_id="codex.lifecycle_reviewer",
                     content=spec.instruction,
@@ -353,11 +410,20 @@ def run_dual_agent_gate(
                 ).to_event_payload(),
             )
         lead_tool_calls: list[dict[str, Any]] = []
+        lead_invocation_name = (
+            "invoke_runtime_lead"
+            if runtime_runner is not None
+            else "invoke_claude_lead"
+        )
         with timed_tool_call(
-            "invoke_claude_lead",
+            lead_invocation_name,
             args=_lead_invocation_args(spec, attempts=1),
         ) as lead_tool_call:
-            lead_result = invoke_claude_lead(request, runner=runner)
+            lead_result = invoke_lead(
+                request,
+                runner=runner,
+                runtime_runner=runtime_runner,
+            )
         lead_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=1))
         lead_tool_calls.append(ensure_tool_call_timing(lead_tool_call))
         attempts = 1
@@ -365,6 +431,7 @@ def run_dual_agent_gate(
             corrective = _lead_request(
                 spec,
                 packet_path=packet_path,
+                corrective_retry=True,
                 instruction=(
                     spec.instruction
                     + "\n\nCorrective retry: the previous response did not contain "
@@ -374,10 +441,14 @@ def run_dual_agent_gate(
                 ),
             )
             with timed_tool_call(
-                "invoke_claude_lead",
+                lead_invocation_name,
                 args=_lead_invocation_args(spec, attempts=2, corrective_retry=True),
             ) as retry_tool_call:
-                lead_result = invoke_claude_lead(corrective, runner=runner)
+                lead_result = invoke_lead(
+                    corrective,
+                    runner=runner,
+                    runtime_runner=runtime_runner,
+                )
             attempts = 2
             retry_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=2))
             lead_tool_calls.append(ensure_tool_call_timing(retry_tool_call))
@@ -443,6 +514,11 @@ def run_dual_agent_gate(
         ]
 
         if state is not None:
+            lead_source = (
+                "lead_runtime"
+                if lead_result.runtime is not None
+                else "claude_code"
+            )
             outcome_payload = (
                 lead_result.outcome.model_dump()
                 if lead_result.outcome is not None else None
@@ -454,10 +530,10 @@ def run_dual_agent_gate(
                 payload=AgentMailboxMessage(
                     task_id=spec.task_id,
                     gate=spec.gate,
-                    sender="claude_code",
+                    sender=lead_source,
                     recipient="codex",
                     message_type="gate_response",
-                    persona_id="claude_code.lead_worker",
+                    persona_id=f"{lead_source}.lead_worker",
                     content=(
                         lead_result.outcome.summary
                         if lead_result.outcome is not None
@@ -469,7 +545,7 @@ def run_dual_agent_gate(
                     ),
                     confidence=outcome_confidence_report(
                         outcome_payload,
-                        source="claude_code",
+                        source=lead_source,
                     ),
                     claims=tuple(
                         str(item)
@@ -510,12 +586,20 @@ def run_dual_agent_gate(
                     ]),
                     raw_transcript_refs=(
                         {
-                            "kind": "claude_stdout",
+                            "kind": (
+                                "runtime_output"
+                                if lead_result.runtime is not None
+                                else "claude_stdout"
+                            ),
                             "ref": "lead_result.stdout",
                             "bytes": lead_result.stdout_bytes,
                         },
                         {
-                            "kind": "claude_handoff_packet",
+                            "kind": (
+                                "runtime_handoff_packet"
+                                if lead_result.runtime is not None
+                                else "claude_handoff_packet"
+                            ),
                             "ref": str(packet_path),
                         },
                     ),
@@ -536,6 +620,13 @@ def run_dual_agent_gate(
                         "attempts": attempts,
                         "model": lead_result.model,
                         "cost_usd": lead_result.cost_usd,
+                        "runtime": lead_result.runtime,
+                        "runtime_run_id": lead_result.runtime_run_id,
+                        "runtime_session_id": lead_result.runtime_session_id,
+                        "runtime_result_hash": lead_result.runtime_result_hash,
+                        "model_provenance": lead_result.model_provenance,
+                        "cost_provenance": lead_result.cost_provenance,
+                        "token_provenance": lead_result.token_provenance,
                         "outcome": outcome_payload,
                         "tool_calls": _lead_response_tool_calls(
                             lead_result=lead_result,
@@ -557,6 +648,7 @@ def run_dual_agent_gate(
             lead_result=lead_result,
             outcome=lead_result.outcome,
             attempts=attempts,
+            tool_calls=tuple(response_tool_calls),
         )
     finally:
         _release_handoff_lock(lock_path)
@@ -566,10 +658,15 @@ def run_dual_agent_gates(
     specs: list[DualAgentGateSpec],
     *,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> list[DualAgentGateResult]:
     results: list[DualAgentGateResult] = []
     for spec in specs:
-        result = run_dual_agent_gate(spec, runner=runner)
+        result = run_dual_agent_gate(
+            spec,
+            runner=runner,
+            runtime_runner=runtime_runner,
+        )
         results.append(result)
         if result.status != "accepted":
             break
@@ -582,15 +679,635 @@ def _required_planning_kinds(spec: DualAgentGateSpec) -> tuple[str, ...]:
     return required_planning_kinds_for_gate(spec.gate)
 
 
+def _process_group_id(pid: int) -> int | None:
+    if not hasattr(os, "getpgid"):
+        return None
+    try:
+        return os.getpgid(int(pid))
+    except OSError:
+        return None
+
+
+@dataclass(frozen=True)
+class _ActiveGateInvocation:
+    invocation_id: str
+    containment_id: str
+    cancel_target: Any
+
+
+class _GateCancellation:
+    """Coordinate caller cancellation with the synchronous gate thread."""
+
+    def __init__(self) -> None:
+        self.cancelled = threading.Event()
+        self._gate_token = secrets.token_hex(16)
+        self._path_marker_started_at = time.time()
+        try:
+            self._current_username = psutil.Process().username()
+        except (OSError, psutil.Error):
+            self._current_username = ""
+        temp_root = (
+            os.environ.get("TMPDIR")
+            or os.environ.get("TEMP")
+            or "/tmp"
+        )
+        # Direct-Anthropic routing intentionally strips arbitrary environment
+        # keys but preserves PATH. A unique, nonexistent PATH component keeps
+        # the gate discoverable after the runtime installs its own containment
+        # id without changing command resolution.
+        self._path_marker = str(
+            Path(temp_root)
+            / f".codex-supervisor-dual-agent-{self._gate_token}"
+        )
+        self._condition = threading.Condition()
+        self._active: dict[str, _ActiveGateInvocation] = {}
+        self._known_containment_ids: set[str] = set()
+        self._state_write_lock = threading.Lock()
+
+    def wrap_runner(self, runner: Runner) -> Runner:
+        def _run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            containment_id = new_containment_id()
+            invocation_id = self._start_invocation(
+                containment_id=containment_id,
+                cancel_target=runner,
+            )
+            call_kwargs = dict(kwargs)
+            environment = self._tag_environment(
+                call_kwargs.get("env"),
+                containment_id,
+            )
+            call_kwargs["env"] = environment
+            if runner is subprocess.run and os.name == "posix":
+                call_kwargs.setdefault("start_new_session", True)
+            try:
+                if self.cancelled.is_set():
+                    raise _GateInvocationCancelled(
+                        "dual-agent gate invocation cancelled"
+                    )
+                try:
+                    return runner(*args, **call_kwargs)
+                except BaseException as exc:
+                    if self.cancelled.is_set():
+                        raise _GateInvocationCancelled(
+                            "dual-agent gate invocation cancelled"
+                        ) from exc
+                    raise
+            finally:
+                self._finish_invocation(invocation_id)
+
+        return _run
+
+    def wrap_runtime_runner(
+        self,
+        runtime_runner: RuntimeTaskRunner | None,
+    ) -> RuntimeTaskRunner | None:
+        if runtime_runner is None:
+            return None
+
+        def _run(task: AgentTask) -> RuntimeExecution:
+            containment_id = new_containment_id()
+            invocation_id = self._start_invocation(
+                containment_id=containment_id,
+                cancel_target=runtime_runner,
+            )
+            environment = self._tag_environment(
+                {
+                    str(key): str(value)
+                    for key, value in task.env.items()
+                },
+                containment_id,
+                runtime_marker=True,
+            )
+            controlled_task = replace(task, env=environment)
+            try:
+                if self.cancelled.is_set():
+                    raise _GateInvocationCancelled(
+                        "dual-agent gate invocation cancelled"
+                    )
+                try:
+                    return runtime_runner(controlled_task)
+                except BaseException as exc:
+                    if self.cancelled.is_set():
+                        raise _GateInvocationCancelled(
+                            "dual-agent gate invocation cancelled"
+                        ) from exc
+                    raise
+            finally:
+                self._finish_invocation(invocation_id)
+
+        return _run
+
+    def write_event(
+        self,
+        state: State,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        with self._state_write_lock:
+            if self.cancelled.is_set():
+                return None
+            return state.write_event(*args, **kwargs)
+
+    def write_event_once(
+        self,
+        state: State,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        with self._state_write_lock:
+            if self.cancelled.is_set():
+                return None
+            return state.write_event_once(*args, **kwargs)
+
+    def cancel_active_invocations(
+        self,
+        *,
+        timeout_s: float = 60.0,
+        deadline: float | None = None,
+    ) -> None:
+        started_at = time.monotonic()
+        if deadline is None:
+            deadline = started_at + max(0.0, float(timeout_s))
+        timeout_budget_s = max(0.0, deadline - started_at)
+        cancelled_targets: set[int] = set()
+        target_cleanup_errors: list[BaseException] = []
+        while True:
+            active = self._active_snapshot()
+            containment_ids = self._known_containments()
+            processes_quiescent = self._terminate_gate_processes(
+                containment_ids
+            )
+
+            for invocation in active:
+                target_id = id(invocation.cancel_target)
+                if target_id in cancelled_targets:
+                    continue
+                cancelled_targets.add(target_id)
+                try:
+                    self._cancel_target(invocation.cancel_target)
+                except BaseException as exc:
+                    # A provider-specific cancel hook is advisory. Preserve its
+                    # failure, but continue the provider-neutral containment
+                    # sweep so the hook cannot strand a live descendant.
+                    target_cleanup_errors.append(exc)
+
+            with self._condition:
+                active_remaining = bool(self._active)
+            # Re-scan after the runner leaves its active section so a process
+            # spawned at the cancellation boundary cannot escape cleanup.
+            if (
+                not active_remaining
+                and processes_quiescent
+                and self._terminate_gate_processes(containment_ids)
+            ):
+                break
+            if time.monotonic() >= deadline:
+                error = RuntimeError(
+                    "dual-agent gate cancellation did not reach a quiescent "
+                    f"containment state within {timeout_budget_s:g}s: "
+                    f"active_invocations={len(active)}, "
+                    f"processes_quiescent={processes_quiescent}; contained "
+                    "gate processes may still be running and were not "
+                    "reported safe to finalize"
+                    + (
+                        "; target_cleanup_errors="
+                        f"{len(target_cleanup_errors)}"
+                        if target_cleanup_errors
+                        else ""
+                    )
+                )
+                if target_cleanup_errors:
+                    raise error from target_cleanup_errors[0]
+                raise error
+            with self._condition:
+                self._condition.wait(timeout=0.02)
+
+        with self._state_write_lock:
+            pass
+        if target_cleanup_errors:
+            primary_error = target_cleanup_errors[0]
+            try:
+                setattr(
+                    primary_error,
+                    "_dual_agent_containment_quiescent",
+                    True,
+                )
+            except (AttributeError, TypeError):
+                pass
+            raise primary_error
+
+    def _start_invocation(
+        self,
+        *,
+        containment_id: str,
+        cancel_target: Any,
+    ) -> str:
+        invocation_id = secrets.token_hex(8)
+        invocation = _ActiveGateInvocation(
+            invocation_id=invocation_id,
+            containment_id=containment_id,
+            cancel_target=cancel_target,
+        )
+        with self._condition:
+            self._active[invocation_id] = invocation
+            self._known_containment_ids.add(containment_id)
+            self._condition.notify_all()
+        return invocation_id
+
+    def _tag_environment(
+        self,
+        base: Mapping[str, str] | None,
+        containment_id: str,
+        *,
+        runtime_marker: bool = False,
+    ) -> dict[str, str]:
+        environment = containment_environment(base, containment_id)
+        if not runtime_marker:
+            return environment
+        current_path = (
+            str(environment.get("PATH") or "")
+            or os.environ.get("PATH", "")
+            or os.defpath
+        )
+        path_parts = current_path.split(os.pathsep)
+        if self._path_marker not in path_parts:
+            environment["PATH"] = os.pathsep.join([
+                self._path_marker,
+                *path_parts,
+            ])
+        return environment
+
+    def _finish_invocation(self, invocation_id: str) -> None:
+        with self._condition:
+            self._active.pop(invocation_id, None)
+            self._condition.notify_all()
+
+    def _active_snapshot(self) -> tuple[_ActiveGateInvocation, ...]:
+        with self._condition:
+            return tuple(self._active.values())
+
+    def _known_containments(self) -> set[str]:
+        with self._condition:
+            return set(self._known_containment_ids)
+
+    @staticmethod
+    def _cancel_target(target: Any) -> None:
+        for method_name in ("cancel", "terminate"):
+            method = getattr(target, method_name, None)
+            if not callable(method):
+                continue
+            result = method()
+            if inspect.isawaitable(result):
+                asyncio.run(result)
+            return
+
+    def _terminate_gate_processes(
+        self,
+        containment_ids: set[str],
+    ) -> bool:
+        candidates, scans_complete = self._contained_process_candidates(
+            containment_ids
+        )
+        if not candidates:
+            return scans_complete
+        roots: dict[str, tuple[ProcessIdentity, int]] = {}
+        for containment_id, identity, process_group_id in candidates:
+            current = roots.get(containment_id)
+            if current is None or self._prefer_process_root(
+                identity,
+                process_group_id,
+                current[0],
+                current[1],
+            ):
+                roots[containment_id] = (identity, process_group_id)
+
+        safe_to_finalize = scans_complete
+        for containment_id, (identity, process_group_id) in roots.items():
+            termination = terminate_containment(
+                root_pid=identity.pid,
+                expected_root_started_at=identity.started_at,
+                expected_process_group_id=process_group_id,
+                containment_id=containment_id,
+            )
+            safe_to_finalize = (
+                safe_to_finalize
+                and bool(termination.get("safe_to_finalize"))
+            )
+        return safe_to_finalize
+
+    def _contained_process_candidates(
+        self,
+        containment_ids: set[str],
+    ) -> tuple[
+        tuple[tuple[str, ProcessIdentity, int], ...],
+        bool,
+    ]:
+        candidates: dict[
+            tuple[str, int, float],
+            tuple[str, ProcessIdentity, int],
+        ] = {}
+        scans_complete = True
+        for containment_id in containment_ids:
+            if not containment_id:
+                continue
+            snapshot = scan_containment(containment_id)
+            scans_complete = scans_complete and snapshot.scan_complete
+            for identity in snapshot.processes:
+                process_group_id = _process_group_id(identity.pid)
+                if process_group_id is None:
+                    continue
+                candidates[
+                    (containment_id, identity.pid, identity.started_at)
+                ] = (containment_id, identity, process_group_id)
+
+        for process in psutil.process_iter([
+            "pid",
+            "create_time",
+            "username",
+        ]):
+            try:
+                pid = int(process.info["pid"])
+                username = str(process.info.get("username") or "")
+            except (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+            except (
+                OSError,
+                KeyError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                scans_complete = False
+                continue
+            if pid == os.getpid():
+                continue
+            plausible_same_user_process = (
+                not self._current_username
+                or not username
+                or username == self._current_username
+            )
+            if not plausible_same_user_process:
+                continue
+            try:
+                started_at = float(
+                    process.info.get("create_time")
+                    or process.create_time()
+                )
+            except (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                scans_complete = False
+                continue
+            plausible_new_same_user_process = (
+                started_at >= self._path_marker_started_at - 0.001
+            )
+            try:
+                environment = process.environ()
+                if (
+                    self._path_marker
+                    not in str(environment.get("PATH") or "").split(os.pathsep)
+                ):
+                    continue
+                containment_id = str(
+                    environment.get(CONTAINMENT_ENV_VAR, "")
+                ).strip()
+                if not containment_id:
+                    scans_complete = False
+                    continue
+                process_group_id = _process_group_id(pid)
+                if process_group_id is None:
+                    continue
+                identity = ProcessIdentity(pid=pid, started_at=started_at)
+                candidates[
+                    (containment_id, identity.pid, identity.started_at)
+                ] = (containment_id, identity, process_group_id)
+            except (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                ProcessLookupError,
+            ):
+                continue
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                psutil.Error,
+            ):
+                if plausible_new_same_user_process:
+                    scans_complete = False
+        return tuple(candidates.values()), scans_complete
+
+    @staticmethod
+    def _prefer_process_root(
+        candidate: ProcessIdentity,
+        candidate_pgid: int,
+        current: ProcessIdentity,
+        current_pgid: int,
+    ) -> bool:
+        candidate_is_leader = candidate.pid == candidate_pgid
+        current_is_leader = current.pid == current_pgid
+        if candidate_is_leader != current_is_leader:
+            return candidate_is_leader
+        return (candidate.started_at, candidate.pid) < (
+            current.started_at,
+            current.pid,
+        )
+
+
+class _CancellationGuardedState:
+    """Delegate reads while serializing writes against gate cancellation."""
+
+    def __init__(self, state: State, cancellation: _GateCancellation) -> None:
+        self._state = state
+        self._cancellation = cancellation
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._state, name)
+
+    def write_event(self, *args: Any, **kwargs: Any) -> int | None:
+        return self._cancellation.write_event(
+            self._state,
+            *args,
+            **kwargs,
+        )
+
+    def write_event_once(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> int | None:
+        return self._cancellation.write_event_once(
+            self._state,
+            *args,
+            **kwargs,
+        )
+
+
+async def _await_task_during_cancellation(
+    task: asyncio.Task[Any],
+    *,
+    deadline: float,
+) -> None:
+    while not task.done():
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0:
+            raise TimeoutError("cancellation join deadline expired")
+        try:
+            done, _pending = await asyncio.wait(
+                (task,),
+                timeout=remaining_s,
+            )
+        except asyncio.CancelledError:
+            continue
+        if not done:
+            raise TimeoutError("cancellation join deadline expired")
+
+
+def _consume_task_result(task: asyncio.Future[Any]) -> None:
+    try:
+        task.result()
+    except BaseException:
+        pass
+
+
 async def run_dual_agent_gate_with_escalation(
     spec: DualAgentGateSpec,
     *,
     state: State,
-    notifier: Any,
+    notifier: Any | None,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> DualAgentGateResult:
-    result = run_dual_agent_gate(spec, runner=runner, state=state)
-    if result.status == "accepted":
+    cancellation = _GateCancellation()
+    gate_task = asyncio.create_task(
+        asyncio.to_thread(
+            run_dual_agent_gate,
+            spec,
+            runner=cancellation.wrap_runner(runner),
+            runtime_runner=cancellation.wrap_runtime_runner(runtime_runner),
+            state=_CancellationGuardedState(state, cancellation),
+        )
+    )
+    try:
+        result = await asyncio.shield(gate_task)
+    except asyncio.CancelledError as cancelled_error:
+        cancellation.cancelled.set()
+        deadline = (
+            time.monotonic()
+            + max(0.0, float(DUAL_AGENT_CANCELLATION_TIMEOUT_S))
+        )
+        cleanup_task = asyncio.create_task(
+            asyncio.to_thread(
+                cancellation.cancel_active_invocations,
+                deadline=deadline,
+            )
+        )
+        cleanup_quiescent = False
+        cleanup_error: BaseException | None = None
+        try:
+            await _await_task_during_cancellation(
+                cleanup_task,
+                deadline=deadline,
+            )
+            cleanup_task.result()
+            cleanup_quiescent = True
+        except BaseException as exc:
+            cleanup_error = exc
+            cleanup_quiescent = bool(
+                getattr(
+                    exc,
+                    "_dual_agent_containment_quiescent",
+                    False,
+                )
+            )
+            if not cleanup_task.done():
+                cleanup_task.add_done_callback(_consume_task_result)
+
+        gate_join_error: BaseException | None = None
+        if not gate_task.done():
+            try:
+                await _await_task_during_cancellation(
+                    gate_task,
+                    deadline=deadline,
+                )
+            except BaseException as exc:
+                gate_join_error = exc
+        gate_thread_terminated = gate_task.done()
+        if gate_thread_terminated:
+            try:
+                gate_task.result()
+            except BaseException as exc:
+                if gate_join_error is None:
+                    gate_join_error = exc
+        else:
+            gate_task.add_done_callback(_consume_task_result)
+
+        if (
+            isinstance(gate_join_error, _GateInvocationCancelled)
+            and cleanup_quiescent
+            and cleanup_error is None
+            and gate_thread_terminated
+        ):
+            # ``run_dual_agent_gate`` releases the handoff lock in its
+            # ``finally`` block. A release failure replaces this marker as the
+            # gate-task exception, so observing the marker after thread
+            # termination is itself the release proof. Re-reading the shared
+            # path here would race with a subsequent gate acquiring a new lock.
+            gate_join_error = None
+
+        if (
+            not cleanup_quiescent
+            or cleanup_error is not None
+            or not gate_thread_terminated
+            or gate_join_error is not None
+        ):
+            primary_error = (
+                cleanup_error
+                or gate_join_error
+            )
+            phase = (
+                "cleanup_and_gate_thread_join"
+                if cleanup_error is not None and not gate_thread_terminated
+                else "cleanup"
+                if cleanup_error is not None
+                else "gate_thread_join"
+                if not gate_thread_terminated
+                else "gate_thread_cleanup"
+                if gate_join_error is not None
+                else "cancellation_cleanup"
+            )
+            detail = (
+                f"{type(primary_error).__name__}: {primary_error}"
+                if primary_error is not None
+                else "cancellation cleanup proof was incomplete"
+            )
+            error = DualAgentCancellationCleanupError(
+                "dual-agent cancellation cleanup failed closed: "
+                f"cleanup_quiescent={cleanup_quiescent}, "
+                f"gate_thread_terminated={gate_thread_terminated}; "
+                f"{detail}",
+                cleanup_quiescent=cleanup_quiescent,
+                gate_thread_terminated=gate_thread_terminated,
+                phase=phase,
+            )
+            if primary_error is not None:
+                raise error from primary_error
+            raise error
+        raise cancelled_error
+    if result.status == "accepted" or notifier is None:
         return result
     escalation = await _maybe_request_validation_escalation(
         result,
@@ -608,6 +1325,7 @@ async def run_dual_agent_gate_with_escalation(
         outcome=result.outcome,
         attempts=result.attempts,
         escalation=escalation,
+        tool_calls=result.tool_calls,
     )
 
 
@@ -623,6 +1341,7 @@ def resume_pending_gates(
     *,
     state: State,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> list[DualAgentGateResult]:
     results: list[DualAgentGateResult] = []
     for spec in specs:
@@ -639,7 +1358,12 @@ def resume_pending_gates(
             )
         if signal is None:
             continue
-        results.append(run_dual_agent_gate(spec, runner=runner, state=state))
+        results.append(run_dual_agent_gate(
+            spec,
+            runner=runner,
+            runtime_runner=runtime_runner,
+            state=state,
+        ))
     return results
 
 
@@ -967,6 +1691,14 @@ def _lead_invocation_tool_fields(
         "tokens_in": lead_result.tokens_in,
         "tokens_out": lead_result.tokens_out,
         "token_usage": lead_result.token_usage,
+        "runtime": lead_result.runtime,
+        "runtime_run_id": lead_result.runtime_run_id,
+        "runtime_session_id": lead_result.runtime_session_id,
+        "runtime_result_hash": lead_result.runtime_result_hash,
+        "runtime_duration_ms": lead_result.runtime_duration_ms,
+        "model_provenance": lead_result.model_provenance,
+        "cost_provenance": lead_result.cost_provenance,
+        "token_provenance": lead_result.token_provenance,
         "stdout_bytes": lead_result.stdout_bytes,
         "stderr_bytes": lead_result.stderr_bytes,
         "result_summary": {
@@ -978,6 +1710,12 @@ def _lead_invocation_tool_fields(
             "cost_usd": lead_result.cost_usd,
             "tokens_in": lead_result.tokens_in,
             "tokens_out": lead_result.tokens_out,
+            "runtime": lead_result.runtime,
+            "runtime_run_id": lead_result.runtime_run_id,
+            "runtime_result_hash": lead_result.runtime_result_hash,
+            "model_provenance": lead_result.model_provenance,
+            "cost_provenance": lead_result.cost_provenance,
+            "token_provenance": lead_result.token_provenance,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
         },
@@ -994,7 +1732,11 @@ def _lead_response_tool_calls(
     if tool_calls is not None:
         return [ensure_tool_call_timing(call) for call in tool_calls]
     lead_call = ensure_tool_call_timing({
-            "name": "invoke_claude_lead",
+            "name": (
+                "invoke_runtime_lead"
+                if lead_result.runtime is not None
+                else "invoke_claude_lead"
+            ),
             "status": "completed" if probes["P2"].ok else "failed",
             "attempts": attempts,
             "model": lead_result.model,
@@ -1002,6 +1744,14 @@ def _lead_response_tool_calls(
             "tokens_in": lead_result.tokens_in,
             "tokens_out": lead_result.tokens_out,
             "token_usage": lead_result.token_usage,
+            "runtime": lead_result.runtime,
+            "runtime_run_id": lead_result.runtime_run_id,
+            "runtime_session_id": lead_result.runtime_session_id,
+            "runtime_result_hash": lead_result.runtime_result_hash,
+            "runtime_duration_ms": lead_result.runtime_duration_ms,
+            "model_provenance": lead_result.model_provenance,
+            "cost_provenance": lead_result.cost_provenance,
+            "token_provenance": lead_result.token_provenance,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
         })
@@ -1195,11 +1945,13 @@ def _lead_request(
     *,
     packet_path: Path | None = None,
     instruction: str | None = None,
+    corrective_retry: bool = False,
 ) -> LeadInvocationRequest:
     return LeadInvocationRequest(
         task_id=spec.task_id,
         gate=spec.gate,
         instruction=instruction or spec.instruction,
+        corrective_retry=corrective_retry,
         cwd=spec.cwd,
         expected_specialists=spec.expected_specialists,
         expected_decisions=spec.expected_decisions,
@@ -1276,7 +2028,11 @@ def _validation_failure_policy(
     if p2 is not None and not p2.ok:
         if p2.reason == "lead_invocation_timeout":
             return "timeout", p2
-        if p2.reason in {"lead_invocation_failed", "claude_json_schema_drift"}:
+        if p2.reason in {
+            "lead_invocation_cancelled",
+            "lead_invocation_failed",
+            "claude_json_schema_drift",
+        }:
             return "subprocess_failure", p2
     if p3 is not None and not p3.ok:
         if p3.reason == "outcome_signal_loss":

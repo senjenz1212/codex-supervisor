@@ -25,6 +25,7 @@ from supervisor.quality_trends import query_quality_trends, record_transport_inc
 from supervisor.redaction import redact
 from supervisor.runtime_health import SUPERVISOR_RUNTIME_RUN_ID
 from supervisor.state import State
+from supervisor.state_factory import build_state
 
 
 DEFAULT_CONFIG = str(Path.home() / ".codex-supervisor" / "config.yaml")
@@ -195,6 +196,7 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
         task_id=args.task_id,
         run_id=args.run_id,
         intent=args.intent,
+        target_session_id=args.session_id,
         quality=args.quality,
         execution_layer_mode=args.execution_layer_mode,
         agentic_lead_policy=args.agentic_lead_policy,
@@ -206,6 +208,9 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
         visual_evidence_policy=args.visual_evidence_policy,
         planning_artifacts=planning_artifacts,
         tool_receipts=tool_receipts,
+        trace_closure_required=args.trace_closure_required,
+        trace_graph_store_path=args.trace_graph_store_path,
+        trace_graph_store_sha256=args.trace_graph_store_sha256,
         config_path=args.config,
         client_token=args.client_token,
     )
@@ -385,7 +390,10 @@ def _proposal_from_run_events(state: State, *, run_id: str, proposal_id: str) ->
             continue
         payload = event["payload"]
         if isinstance(payload, dict) and str(payload.get("proposal_id") or "") == proposal_id:
-            return payload
+            return {
+                **payload,
+                "proposal_event_id": int(event["event_id"]),
+            }
     raise AxiUsageError(f"policy proposal not found in run {run_id}: {proposal_id}")
 
 
@@ -489,6 +497,7 @@ def _build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--task-id", required=True)
     submit.add_argument("--run-id", required=True)
     submit.add_argument("--intent", required=True)
+    submit.add_argument("--session-id", help="Target-agent session/thread id for rollout joins.")
     submit.add_argument("--client-token")
     submit.add_argument("--quality", default="best")
     submit.add_argument("--execution-layer-mode", default="lead_direct")
@@ -505,6 +514,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     submit.add_argument("--tool-receipts-json")
     submit.add_argument("--planning-artifacts-json")
+    submit.add_argument(
+        "--trace-closure-required",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
+    submit.add_argument("--trace-graph-store-path")
+    submit.add_argument("--trace-graph-store-sha256")
 
     poll = subparsers.add_parser("poll")
     poll.add_argument("job_id")
@@ -569,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
         fields = _split_fields(args.fields)
         cfg = Config.load(args.config)
-        state = State(cfg.supervisor.state_db)
+        state = build_state(cfg)
         if args.command is None:
             payload = _home(state)
         elif args.command == "submit":

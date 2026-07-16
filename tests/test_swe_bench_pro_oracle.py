@@ -569,6 +569,108 @@ def test_pro_runner_discloses_rc_nonzero_when_parser_statuses_pass(
     assert receipt["rc_nonzero_resolved"] is True
 
 
+def test_pro_runner_records_stripped_binary_sections_in_receipt(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+    context = _pro_context(tmp_path)
+    text_patch = context["model_patch"]
+    binary_section = (
+        "diff --git a/logo.png b/logo.png\n"
+        "Binary files a/logo.png and b/logo.png differ\n"
+    )
+    context["model_patch"] = text_patch + binary_section
+    context["model_patch_sha256"] = sha256(
+        context["model_patch"].encode("utf-8")
+    ).hexdigest()
+
+    result = run_swe_bench_pro_oracle(context)
+
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["model_patch_sha256"] == context["model_patch_sha256"]
+    assert receipt["stripped_binary_section_count"] == 1
+    (section,) = receipt["stripped_binary_sections"]
+    assert section["paths"] == ["logo.png"]
+    assert section["section_sha256"] == sha256(
+        binary_section.encode("utf-8")
+    ).hexdigest()
+    assert receipt["applied_patch_sha256"] == sha256(
+        text_patch.encode("utf-8")
+    ).hexdigest()
+
+
+def test_pro_runner_receipt_omits_stripping_fields_without_binary_hunks(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    receipt = result["oracle_adapter_receipt"]
+    assert "stripped_binary_sections" not in receipt
+    assert "stripped_binary_section_count" not in receipt
+    assert "applied_patch_sha256" not in receipt
+
+
+def test_pro_parser_conflicting_duplicate_status_is_malformed(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "FAILED"},
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "pro_parser_output_malformed"
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+
+
+def test_pro_parser_same_status_duplicates_are_tolerated(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+
+
 def test_pro_runner_outcome_feeds_interpret_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
     output_payload = {

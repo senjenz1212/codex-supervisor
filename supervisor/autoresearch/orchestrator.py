@@ -9,11 +9,12 @@ from typing import Any, Protocol
 from .durable_jobs import resolve_evaluator_defaults, run_durable_evaluator_trials
 from .evaluator import EvaluatorContractError
 from .policy_evolution import (
+    PolicyClaimAuthority,
     derive_policy_evolution_proposals_from_report,
     report_contains_derivable_policy_record,
 )
-from .report import build_autoresearch_report
-from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
+from .report import autoresearch_report_sha256, build_autoresearch_report
+from .schema import AutoresearchAttempt, AutoresearchExperiment
 from .validation import validate_attempt
 
 
@@ -53,6 +54,7 @@ def run_autoresearch_fixture(
     repo_root: str | Path = ".",
     output_dir: str | Path | None = None,
     execution_mode: str | None = None,
+    policy_claim_authority: PolicyClaimAuthority | None = None,
 ) -> dict[str, Any]:
     """Run a deterministic fixture and write ledger-backed evidence events.
 
@@ -310,7 +312,10 @@ def run_autoresearch_fixture(
     report["event_ids"] = event_ids
     if output_dir is not None:
         report["report_ref"] = (Path(output_dir) / "report.json").as_posix()
-    report["report_sha256"] = sha256_json(_without_report_sha(report))
+    if policy_claim_authority is not None:
+        report = policy_claim_authority.derive_report(report)
+    report["event_kinds"].append("autoresearch_report_emitted")
+    report["report_sha256"] = autoresearch_report_sha256(report)
     report_event_id = _write_event(
         state,
         run_id=run_id,
@@ -322,23 +327,35 @@ def run_autoresearch_fixture(
             "attempt_count": len(attempts),
             "report_sha256": report["report_sha256"],
             "default_change_allowed": False,
+            "claim_gate": dict(report.get("claim_gate") or {}),
         },
     )
     report["event_ids"].append(report_event_id)
-    report["event_kinds"].append("autoresearch_report_emitted")
-    report["report_sha256"] = sha256_json(_without_report_sha(report))
     derived = []
-    if report_contains_derivable_policy_record(report, repo_root=repo_root):
+    policy_validation_kwargs = (
+        policy_claim_authority.validation_kwargs()
+        if policy_claim_authority is not None
+        else {}
+    )
+    if report_contains_derivable_policy_record(
+        report,
+        repo_root=repo_root,
+        state=state,
+        run_id=run_id,
+        **policy_validation_kwargs,
+    ):
         derived = derive_policy_evolution_proposals_from_report(
             report,
             repo_root=repo_root,
             affected_gates=_affected_gates(report),
             state=state,
             run_id=run_id,
+            **policy_validation_kwargs,
         )
     report["derived_policy_proposals"] = [
         {
             "proposal_id": proposal.get("proposal_id"),
+            "proposal_event_id": proposal.get("proposal_event_id"),
             "status": proposal.get("status"),
             "source": proposal.get("source"),
         }
@@ -378,14 +395,6 @@ def _export_report(report: dict[str, Any], output_dir: Path) -> None:
         json.dumps(report, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
-
-
-def _without_report_sha(report: dict[str, Any]) -> dict[str, Any]:
-    clone = dict(report)
-    clone.pop("report_sha256", None)
-    clone.pop("event_ids", None)
-    clone.pop("derived_policy_proposals", None)
-    return clone
 
 
 def _affected_gates(report: dict[str, Any]) -> tuple[str, ...]:

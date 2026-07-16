@@ -1,0 +1,52 @@
+[
+  {
+    "receipt_id": "skill-integrity-a-to-prd",
+    "kind": "skill_run",
+    "stage": "to_prd",
+    "skill": "to-prd",
+    "status": "passed",
+    "execution_mode": "repo_local_synthesis",
+    "artifact_path": "docs/dual-agent/integrity-a-evidence-writes-20260711/prd.md",
+    "artifact_sha256": "7d49be1e1c394fbeaadea826c70b314414c6f5141cdeb61b8fd5e5fc633ce97c"
+  },
+  {
+    "receipt_id": "skill-integrity-a-prd-grill",
+    "kind": "skill_run",
+    "stage": "prd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "execution_mode": "repo_local_synthesis",
+    "artifact_path": "docs/dual-agent/integrity-a-evidence-writes-20260711/grill-findings.md",
+    "artifact_sha256": "aba6c721621cb2840c1028a25da7e33bb86bc89b9e419b942561cacfd313961d"
+  },
+  {
+    "receipt_id": "skill-integrity-a-to-issues",
+    "kind": "skill_run",
+    "stage": "to_issues",
+    "skill": "to-issues",
+    "status": "passed",
+    "execution_mode": "repo_local_synthesis",
+    "artifact_path": "docs/dual-agent/integrity-a-evidence-writes-20260711/issues.md",
+    "artifact_sha256": "b4bac151f265f5b4e45aad7247ab2ff7152e5f67a56c813c278ebf5e9dad7d07"
+  },
+  {
+    "receipt_id": "skill-integrity-a-tdd",
+    "kind": "skill_run",
+    "stage": "tdd",
+    "skill": "tdd",
+    "status": "passed",
+    "execution_mode": "repo_local_synthesis",
+    "artifact_path": "docs/dual-agent/integrity-a-evidence-writes-20260711/tdd.md",
+    "artifact_sha256": "222dea1a3a9bea3789587a6d0f5b82898c513b41d94b706ec54f6f479c8f59cc"
+  },
+  {
+    "receipt_id": "skill-integrity-a-tdd-grill",
+    "kind": "skill_run",
+    "stage": "tdd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "execution_mode": "repo_local_synthesis",
+    "artifact_path": "docs/dual-agent/integrity-a-evidence-writes-20260711/grill-findings-tdd.md",
+    "artifact_sha256": "3edd8b32f402dac7feb38bb3768c85a8ee682dac5a8a20ed9b9cdb62012260a1"
+  }
+]

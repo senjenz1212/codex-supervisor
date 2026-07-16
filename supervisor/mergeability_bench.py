@@ -11,13 +11,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
+from .claim_gate import ClaimGate
 from .cursor_agent import (
     CursorInvocationRequest,
     CursorInvocationResult,
@@ -34,6 +34,13 @@ from .reviewer_registry import (
     provider_family_verification_for_reviewer,
 )
 from .redaction import redact
+
+if TYPE_CHECKING:
+    from .model_client import ModelClient
+    from .runtime_execution import RuntimeTaskRunner
+
+
+_REPORT_ONLY_CLAIM_FLAGS = ClaimGate.derived_claim_flags()
 
 
 MERGEABILITY_TASK_SCHEMA_VERSION = "supervisor-mergeability-task/v1"
@@ -1390,7 +1397,9 @@ def run_paired_acceptance_pilot(
             "heldout_improvement_claim_allowed": False,
         },
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "gaming_flags": sorted(gaming_flags),
         "baseline_evidence_kind": "metadata_calibration",
         "validity_notes": [
@@ -1424,6 +1433,7 @@ def run_paired_acceptance_pilot(
         full_gate_matched_true_accept=full_gate_matched_true_accept,
         fixture_growth_rationale=manifest.get("fixture_growth_rationale") or {},
     )
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -1545,6 +1555,7 @@ def run_fixture_panel_produced_baseline_measurement(
         "report_only": True,
     }
     _validate_fixture_panel_measurement_report(report)
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -1613,7 +1624,9 @@ def _build_fixture_diagnostic_report_block(
         ),
         "report_only": True,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "policy_mutated": False,
         "gate_advanced": False,
         "default_change_allowed": False,
@@ -1643,7 +1656,9 @@ def _paired_acceptance_comparisons(
             "matched_true_accept": dict(single_agent_matched_true_accept),
             "full_gate_matched_true_accept": dict(full_gate_single_agent_matched_true_accept),
             "metric_applyable": False,
-            "improvement_claim_allowed": False,
+            "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+                "improvement_claim_allowed"
+            ],
         },
         "legacy_metadata_accept_all_baseline": {
             "name": "legacy_metadata_accept_all_baseline",
@@ -1656,7 +1671,9 @@ def _paired_acceptance_comparisons(
             "matched_true_accept": dict(legacy_metadata_matched_true_accept),
             "full_gate_matched_true_accept": dict(full_gate_metadata_matched_true_accept),
             "metric_applyable": False,
-            "improvement_claim_allowed": False,
+            "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+                "improvement_claim_allowed"
+            ],
         },
     }
 
@@ -2013,7 +2030,7 @@ def run_powered_factorial_mergeability_evaluation(
         )
         for arm, definition in FACTORIAL_ARM_DEFINITIONS.items()
     }
-    for arm_name, arm in arms.items():
+    for arm in arms.values():
         arm["false_reject_confidence_interval"] = _wilson_interval(
             int(arm["false_reject_count"]),
             int(arm["false_reject_denominator"]),
@@ -2022,7 +2039,9 @@ def run_powered_factorial_mergeability_evaluation(
             int(arm["false_reject_count"]),
             int(arm["false_reject_denominator"]),
         )
-        arm["improvement_claim_allowed"] = False if arm_name == "oracle_ceiling" else None
+        arm["improvement_claim_allowed"] = _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ]
 
     candidate_pool = [
         {
@@ -2112,7 +2131,9 @@ def run_powered_factorial_mergeability_evaluation(
             "policy_mutation_allowed": False,
         },
         "metric_applyable": metric_applyable,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "gaming_flags": sorted(all_gaming_flags),
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -2126,6 +2147,7 @@ def run_powered_factorial_mergeability_evaluation(
             "next_step": "operator-reviewed policy evolution proposal after powered evidence, not automatic mutation",
         },
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -2313,7 +2335,9 @@ def run_mergeability_reviewer_roster_diagnostic(
         "roster_selection_guard": roster_selection_guard,
         "per_task_results": rows,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -2332,6 +2356,7 @@ def run_mergeability_reviewer_roster_diagnostic(
             "next_step": "run the same diagnostic on real SWE-bench-style candidates before roster promotion",
         },
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -2595,7 +2620,9 @@ def _live_generation_report_base(
         "arms": {key: dict(value) for key, value in arms.items()},
         "evaluator_hash": evaluator_hash,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -3805,6 +3832,8 @@ class ConfiguredReviewerPanelOptions:
     reviewers: Sequence[ReviewerAdapter] | None = None
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
     codex_runner: Callable[..., Any] | None = None
+    runtime_runner: RuntimeTaskRunner | None = None
+    model_client: ModelClient | None = None
     litellm_runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
     litellm_model: str | None = None
     litellm_provider_family: str | None = None
@@ -3957,6 +3986,8 @@ def _resolve_configured_panel_adapters(
             litellm_provider_family=options.litellm_provider_family,
             litellm_openai_api_key=options.litellm_openai_api_key,
             litellm_openai_base_url=options.litellm_openai_base_url,
+            runtime_runner=options.runtime_runner,
+            model_client=options.model_client,
         )
     )
     if options.codex_only_calibration:
@@ -6307,7 +6338,7 @@ def _run_command(
         argv=tuple(argv),
         status=status,
         returncode=returncode,
-        duration_s=0.0,
+        duration_s=max(0.0, time.monotonic() - started),
         stdout_sha256=sha256(_stable_command_text(stdout).encode("utf-8")).hexdigest(),
         stderr_sha256=sha256(_stable_command_text(stderr).encode("utf-8")).hexdigest(),
         stdout_tail=_tail(_stable_command_text(stdout)),
@@ -7672,7 +7703,9 @@ def run_bounded_parallel_panel_corpus(
 
     report_only_invariants = {
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "policy_mutated": False,
         "gate_advanced": False,
     }
@@ -7844,7 +7877,9 @@ def run_bounded_parallel_panel_corpus(
             "heldout_improvement_claim_allowed": False,
         },
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "gaming_flags": sorted(gaming_flags),
         "baseline_evidence_kind": "metadata_calibration",
         "validity_notes": [
@@ -7880,6 +7915,7 @@ def run_bounded_parallel_panel_corpus(
             + ", ".join(report_leaks)
         )
 
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -7901,7 +7937,7 @@ def run_bounded_parallel_panel_corpus(
             f"- runner_schema_version: {BOUNDED_PANEL_RUNNER_SCHEMA_VERSION}",
             f"- max_candidate_workers: {opts.max_candidate_workers}",
             f"- max_reviewer_workers: {opts.max_reviewer_workers}",
-            f"- reviewer_fanout: serial",
+            "- reviewer_fanout: serial",
             f"- review_timeout_s: {opts.review_timeout_s}",
             f"- max_wall_clock_s: {opts.max_wall_clock_s}",
             f"- wall_clock_stopped: {wall_clock_stopped}",
@@ -7910,8 +7946,8 @@ def run_bounded_parallel_panel_corpus(
             f"- selected_candidate_count: {selected_candidate_count}",
             f"- total_candidate_count: {total_candidate_count}",
             f"- full_corpus_claim: {not filtered}",
-            f"- metric_applyable: False",
-            f"- improvement_claim_allowed: False",
+            "- metric_applyable: False",
+            "- improvement_claim_allowed: False",
         ]
         (output_path / "runtime-evidence.md").write_text(
             "\n".join(runtime_evidence_lines) + "\n",
@@ -8141,7 +8177,9 @@ def render_panel_dashboard_html(report: Mapping[str, Any]) -> str:
     roster_guard = report.get("roster_selection_guard") or {}
     invariants = report.get("report_only_invariants") or {
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "policy_mutated": False,
         "gate_advanced": False,
     }
@@ -8437,14 +8475,16 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         reviewer_panel_mode=args.reviewer_panel_mode,
         strict_calibration=not args.relaxed_calibration,
     )
-    summary = {
+    ClaimGate.validate_derived_report(report)
+    summary = ClaimGate.govern_report({
         "candidate_count": report.get("candidate_count"),
         "report_label": report.get("report_label"),
         "metric_applyable": report.get("metric_applyable"),
         "improvement_claim_allowed": report.get("improvement_claim_allowed"),
         "bounded_runner": report.get("bounded_runner"),
         "output_dir": args.output_dir,
-    }
+    })
+    ClaimGate.validate_derived_report(summary)
     print(json.dumps(summary, sort_keys=True, indent=2))
     return 0
 

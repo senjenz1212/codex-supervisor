@@ -10,6 +10,7 @@ from supervisor.autoresearch.generator import (
     park_autoresearch_experiment,
     run_runnable_autoresearch_experiments,
 )
+from supervisor.autoresearch.policy_evolution import PolicyClaimAuthority
 from supervisor.config import Config
 from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
 from supervisor.state import State
@@ -292,6 +293,76 @@ def test_autoresearch_draft_cannot_run_until_operator_marks_runnable(tmp_path):
     [row] = _queue_rows(state)
     assert row["status"] == "completed"
     assert row["last_run_id"].startswith("autorun-")
+
+
+def test_autoresearch_auto_runner_forwards_resolved_policy_claim_authority(
+    monkeypatch,
+    tmp_path,
+):
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        _write_taxonomy_failure(state, run_id=f"authority-{index}")
+    [draft] = generate_autoresearch_experiment_drafts(
+        state=state,
+        repo_root=Path.cwd(),
+        config=AutoResearchGeneratorConfig(
+            recurrence_threshold=3,
+            default_k_trials=1,
+        ),
+    )
+    activate_autoresearch_experiment(
+        state=state,
+        experiment_id=draft["experiment_id"],
+        operator="operator@example.com",
+        approval_channel="test",
+    )
+    authority = PolicyClaimAuthority(evidence_bundle={})
+    resolved: list[tuple[dict, Path]] = []
+    fixture_calls: list[dict] = []
+
+    def resolver(row, repo_root):
+        resolved.append((row, repo_root))
+        return authority
+
+    def fake_fixture(**kwargs):
+        fixture_calls.append(kwargs)
+        report = {
+            "records": [{
+                "attempt_id": "attempt-authority",
+                "metric_source": "evaluator_execution",
+                "validation_status": "accepted",
+            }],
+            "default_change_allowed": False,
+            "policy_mutated": False,
+            "gate_advanced": False,
+        }
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "report.json").write_text(
+            json.dumps(report, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return report
+
+    monkeypatch.setattr(
+        "supervisor.autoresearch.generator.run_autoresearch_fixture",
+        fake_fixture,
+    )
+
+    [result] = run_runnable_autoresearch_experiments(
+        state=state,
+        repo_root=tmp_path,
+        output_root=tmp_path / "out",
+        run_id_prefix="autorun",
+        policy_claim_authority_resolver=resolver,
+    )
+
+    assert result["status"] == "completed"
+    assert len(resolved) == 1
+    assert resolved[0][0]["experiment_id"] == draft["experiment_id"]
+    assert resolved[0][1] == tmp_path.resolve()
+    assert fixture_calls[0]["repo_root"] == tmp_path.resolve()
+    assert fixture_calls[0]["policy_claim_authority"] is authority
 
 
 def test_parked_autoresearch_experiment_cannot_be_activated_or_run(tmp_path):
