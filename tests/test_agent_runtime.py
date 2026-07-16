@@ -24,6 +24,7 @@ from supervisor.agent_runtime import (
     AgentRunResult,
     AgentTask,
     ClaudeCodeRuntime,
+    CommandAgentRuntime,
     CodexRuntime,
     RuntimeCapabilityEvidence,
     RuntimeTransportResult,
@@ -441,6 +442,11 @@ class RecordingTransport:
         )
 
 
+class TerminalRecordingTransport(RecordingTransport):
+    def is_active(self, token: str) -> bool:
+        return False
+
+
 class ManifestRecordingTransport(RecordingTransport):
     def __init__(self, *, endpoint: str) -> None:
         super().__init__()
@@ -629,6 +635,101 @@ def test_runtime_manifest_rejects_transport_secrets(tmp_path: Path) -> None:
                 metadata={"tools": ["Read"]},
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_runtime_retains_terminal_run_until_successful_collect(
+    tmp_path: Path,
+) -> None:
+    runtime = CodexRuntime(transport=TerminalRecordingTransport())
+    handles = [
+        await runtime.start(
+            AgentTask(
+                task_id=f"retained-terminal-{index}",
+                instruction="Run",
+                cwd=tmp_path,
+                model="gpt-test",
+            )
+        )
+        for index in range(
+            agent_runtime_module._MAX_RETAINED_TERMINAL_RUNS + 2
+        )
+    ]
+
+    result = await runtime.collect(handles[0])
+
+    assert result.status == "completed"
+    assert result.task_id == "retained-terminal-0"
+
+
+@pytest.mark.asyncio
+async def test_runtime_resume_requires_new_collect_before_eviction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    runtime = CodexRuntime(transport=TerminalRecordingTransport())
+    resumed = await runtime.start(
+        AgentTask(
+            task_id="resumed-retention",
+            instruction="Run",
+            cwd=tmp_path,
+            model="gpt-test",
+        )
+    )
+    await runtime.collect(resumed)
+    await runtime.resume(resumed, "Continue")
+    for index in range(2):
+        await runtime.start(
+            AgentTask(
+                task_id=f"retention-pressure-{index}",
+                instruction="Run",
+                cwd=tmp_path,
+                model="gpt-test",
+            )
+        )
+
+    result = await runtime.collect(resumed)
+
+    assert result.task_id == "resumed-retention"
+
+
+@pytest.mark.asyncio
+async def test_runtime_evicts_collected_terminal_run_at_retention_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    runtime = CodexRuntime(transport=TerminalRecordingTransport())
+    collected = await runtime.start(
+        AgentTask(
+            task_id="collected-terminal",
+            instruction="Run",
+            cwd=tmp_path,
+            model="gpt-test",
+        )
+    )
+    await runtime.collect(collected)
+
+    await runtime.start(
+        AgentTask(
+            task_id="replacement-run",
+            instruction="Run",
+            cwd=tmp_path,
+            model="gpt-test",
+        )
+    )
+
+    with pytest.raises(KeyError, match="unknown runtime handle"):
+        await runtime.collect(collected)
 
 
 class GenerationRecordingTransport(RecordingTransport):
@@ -1682,6 +1783,182 @@ async def test_experiment_result_rejects_unresolved_transport_provenance(
         match="experiment runtime provenance is incomplete",
     ):
         await runtime.collect(handle)
+
+
+@pytest.mark.asyncio
+async def test_subprocess_transport_retains_terminal_token_until_collect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    transport = SubprocessRuntimeTransport()
+
+    async def start_terminal(run_id: str) -> str:
+        token = await transport.start(
+            run_id=run_id,
+            argv=(sys.executable, "-c", "pass"),
+            cwd=tmp_path,
+            env=dict(os.environ),
+            timeout_s=10,
+            metadata={},
+        )
+        while transport.is_active(token):
+            await asyncio.sleep(0.01)
+        return token
+
+    retained = await start_terminal("unharvested-terminal")
+    await start_terminal("retention-pressure-0")
+    await start_terminal("retention-pressure-1")
+
+    result = await transport.collect(retained)
+
+    assert result.returncode == 0
+
+
+@pytest.mark.asyncio
+async def test_subprocess_transport_evicts_collected_token_at_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    transport = SubprocessRuntimeTransport()
+    collected = await transport.start(
+        run_id="collected-subprocess-token",
+        argv=(sys.executable, "-c", "pass"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=10,
+        metadata={},
+    )
+    await transport.collect(collected)
+
+    replacement = await transport.start(
+        run_id="replacement-subprocess-token",
+        argv=(sys.executable, "-c", "pass"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=10,
+        metadata={},
+    )
+    await transport.collect(replacement)
+
+    with pytest.raises(KeyError, match="unknown runtime transport token"):
+        await transport.collect(collected)
+
+
+@pytest.mark.asyncio
+async def test_subprocess_runtime_resume_resets_transport_harvest_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PythonRuntime(CommandAgentRuntime):
+        kind = "python-test"
+        capabilities = {
+            "resume": True,
+            "cancel": True,
+            "stream": True,
+            "cost_reporting": False,
+        }
+
+        def _start_argv(self, task: AgentTask) -> tuple[str, ...]:
+            return (sys.executable, "-c", "pass")
+
+        def _resume_argv(
+            self,
+            task: AgentTask,
+            *,
+            session_id: str,
+            instruction: str,
+        ) -> tuple[str, ...]:
+            return (sys.executable, "-c", "pass")
+
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    runtime = PythonRuntime(
+        transport=SubprocessRuntimeTransport(),
+        binary=sys.executable,
+    )
+    resumed = await runtime.start(
+        AgentTask(
+            task_id="subprocess-resumed-retention",
+            instruction="Run",
+            cwd=tmp_path,
+            model="python-test",
+        )
+    )
+    _ = [event async for event in runtime.stream(resumed)]
+
+    await runtime.resume(resumed, "Continue")
+    _ = [event async for event in runtime.stream(resumed)]
+    for index in range(2):
+        pressure = await runtime.start(
+            AgentTask(
+                task_id=f"subprocess-retention-pressure-{index}",
+                instruction="Run",
+                cwd=tmp_path,
+                model="python-test",
+            )
+        )
+        _ = [event async for event in runtime.stream(pressure)]
+
+    result = await runtime.collect(resumed)
+
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_subprocess_failed_resume_requires_recollect_before_eviction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_runtime_module,
+        "_MAX_RETAINED_TERMINAL_RUNS",
+        1,
+    )
+    transport = SubprocessRuntimeTransport()
+    token = await transport.start(
+        run_id="subprocess-failed-resume",
+        argv=(sys.executable, "-c", "pass"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=10,
+        metadata={},
+    )
+    await transport.collect(token)
+
+    with pytest.raises(FileNotFoundError):
+        await transport.resume(
+            token,
+            argv=(str(tmp_path / "missing-runtime"),),
+            cwd=tmp_path,
+            env=dict(os.environ),
+            timeout_s=10,
+            metadata={},
+        )
+
+    replacement = await transport.start(
+        run_id="subprocess-after-failed-resume",
+        argv=(sys.executable, "-c", "pass"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=10,
+        metadata={},
+    )
+    await transport.collect(replacement)
+
+    assert (await transport.collect(token)).returncode == 0
 
 
 @pytest.mark.asyncio

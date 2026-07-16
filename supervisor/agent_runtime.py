@@ -442,6 +442,7 @@ class CommandAgentRuntime:
         self._generation_event_offsets: dict[str, int] = {}
         self._session_ids: dict[str, str] = {}
         self._capability_evidence: dict[str, RuntimeCapabilityEvidence] = {}
+        self._harvested_runs: set[str] = set()
 
     def runtime_manifest(self, task: AgentTask) -> Mapping[str, Any]:
         runtime_env = self._runtime_env(task)
@@ -564,6 +565,7 @@ class CommandAgentRuntime:
             raise RuntimeError(
                 "cannot resume while the previous runtime generation is active"
             )
+        self._harvested_runs.discard(handle.run_id)
         await self._synchronize_completed_generation(handle)
         session_id = self._session_ids.get(handle.run_id, handle.session_id)
         await self._transport.resume(
@@ -650,7 +652,7 @@ class CommandAgentRuntime:
                 "capability_evidence": capability_evidence.to_dict(),
             },
         }
-        return AgentRunResult(
+        result = AgentRunResult(
             run_id=handle.run_id,
             task_id=task.task_id,
             runtime=self.kind,
@@ -669,6 +671,8 @@ class CommandAgentRuntime:
             token_provenance=token_provenance,
             metadata=result_payload["metadata"],
         )
+        self._harvested_runs.add(handle.run_id)
+        return result
 
     async def _synchronize_completed_generation(
         self,
@@ -699,7 +703,9 @@ class CommandAgentRuntime:
         self._session_ids[handle.run_id] = session_id
 
     def _evict_terminal_runs(self) -> None:
-        excess = len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS
+        excess = (
+            len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS + 1
+        )
         if excess <= 0:
             return
         active_probe = getattr(self._transport, "is_active", None)
@@ -708,7 +714,7 @@ class CommandAgentRuntime:
         stale = [
             run_id
             for run_id, token in self._tokens.items()
-            if not active_probe(token)
+            if run_id in self._harvested_runs and not active_probe(token)
         ][:excess]
         for run_id in stale:
             for mapping in (
@@ -720,6 +726,7 @@ class CommandAgentRuntime:
                 self._capability_evidence,
             ):
                 mapping.pop(run_id, None)
+            self._harvested_runs.discard(run_id)
 
     def _task_for(self, handle: AgentRunHandle) -> AgentTask:
         try:
@@ -1152,6 +1159,7 @@ class _SubprocessToken:
     deadline: float
     done: asyncio.Task[int]
     cancel_requested: bool = False
+    harvested: bool = False
 
 
 class _AsyncioProcessPoller:
@@ -1438,6 +1446,7 @@ class SubprocessRuntimeTransport:
                 + max(0.001, float(timeout_s))
             ),
             done=asyncio.create_task(asyncio.sleep(0, result=0)),
+            harvested=False,
         )
         token.done = asyncio.create_task(self._run_with_timeout(token))
         self._tokens[run_id] = token
@@ -1458,6 +1467,7 @@ class SubprocessRuntimeTransport:
             raise RuntimeError(
                 "cannot resume while the previous runtime generation is active"
             )
+        current.harvested = False
         await asyncio.shield(current.done)
         await self._terminate_process(current)
         policy = _filesystem_isolation_policy(metadata, cwd=cwd)
@@ -1501,6 +1511,7 @@ class SubprocessRuntimeTransport:
                 + max(0.001, float(timeout_s))
             ),
             done=asyncio.create_task(asyncio.sleep(0, result=0)),
+            harvested=False,
         )
         resumed.done = asyncio.create_task(self._run_with_timeout(resumed))
         self._tokens[token] = resumed
@@ -1623,7 +1634,7 @@ class SubprocessRuntimeTransport:
         item = self._get(token)
         returncode = await asyncio.shield(item.done)
         provenance = _provenance_from_raw_events(item.raw_events)
-        return RuntimeTransportResult(
+        result = RuntimeTransportResult(
             returncode=returncode,
             stdout="".join(item.stdout),
             stderr="".join(item.stderr),
@@ -1652,6 +1663,8 @@ class SubprocessRuntimeTransport:
                 **dict(item.result_metadata),
             },
         )
+        item.harvested = True
+        return result
 
     async def _run_with_timeout(self, item: _SubprocessToken) -> int:
         pump_task = asyncio.create_task(self._pump(item))
@@ -1717,13 +1730,15 @@ class SubprocessRuntimeTransport:
             item.stderr.append(line.decode("utf-8", errors="replace"))
 
     def _evict_terminal_tokens(self) -> None:
-        excess = len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS
+        excess = (
+            len(self._tokens) - _MAX_RETAINED_TERMINAL_RUNS + 1
+        )
         if excess <= 0:
             return
         stale = [
             run_id
             for run_id, item in self._tokens.items()
-            if item.done.done()
+            if item.done.done() and item.harvested
         ][:excess]
         for run_id in stale:
             del self._tokens[run_id]

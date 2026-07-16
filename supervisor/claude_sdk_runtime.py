@@ -176,6 +176,7 @@ class _SdkExecution:
     generation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     containment: _SdkContainment | None = None
     sdk_connected: bool = False
+    harvested: bool = False
 
 
 class ClaudeAgentSdkTransport:
@@ -305,10 +306,15 @@ class ClaudeAgentSdkTransport:
         metadata: Mapping[str, Any],
     ) -> str:
         existing = self._executions.get(run_id)
-        if existing is not None and not existing.task.done():
-            raise RuntimeError(
-                "cannot start while the previous runtime generation is active"
-            )
+        if existing is not None:
+            if not existing.task.done():
+                raise RuntimeError(
+                    "cannot start while the previous runtime generation is active"
+                )
+            if not existing.harvested:
+                raise RuntimeError(
+                    "cannot replace terminal execution before collection"
+                )
         self._executions.pop(run_id, None)
         self._evict_terminal_executions()
         containment = self._new_containment(env) if self._contained else None
@@ -357,6 +363,7 @@ class ClaudeAgentSdkTransport:
                 raise RuntimeError(
                     "cannot resume while the previous runtime generation is active"
                 )
+            execution.harvested = False
             await asyncio.shield(execution.task)
             # Streaming is generation-scoped even though collection retains the
             # cumulative transcript.  A caller may collect without first
@@ -416,7 +423,7 @@ class ClaudeAgentSdkTransport:
                 await _cancel_task_and_wait(execution.task)
                 raise
             returncode = 130
-        return RuntimeTransportResult(
+        result = RuntimeTransportResult(
             returncode=returncode,
             stdout="\n".join(execution.outputs),
             stderr=execution.error,
@@ -430,6 +437,8 @@ class ClaudeAgentSdkTransport:
             cost_provenance=execution.cost_provenance,
             token_provenance=execution.token_provenance,
         )
+        execution.harvested = True
+        return result
 
     async def _run_with_timeout(
         self,
@@ -762,13 +771,17 @@ class ClaudeAgentSdkTransport:
         shutil.rmtree(containment.root, ignore_errors=True)
 
     def _evict_terminal_executions(self) -> None:
-        excess = len(self._executions) - _MAX_RETAINED_TERMINAL_EXECUTIONS
+        excess = (
+            len(self._executions)
+            - _MAX_RETAINED_TERMINAL_EXECUTIONS
+            + 1
+        )
         if excess <= 0:
             return
         stale = [
             token
             for token, execution in self._executions.items()
-            if execution.task.done()
+            if execution.task.done() and execution.harvested
         ][:excess]
         for token in stale:
             del self._executions[token]

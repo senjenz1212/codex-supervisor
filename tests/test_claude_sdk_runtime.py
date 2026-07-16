@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor import claude_sdk_runtime as claude_sdk_runtime_module
 from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
 from supervisor.claude_sdk_runtime import (
     _SDK_LAUNCH_ROOT_PREFIX,
@@ -446,6 +447,183 @@ async def test_claude_sdk_timeout_budget_starts_when_runtime_starts(
         "run.failed",
     ]
     assert FakeOptions.seen.cwd == tmp_path.resolve()
+
+
+@pytest.mark.asyncio
+async def test_claude_sdk_retains_terminal_execution_until_collect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        claude_sdk_runtime_module,
+        "_MAX_RETAINED_TERMINAL_EXECUTIONS",
+        1,
+    )
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (FakeClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+
+    async def start_terminal(run_id: str) -> str:
+        token = await transport.start(
+            run_id=run_id,
+            argv=("claude", "-p", "review", "--model", "claude-test"),
+            cwd=tmp_path.resolve(),
+            env={"ANTHROPIC_API_KEY": "direct"},
+            timeout_s=30,
+            metadata={},
+        )
+        while transport.is_active(token):
+            await asyncio.sleep(0)
+        return token
+
+    retained = await start_terminal("sdk-unharvested-terminal")
+    await start_terminal("sdk-retention-pressure-0")
+    await start_terminal("sdk-retention-pressure-1")
+
+    result = await transport.collect(retained)
+
+    assert result.returncode == 0
+
+
+@pytest.mark.asyncio
+async def test_claude_sdk_evicts_collected_execution_at_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        claude_sdk_runtime_module,
+        "_MAX_RETAINED_TERMINAL_EXECUTIONS",
+        1,
+    )
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (FakeClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+    collected = await transport.start(
+        run_id="sdk-collected-terminal",
+        argv=("claude", "-p", "first", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    await transport.collect(collected)
+
+    replacement = await transport.start(
+        run_id="sdk-replacement-terminal",
+        argv=("claude", "-p", "replacement", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    await transport.collect(replacement)
+
+    with pytest.raises(KeyError, match="unknown Claude SDK runtime token"):
+        await transport.collect(collected)
+
+
+@pytest.mark.asyncio
+async def test_claude_sdk_same_run_id_requires_terminal_collect(
+    tmp_path: Path,
+) -> None:
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (FakeClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+    token = await transport.start(
+        run_id="sdk-same-run-id",
+        argv=("claude", "-p", "first", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    while transport.is_active(token):
+        await asyncio.sleep(0)
+
+    with pytest.raises(
+        RuntimeError,
+        match="terminal execution before collection",
+    ):
+        await transport.start(
+            run_id="sdk-same-run-id",
+            argv=("claude", "-p", "replacement", "--model", "claude-test"),
+            cwd=tmp_path.resolve(),
+            env={"ANTHROPIC_API_KEY": "direct"},
+            timeout_s=30,
+            metadata={},
+        )
+
+    await transport.collect(token)
+    replacement = await transport.start(
+        run_id="sdk-same-run-id",
+        argv=("claude", "-p", "replacement", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    assert (await transport.collect(replacement)).returncode == 0
+
+
+@pytest.mark.asyncio
+async def test_claude_sdk_resume_requires_new_collect_before_eviction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        claude_sdk_runtime_module,
+        "_MAX_RETAINED_TERMINAL_EXECUTIONS",
+        1,
+    )
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (FakeClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+    resumed = await transport.start(
+        run_id="sdk-resumed-retention",
+        argv=("claude", "-p", "first", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    await transport.collect(resumed)
+    await transport.resume(
+        resumed,
+        argv=(
+            "claude",
+            "-p",
+            "second",
+            "--model",
+            "claude-test",
+            "--resume",
+            "session-1",
+        ),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    while transport.is_active(resumed):
+        await asyncio.sleep(0)
+    for index in range(2):
+        pressure = await transport.start(
+            run_id=f"sdk-resume-pressure-{index}",
+            argv=("claude", "-p", "pressure", "--model", "claude-test"),
+            cwd=tmp_path.resolve(),
+            env={"ANTHROPIC_API_KEY": "direct"},
+            timeout_s=30,
+            metadata={},
+        )
+        while transport.is_active(pressure):
+            await asyncio.sleep(0)
+
+    result = await transport.collect(resumed)
+
+    assert result.returncode == 0
 
 
 @pytest.mark.asyncio
