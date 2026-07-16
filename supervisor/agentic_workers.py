@@ -659,6 +659,15 @@ def cleanup_orphaned_agentic_workers(
 
     Fan-out workers record their own refs; this cleanup path handles process
     records from longer-lived workers that outlast their gate.
+
+    Termination is fail-closed: only records that explicitly declare
+    ``termination_scope == "dedicated_process"`` are eligible for kill.
+    ``run_agentic_worker`` executes in-process and records
+    ``termination_scope == "shared_host"`` with ``pid=None``, so its workers
+    (and legacy records lacking a scope, whose recorded pid is the shared
+    host process) are always skipped rather than risk terminating the host.
+    This path stays inert until a spawner that launches workers as dedicated
+    processes records that scope.
     """
     cwd_path = Path(cwd).resolve()
     pid_alive = is_pid_alive or _pid_alive

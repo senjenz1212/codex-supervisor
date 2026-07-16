@@ -450,6 +450,44 @@ async def test_claude_sdk_timeout_budget_starts_when_runtime_starts(
 
 
 @pytest.mark.asyncio
+async def test_claude_sdk_timeout_survives_containment_finalize_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeOptions.seen = None
+    HangingClient.query_started = asyncio.Event()
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (HangingClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+
+    async def failing_finalize(execution: object) -> None:
+        raise RuntimeError("containment teardown proof failed")
+
+    monkeypatch.setattr(transport, "_finalize_containment", failing_finalize)
+    token = await transport.start(
+        run_id="sdk-timeout-containment-failure",
+        argv=("claude", "-p", "review", "--model", "claude-test"),
+        cwd=tmp_path.resolve(),
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=1,
+        metadata={},
+    )
+    await asyncio.wait_for(HangingClient.query_started.wait(), timeout=0.2)
+
+    await asyncio.sleep(1.1)
+    result = await asyncio.wait_for(transport.collect(token), timeout=0.2)
+
+    assert result.returncode == 124
+    terminal = result.raw_events[-1]
+    assert terminal["type"] == "run.failed"
+    assert terminal["reason"] == "timeout"
+    assert terminal["containment_reason"] == "containment_proof_failed"
+    assert "timeout_s=1" in terminal["error"]
+    assert "containment teardown proof failed" in terminal["error"]
+
+
+@pytest.mark.asyncio
 async def test_claude_sdk_retains_terminal_execution_until_collect(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

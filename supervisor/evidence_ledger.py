@@ -2514,29 +2514,6 @@ def _sign_checkpoint(
     return signature
 
 
-def verify_authoritative_event_chain(
-    events: Sequence[Mapping[str, Any] | Any],
-    *,
-    expected_run_id: str,
-    checkpoint_store: Any,
-    verifier: Any,
-    trusted_latest_checkpoint: Mapping[str, Any] | None = None,
-) -> LedgerVerification:
-    """Verify through the persisted-checkpoint API without an import cycle."""
-    from .ledger_checkpoints import verify_authoritative_event_chain as verify
-
-    return verify(
-        events,
-        expected_run_id=expected_run_id,
-        checkpoint_store=checkpoint_store,
-        verifier=verifier,
-        trusted_latest_checkpoint=trusted_latest_checkpoint,
-    )
-
-
-verify_event_chain_authoritatively = verify_authoritative_event_chain
-
-
 __all__ = [
     "ARTIFACT_MANIFEST_ATTESTATION_SCHEMA_VERSION",
     "ARTIFACT_MANIFEST_PREDICATE_TYPE",
@@ -2585,9 +2562,7 @@ __all__ = [
     "sha256_hex",
     "strict_json_object_loads",
     "supported_event_hash_schema_versions",
-    "verify_authoritative_event_chain",
     "verify_event_chain",
-    "verify_event_chain_authoritatively",
     "verify_event_chain_structure",
     "verify_artifact_manifest_attestation",
 ]

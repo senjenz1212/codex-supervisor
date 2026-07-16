@@ -501,17 +501,34 @@ class ClaudeAgentSdkTransport:
             try:
                 await self._finalize_containment(execution)
             except Exception as exc:
-                execution.error = f"{type(exc).__name__}: {exc}"
-                terminal_event = {
+                containment_error = f"{type(exc).__name__}: {exc}"
+                execution.error = (
+                    f"{execution.error}; {containment_error}"
+                    if execution.error
+                    else containment_error
+                )
+                failure_event = {
                     "type": "run.failed",
                     "error": execution.error,
-                    "reason": "containment_proof_failed",
+                    "containment_error": containment_error,
                 }
+                if (
+                    terminal_event is not None
+                    and terminal_event.get("reason") == "timeout"
+                ):
+                    failure_event["reason"] = "timeout"
+                    failure_event["timeout_s"] = timeout_s
+                    failure_event["containment_reason"] = (
+                        "containment_proof_failed"
+                    )
+                else:
+                    failure_event["reason"] = "containment_proof_failed"
+                    returncode = 1
+                terminal_event = failure_event
                 if cancelled:
                     execution.raw_events.append(terminal_event)
                     await execution.queue.put(terminal_event)
                     raise
-                returncode = 1
 
             if cancelled:
                 terminal_event = {"type": "run.cancelled"}
