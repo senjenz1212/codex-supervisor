@@ -28,8 +28,8 @@ operational pilot, efficacy result, ROI result, or auto-improvement result.
 
 ## Review Follow-Up
 
-The no-mistakes review of this hardening landed one follow-up commit,
-`b594d022a87954085b41e59168a69c6c6f1647d9`:
+The no-mistakes reviews of this hardening landed two follow-up commits. The
+first, `b594d022a87954085b41e59168a69c6c6f1647d9`:
 
 - A containment-proof failure that follows a runtime timeout keeps
   `reason="timeout"` on the terminal event and records the containment error
@@ -43,6 +43,35 @@ The no-mistakes review of this hardening landed one follow-up commit,
 
 Focused proof at that commit: `tests/test_claude_sdk_runtime.py` plus
 `tests/test_agentic_workers.py`, 36 passed.
+
+The second, `a8fc6ba8d7aec5971da28ba6e8511c44c4c27dfc`, reviewed PAH-005 and
+the surrounding evidence paths:
+
+- Recoverable-grade revalidation thaws frozen grade payloads before comparing
+  them to the canonical grade, so a frozen-versus-thawed representation
+  difference cannot wedge crash recovery.
+- Drift L2/L3 check failures record explicit skipped verdicts instead of
+  aborting the drift pass; the workflow lease heartbeat survives transient
+  state errors; terminal workflow-job reaping retries with exponential
+  backoff.
+- Artifact-manifest hashes are verified under every supported event-hash
+  schema version with the matching redaction version; legacy Codex CLI
+  reviewer and agent edges redact stderr, transcripts, and diagnostics;
+  declared-but-unverified source-artifact hashes are labeled
+  `declared-unverified:`.
+- The weekly P11 audit claims its cadence slot idempotently, workflow
+  target-session binding events are written idempotently, and a trusted-pin
+  persistence failure is tolerated only when a persisted superseding trusted
+  checkpoint identity already covers the run.
+- Truncated or replaced rollout files re-tail from offset zero with degraded
+  health recorded, duplicate agentic roster worker IDs or directory segments
+  are rejected, and hot evidence/state paths avoid repeated stream reads,
+  canonical JSON round-trips, and unlocked SQLite writes.
+
+Focused proof at that commit: the twelve touched suites (agentic executor and
+legacy edge, drift rewire, evidence-ledger hardening, failure taxonomy, grade
+revisions, ledger checkpoint lifecycle, quality trends, rollout-watcher
+durability, run manifest, run registry, schema migrations), 344 passed.
 
 ## Residual Authority Limitations
 

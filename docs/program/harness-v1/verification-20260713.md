@@ -175,7 +175,7 @@ exit 0
 These are integration and consistency receipts, not operational benchmark,
 causal-improvement, portability, ROI, or auto-improvement evidence.
 
-One review commit then landed at the branch head:
+One review commit then landed at the then-current branch head:
 
 ```text
 b594d022a87954085b41e59168a69c6c6f1647d9
@@ -195,9 +195,10 @@ uv run pytest -q tests/test_claude_sdk_runtime.py tests/test_agentic_workers.py
 36 passed in 4.73s
 ```
 
-No new full-suite receipt is recorded after
-`4c3a88522bb84f9cc817690abef1696115be9110`; the claim boundary below is
-unchanged.
+No full-suite receipt was recorded at that commit itself; the next full-suite
+receipt is the July 15, 2026 recoverable-verification run at
+`69d3b397c80380a5f710cdc8af587dd0207295a1` recorded below. The claim boundary
+below is unchanged.
 
 Earlier full-suite checkpoint:
 
@@ -577,3 +578,67 @@ SWE-bench grade, no rollback-independent journal checkpoint, and no
 independently controlled operational verifier receipt. The claim ceiling
 therefore remains L1. No benchmark-improvement, causal, portability, ROI, or
 auto-improvement claim is supported.
+
+## July 16, 2026 — Review Follow-Up at the Branch Head
+
+One review commit then landed at the branch head:
+
+```text
+a8fc6ba8d7aec5971da28ba6e8511c44c4c27dfc
+```
+
+It hardens the recoverable-verification and evidence paths without changing
+the claim boundary:
+
+- Recoverable-grade revalidation thaws frozen grade payloads before comparing
+  them to the canonical grade, so a frozen-versus-thawed representation
+  difference cannot wedge crash recovery.
+- Drift L2 embedding and L3 plan-progress failures record explicit skipped
+  verdicts and keep the drift pass alive instead of aborting it.
+- Evidence-ledger artifact-manifest verification computes the manifest hash
+  under every supported event-hash schema version with the matching redaction
+  version, instead of only the current schema.
+- A trusted-pin persistence failure is tolerated only when a persisted
+  superseding trusted checkpoint identity already covers the run.
+- The weekly P11 audit claims its cadence slot through an idempotent ledger
+  event so concurrent supervisors cannot double-schedule, and policy
+  rollback-pointer validation uses the daemon repo root instead of the
+  process working directory.
+- Workflow target-session binding events are written idempotently, terminal
+  workflow-job reaping retries with exponential backoff, and the lease
+  heartbeat survives transient state errors.
+- Legacy Codex CLI reviewer and agent edges redact stderr, transcripts, and
+  diagnostics before persistence, and declared-but-unverified source-artifact
+  hashes are labeled `declared-unverified:` so they cannot pass as verified
+  content hashes.
+- Truncated or replaced rollout files are recorded as degraded watcher health
+  and re-tailed from offset zero; duplicate agentic roster worker IDs or
+  worker-directory segments are rejected; worker termination is confirmed
+  against the recorded process creation time.
+- Hot paths are reduced: precommit evidence verification reads each stream
+  once, tracer projection reduction avoids full canonical JSON round-trips,
+  the GradeBook indexes grade invalidations, and SQLite state writes take the
+  shared write lock.
+
+Focused re-run at that head over the touched suites:
+
+```text
+uv run --extra dev python -m pytest -q \
+  tests/test_agentic_executor.py \
+  tests/test_agentic_legacy_provider_edge.py \
+  tests/test_drift_detector_rewire.py \
+  tests/test_evidence_ledger_hardening.py \
+  tests/test_failure_taxonomy.py \
+  tests/test_grade_revisions.py \
+  tests/test_ledger_checkpoint_lifecycle.py \
+  tests/test_quality_trends.py \
+  tests/test_rollout_watcher_durability.py \
+  tests/test_run_manifest.py \
+  tests/test_run_registry.py \
+  tests/test_schema_migrations.py
+344 passed in 8.81s
+```
+
+No new full-suite receipt is recorded after
+`69d3b397c80380a5f710cdc8af587dd0207295a1`; the claim boundary above is
+unchanged.
