@@ -421,6 +421,37 @@ def test_trace_envelope_extracts_tool_calls_from_metadata_or_payload():
     assert from_payload["trace_envelope"]["tool_calls"][0]["name"] == "start_dual_agent_gate"
 
 
+def test_trace_envelope_scopes_untimed_tool_call_ids_to_each_event():
+    def stamp(round_index: int) -> dict:
+        return stamp_trace_envelope(
+            run_id="run-1",
+            source="dual_agent",
+            kind="dual_agent_gate_round",
+            payload={
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "round_index": round_index,
+                "tool_calls": [
+                    {
+                        "name": "record_gate_round",
+                        "status": "recorded",
+                    },
+                ],
+            },
+        )
+
+    first = stamp(1)
+    first_replay = stamp(1)
+    second = stamp(2)
+
+    first_id = first["trace_envelope"]["tool_calls"][0]["tool_call_id"]
+    first_replay_id = first_replay["trace_envelope"]["tool_calls"][0]["tool_call_id"]
+    second_id = second["trace_envelope"]["tool_calls"][0]["tool_call_id"]
+
+    assert first_id == first_replay_id
+    assert first_id != second_id
+
+
 def test_trace_envelope_assigns_stable_tool_call_ids_for_duplicate_references():
     first = stamp_trace_envelope(
         run_id="run-1",

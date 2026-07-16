@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+import hashlib
+import json
 import time
 from typing import Any, Callable, Iterator
 
@@ -22,6 +24,12 @@ def stamp_trace_envelope(
     """Return a payload copy with a non-breaking trace envelope attached."""
     stamped = deepcopy(payload)
     if "trace_envelope" in stamped:
+        envelope_scope = _trace_envelope_scope(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=stamped,
+        )
         envelope = stamped.get("trace_envelope")
         if isinstance(envelope, dict):
             tool_calls = envelope.get("tool_calls")
@@ -31,6 +39,7 @@ def stamp_trace_envelope(
                         item,
                         fallback_started_at_ms=0,
                         ordinal=index,
+                        envelope_scope=envelope_scope,
                     )
                     for index, item in enumerate(tool_calls)
                     if isinstance(item, dict)
@@ -39,6 +48,12 @@ def stamp_trace_envelope(
     if source != "dual_agent" and not kind.startswith(("dual_agent_", "tri_agent_")):
         return stamped
 
+    envelope_scope = _trace_envelope_scope(
+        run_id=run_id,
+        source=source,
+        kind=kind,
+        payload=stamped,
+    )
     gate = _text(stamped.get("gate"))
     task_id = _text(stamped.get("task_id"))
     failure_taxonomy = failure_taxonomy_for_payload(kind=kind, payload=stamped)
@@ -51,7 +66,10 @@ def stamp_trace_envelope(
         "event_kind": kind,
         "policy_verdict": _policy_verdict(stamped, failure_taxonomy),
         "failure_taxonomy": failure_taxonomy,
-        "tool_calls": _tool_calls(stamped),
+        "tool_calls": _tool_calls(
+            stamped,
+            envelope_scope=envelope_scope,
+        ),
         "artifacts": _artifacts(stamped),
         "claims": _claims(stamped),
         "receipts": _receipts(stamped),
@@ -71,7 +89,11 @@ def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | 
     return "observed"
 
 
-def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _tool_calls(
+    payload: dict[str, Any],
+    *,
+    envelope_scope: str,
+) -> list[dict[str, Any]]:
     direct = payload.get("tool_calls")
     if isinstance(direct, list):
         return [
@@ -79,6 +101,7 @@ def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 item,
                 fallback_started_at_ms=0,
                 ordinal=index,
+                envelope_scope=envelope_scope,
             )
             for index, item in enumerate(direct)
             if isinstance(item, dict)
@@ -90,6 +113,7 @@ def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
             item,
             fallback_started_at_ms=0,
             ordinal=index,
+            envelope_scope=envelope_scope,
         )
         for index, item in enumerate(calls)
         if isinstance(item, dict)
@@ -137,6 +161,7 @@ def ensure_tool_call_timing(
     *,
     fallback_started_at_ms: int | None = None,
     ordinal: int | None = None,
+    envelope_scope: str | None = None,
 ) -> dict[str, Any]:
     """Return a tool-call record with the standard timing fields present."""
     record = dict(call)
@@ -188,6 +213,7 @@ def ensure_tool_call_timing(
         _default_tool_call_id(
             record,
             ordinal=ordinal if untimed else None,
+            envelope_scope=envelope_scope if untimed else None,
         ),
     )
     return record
@@ -197,6 +223,7 @@ def _default_tool_call_id(
     record: dict[str, Any],
     *,
     ordinal: int | None = None,
+    envelope_scope: str | None = None,
 ) -> str:
     name = _slug(_text(record.get("name")) or "tool")
     started = _int_or_none(record.get("started_at_ms")) or 0
@@ -208,7 +235,31 @@ def _default_tool_call_id(
     suffix = f"#{probe}" if probe else ""
     if ordinal is not None:
         suffix += f"#{int(ordinal)}"
+    if envelope_scope:
+        suffix += f"#envelope_{envelope_scope}"
     return f"{name}#{started}#{duration_us}{suffix}"
+
+
+def _trace_envelope_scope(
+    *,
+    run_id: str,
+    source: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> str:
+    canonical = json.dumps(
+        {
+            "run_id": run_id,
+            "source": source,
+            "kind": kind,
+            "payload": payload,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _slug(value: str) -> str:
