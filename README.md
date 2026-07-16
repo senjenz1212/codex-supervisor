@@ -394,8 +394,7 @@ make test-projection-registry
 Current verified result:
 
 ```text
-2868 tests collected
-2835 passed, 33 skipped
+2853 passed, 33 skipped
 PostgreSQL conformance: 48 passed
 ```
 
@@ -404,9 +403,10 @@ Otherwise it starts and removes an isolated, digest-pinned
 `postgres:16-alpine` container (override the image with
 `CODEX_SUPERVISOR_POSTGRES_TEST_IMAGE`) on an ephemeral localhost port, so the
 PostgreSQL lane does not silently remain skipped during release verification.
-These results were observed on July 15, 2026 at the branch head; see
-`docs/program/harness-v1/verification-20260713.md` for the exact commands and
-claim boundary.
+These results were observed on July 15, 2026 at the post-audit hardening
+checkpoint `4c3a885`; see
+`docs/program/harness-v1/verification-20260713.md` for the exact commands,
+later focused re-runs, and claim boundary.
 
 ## Replay Fixtures
 

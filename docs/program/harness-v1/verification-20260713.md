@@ -175,6 +175,30 @@ exit 0
 These are integration and consistency receipts, not operational benchmark,
 causal-improvement, portability, ROI, or auto-improvement evidence.
 
+One review commit then landed at the branch head:
+
+```text
+b594d022a87954085b41e59168a69c6c6f1647d9
+```
+
+It preserves the timeout failure taxonomy when containment finalization also
+fails (the terminal event keeps `reason="timeout"` and records the
+containment error separately), removes the unused
+`verify_authoritative_event_chain` re-export from
+`supervisor.evidence_ledger` (the persisted-checkpoint API in
+`supervisor.ledger_checkpoints` remains the only verification entry point),
+and documents the fail-closed agentic-worker cleanup scope. Focused re-run at
+that head:
+
+```text
+uv run pytest -q tests/test_claude_sdk_runtime.py tests/test_agentic_workers.py
+36 passed in 4.73s
+```
+
+No new full-suite receipt is recorded after
+`4c3a88522bb84f9cc817690abef1696115be9110`; the claim boundary below is
+unchanged.
+
 Earlier full-suite checkpoint:
 
 ```text

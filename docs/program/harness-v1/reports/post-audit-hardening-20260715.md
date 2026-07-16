@@ -25,6 +25,24 @@ operational pilot, efficacy result, ROI result, or auto-improvement result.
 - The EXP-001 roadmap result is named an efficacy-experiment kernel, not an
   efficacy result.
 
+## Review Follow-Up
+
+The no-mistakes review of this hardening landed one follow-up commit,
+`b594d022a87954085b41e59168a69c6c6f1647d9`:
+
+- A containment-proof failure that follows a runtime timeout keeps
+  `reason="timeout"` on the terminal event and records the containment error
+  in separate `containment_reason`/`containment_error` fields instead of
+  overwriting the timeout taxonomy.
+- The unused `verify_authoritative_event_chain` re-export is removed from
+  `supervisor.evidence_ledger`; the persisted-checkpoint API in
+  `supervisor.ledger_checkpoints` remains the only verification entry point.
+- The fail-closed cleanup scope from PAH-001 is documented on
+  `cleanup_orphaned_agentic_workers`.
+
+Focused proof at that commit: `tests/test_claude_sdk_runtime.py` plus
+`tests/test_agentic_workers.py`, 36 passed.
+
 ## Claim Boundary
 
 These changes improve process safety, cleanup authority, accounting identity,

@@ -303,10 +303,15 @@ transcript, output, and log refs are written under durable
 runtime metadata includes `agent_runtime`, `agent_id`, the granted
 `permission_mode`, `tool_pins`, and `disallowed_tools` alongside
 `requested_permission_mode` and `requested_tool_pins`, timeout, and budget;
-the persisted worker record captures `pid` and `pid_create_time_s`; and
-timeout cleanup preserves the same durable log refs. Cleanup verifies
-recorded-vs-observed PID create time before signalling, escalates
-SIGTERM-then-SIGKILL, and confirms exit (`terminated`,
+the persisted worker record captures a `termination_scope` — in-process
+`run_agentic_worker` records `termination_scope="shared_host"` with
+`pid=None` and `pid_create_time_s=None` so the shared supervisor host is
+never a kill target; and timeout cleanup preserves the same durable log
+refs. Cleanup is fail-closed: only records that explicitly declare
+`termination_scope="dedicated_process"` are eligible for signalling (legacy
+or unspecified scope is skipped), and eligible records still require
+recorded-vs-observed PID create time to match before cleanup escalates
+SIGTERM-then-SIGKILL and confirms exit (`terminated`,
 `termination_unconfirmed`, overall `cleanup_incomplete`). Cleanup tests must
 inject PID liveness, process-create-time, and termination functions so unit
 tests do not kill real processes.
