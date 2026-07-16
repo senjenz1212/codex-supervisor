@@ -318,6 +318,42 @@ def test_agentic_worker_runtime_runner_cancellation_records_then_reraises(
     assert record["ended_at_s"] >= record["started_at_s"]
 
 
+def test_in_process_agentic_worker_runtime_never_exposes_host_pid_for_cleanup(
+    tmp_path: Path,
+):
+    running_record: dict[str, object] = {}
+    runtime_ref = worker_runtime_ref(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        worker_id="shared-host",
+    )
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        running_record.update(
+            json.loads((tmp_path / runtime_ref).read_text(encoding="utf-8"))
+        )
+        return _runtime_execution(task, runtime="codex")
+
+    run_agentic_worker(
+        AgenticWorkerSpec(
+            task_id="workflow-1",
+            worker_id="shared-host",
+            role="codebase_audit",
+            command=(),
+            cwd=tmp_path,
+        ),
+        runtime_runner=fake_runtime_runner,
+    )
+
+    completed_record = json.loads(
+        (tmp_path / runtime_ref).read_text(encoding="utf-8")
+    )
+    for record in (running_record, completed_record):
+        assert record["termination_scope"] == "shared_host"
+        assert record["pid"] is None
+        assert record["pid_create_time_s"] is None
+
+
 def test_agentic_worker_spawn_uses_scrubbed_direct_anthropic_env(
     monkeypatch,
     tmp_path: Path,
@@ -435,10 +471,43 @@ def test_orphaned_worker_cleanup_reports_distinct_status_when_all_unverifiable(
     assert result["skipped_count"] == 1
 
 
+@pytest.mark.parametrize("termination_scope", [None, "shared_host"])
+def test_orphaned_worker_cleanup_requires_explicit_dedicated_process_scope(
+    tmp_path: Path,
+    termination_scope: str | None,
+):
+    worker = {
+        "worker_id": "audit-1",
+        "pid": 43210,
+        "pid_create_time_s": 90.0,
+        "status": "running",
+        "started_at_s": 100,
+        "timeout_s": 30,
+    }
+    if termination_scope is not None:
+        worker["termination_scope"] = termination_scope
+    signals: list[tuple[int, int]] = []
+
+    result = cleanup_orphaned_agentic_workers(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        workers=[worker],
+        now_s=200,
+        is_pid_alive=lambda pid: pid == 43210 and not signals,
+        terminate=lambda pid, sig: signals.append((pid, sig)),
+        process_create_time=lambda pid: 90.0,
+    )
+
+    assert signals == []
+    assert result["status"] == "cleanup_skipped_unverifiable_workers"
+    assert result["skipped"][0]["reason"] == "termination_scope_not_dedicated"
+
+
 def test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs(tmp_path: Path):
     log_ref = worker_log_ref(cwd=tmp_path, task_id="workflow-1", worker_id="audit-1")
     worker = {
         "worker_id": "audit-1",
+        "termination_scope": "dedicated_process",
         "pid": 43210,
         "pid_create_time_s": 90.0,
         "status": "running",
@@ -596,7 +665,8 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
     runtime_path = tmp_path / runtime_ref
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
     runtime_path.write_text(
-        '{"task_id":"workflow-1","worker_id":"stale-1","pid":43210,'
+        '{"task_id":"workflow-1","worker_id":"stale-1",'
+        '"termination_scope":"dedicated_process","pid":43210,'
         '"pid_create_time_s":90.0,"status":"running",'
         '"started_at_s":100,"timeout_s":30,"budget_usd":0.2,'
         '"log_ref":".handoff/agentic-workers/workflow-1/stale-1/worker.log"}\n',
@@ -606,7 +676,8 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
     active_path = tmp_path / active_ref
     active_path.parent.mkdir(parents=True, exist_ok=True)
     active_path.write_text(
-        '{"task_id":"workflow-1","worker_id":"active-1","pid":43211,'
+        '{"task_id":"workflow-1","worker_id":"active-1",'
+        '"termination_scope":"dedicated_process","pid":43211,'
         '"started_at_s":190,"timeout_s":30,"budget_usd":0.2}\n',
         encoding="utf-8",
     )
@@ -614,7 +685,8 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
     dead_path = tmp_path / dead_ref
     dead_path.parent.mkdir(parents=True, exist_ok=True)
     dead_path.write_text(
-        '{"task_id":"workflow-1","worker_id":"dead-1","pid":43212,'
+        '{"task_id":"workflow-1","worker_id":"dead-1",'
+        '"termination_scope":"dedicated_process","pid":43212,'
         '"started_at_s":100,"timeout_s":30,"budget_usd":0.2}\n',
         encoding="utf-8",
     )

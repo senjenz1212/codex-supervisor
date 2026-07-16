@@ -104,8 +104,6 @@ def run_agentic_worker(
     worker_dir = cwd_path / ".handoff" / "agentic-workers" / _safe_segment(spec.task_id) / _safe_segment(spec.worker_id)
     worker_dir.mkdir(parents=True, exist_ok=True)
     started_at_s = now()
-    worker_pid = os.getpid()
-    worker_pid_create_time_s = _process_create_time(worker_pid)
     runtime_path = worker_dir / "runtime.json"
     _write_worker_file(
         cwd_path,
@@ -116,8 +114,9 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
-                "pid": worker_pid,
-                "pid_create_time_s": worker_pid_create_time_s,
+                "termination_scope": "shared_host",
+                "pid": None,
+                "pid_create_time_s": None,
                 "status": "running",
                 "started_at_s": started_at_s,
                 "timeout_s": spec.timeout_s,
@@ -157,8 +156,9 @@ def run_agentic_worker(
                     "task_id": spec.task_id,
                     "worker_id": spec.worker_id,
                     "role": spec.role,
-                    "pid": worker_pid,
-                    "pid_create_time_s": worker_pid_create_time_s,
+                    "termination_scope": "shared_host",
+                    "pid": None,
+                    "pid_create_time_s": None,
                     "status": "cancelled",
                     "started_at_s": started_at_s,
                     "ended_at_s": now(),
@@ -300,8 +300,9 @@ def run_agentic_worker(
                 "task_id": spec.task_id,
                 "worker_id": spec.worker_id,
                 "role": spec.role,
-                "pid": worker_pid,
-                "pid_create_time_s": worker_pid_create_time_s,
+                "termination_scope": "shared_host",
+                "pid": None,
+                "pid_create_time_s": None,
                 "status": status,
                 "started_at_s": started_at_s,
                 "ended_at_s": ended_at_s,
@@ -673,6 +674,7 @@ def cleanup_orphaned_agentic_workers(
         timeout_s = _int(worker.get("timeout_s"))
         started_at_s = _float(worker.get("started_at_s"))
         recorded_create_time_s = _float(worker.get("pid_create_time_s"))
+        termination_scope = str(worker.get("termination_scope") or "").strip().lower()
         worker_status = str(worker.get("status") or "").strip().lower()
         budget_usd = worker.get("budget_usd")
         log_ref = str(worker.get("log_ref") or worker_log_ref(
@@ -697,6 +699,13 @@ def cleanup_orphaned_agentic_workers(
             continue
         if pid is None or timeout_s is None or started_at_s is None:
             skipped.append({**base, "reason": "missing_worker_runtime_fields"})
+            continue
+        if termination_scope != "dedicated_process":
+            skipped.append({
+                **base,
+                "reason": "termination_scope_not_dedicated",
+                "termination_scope": termination_scope or None,
+            })
             continue
         if pid == os.getpid():
             skipped.append({**base, "reason": "worker_hosted_by_cleanup_process"})
@@ -742,6 +751,7 @@ def cleanup_orphaned_agentic_workers(
         for entry in skipped
         if entry.get("reason") in {
             "missing_worker_runtime_fields",
+            "termination_scope_not_dedicated",
             "pid_identity_unverified",
             "pid_identity_mismatch",
         }
