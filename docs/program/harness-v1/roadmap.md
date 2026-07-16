@@ -20,7 +20,7 @@ program-level dependency order. The current verification receipt is
 | 9b | RUNTIME-001-OPERATIONAL | authorization prerequisite | **Blocked / not run as a coding matrix** | Real generic and Unity coding tasks through both provider runtimes |
 | 10 | TASK-001-HERMETIC | after RUNTIME-001-HERMETIC | Implemented; generic fixtures and one Unity compatibility receipt captured | Task-environment, immutable verifier-execution specification, and hidden-verifier adapters |
 | 10b | TASK-001-OFFICIAL | official harness prerequisite | **Blocked / no retained grade** | Pinned official SWE-bench execution, crash-recoverable verification-attempt journal, and retained oracle evidence |
-| 11 | EXP-001 | after GRADE-001 and TASK-001 | Implemented; hermetic execution only | Randomized isolated A/B/C efficacy experiment |
+| 11 | EXP-001 | after GRADE-001 and TASK-001 | Implemented; hermetic execution only | Randomized isolated A/B/C efficacy-experiment kernel |
 | 12 | TRACER-001-HERMETIC | after EXP-001 | Implemented; L1 end-to-end trace closes | Cross-slice composition and claim-cap proof with deterministic transports |
 | 12b | TRACER-001-OPERATIONAL | after RUNTIME-001-OPERATIONAL and TASK-001-OFFICIAL | **Blocked / not run** | Real generic + Unity × Claude + Codex × A/B/C matrix with independent verification |
 | 13 | PILOT-001 | after TRACER-001-OPERATIONAL | **Blocked / not run** | Operational pilot and discordance/flake/cost estimates |

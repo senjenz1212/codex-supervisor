@@ -27,4 +27,3 @@ Status: resolved.
 
 Resolution: the module and PRD explicitly describe SHA-256 values as integrity
 identifiers only; no signature fields or signer claims are created.
-

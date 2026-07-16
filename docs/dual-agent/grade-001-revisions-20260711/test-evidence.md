@@ -30,4 +30,3 @@ Result: passed with no output.
 - The full repository suite was not run, per instruction.
 - `supervisor/state.py` and `supervisor/trace_graph.py` were not edited.
 - No commit, signature, or review receipt was created.
-

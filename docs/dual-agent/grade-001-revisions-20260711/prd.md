@@ -50,4 +50,3 @@ digital signatures and make no claim about signer identity or authenticity.
 - Producing trace-graph nodes or edges directly; returned revision and
   invalidation records contain the hashes needed by that owner.
 - A repository-wide database migration or PostgreSQL adapter.
-

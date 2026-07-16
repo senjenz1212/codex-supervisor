@@ -19,4 +19,3 @@ an exact invalidation acknowledgement, and a current citation.
 
 Resolution: explicit invalidation is verified after closing and reopening the
 SQLite-backed `GradeBook`.
-

@@ -24,4 +24,3 @@
 - Run only `tests/test_grade_revisions.py`.
 - Run a syntax compile for the owned Python files.
 - Do not run the full repository suite and do not commit.
-

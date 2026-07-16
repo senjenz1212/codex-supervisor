@@ -80,4 +80,3 @@ async def test_structured_complete_fails_closed_on_invalid_output() -> None:
             ),
             Decision,
         )
-

@@ -23,4 +23,3 @@
 - Require exact grade and revision hashes.
 - Reject stale citations by default.
 - Permit stale use only when every immutable invalidation hash is acknowledged.
-

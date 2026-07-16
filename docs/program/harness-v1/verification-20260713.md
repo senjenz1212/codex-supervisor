@@ -152,7 +152,30 @@ make test-postgres
 
 The claim boundary below is unchanged by that re-run.
 
-Final full-suite command:
+The four post-audit runtime and trace hardening commits were then verified
+together on July 15, 2026 at:
+
+```text
+4c3a88522bb84f9cc817690abef1696115be9110
+uv run pytest -q
+2853 passed, 33 skipped in 2102.15s (0:35:02)
+make test-projection-registry
+7 hermetic projection proofs passed in 4.10s
+48 PostgreSQL conformance tests passed in 6.41s
+6 exact PostgreSQL projection entries present
+9 existing Alembic deprecation warnings
+uv run python -m compileall -q supervisor tests
+exit 0
+git diff --check
+exit 0
+git diff --cached --check
+exit 0
+```
+
+These are integration and consistency receipts, not operational benchmark,
+causal-improvement, portability, ROI, or auto-improvement evidence.
+
+Earlier full-suite checkpoint:
 
 ```text
 uv run pytest -q
