@@ -396,6 +396,16 @@ def prepare_event_payload(
     )
 
 
+def redact_event_payload(
+    payload: Mapping[str, Any],
+    *,
+    event_hash_schema_version: str = EVENT_HASH_SCHEMA_VERSION,
+) -> dict[str, Any]:
+    """Apply only the schema's frozen redaction rules, without stamping."""
+    redactor = _redactor_for_event_hash_schema(event_hash_schema_version)
+    return redactor(dict(payload))
+
+
 def artifact_manifest_hash(manifest: Mapping[str, Any]) -> str:
     body = dict(manifest)
     body.pop("manifest_hash", None)
@@ -2620,6 +2630,7 @@ __all__ = [
     "legacy_raw_payload_manifest_hash",
     "prepare_event_payload",
     "rebuild_projection",
+    "redact_event_payload",
     "sha256_hex",
     "strict_json_object_loads",
     "supported_event_hash_schema_versions",

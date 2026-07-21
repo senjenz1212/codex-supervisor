@@ -553,6 +553,155 @@ def test_legacy_event_import_refuses_to_re_redact_historical_payloads(
     }
 
 
+def test_legacy_import_tolerates_structural_stamping_for_legacy_runs(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    accepted_gate_json = json.dumps({
+        "status": "accepted",
+        "task_id": "legacy-task",
+        "gate": "outcome_review",
+        "handoff_packet_path": "",
+    })
+    unstamped_progress_json = json.dumps({
+        "milestone": "planning",
+        "task_id": "legacy-task",
+    })
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 101, 'dual_agent',
+                  'dual_agent_gate_result', ?)""",
+        (accepted_gate_json,),
+    )
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 102, 'dual_agent',
+                  'dual_agent_progress', ?)""",
+        (unstamped_progress_json,),
+    )
+    conn.commit()
+    conn.close()
+
+    migrate_legacy_event_ledger_offline(db_path)
+
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    rows = migrated.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events ORDER BY event_id"""
+    ).fetchall()
+    assert [row["payload_json"] for row in rows] == [
+        accepted_gate_json,
+        unstamped_progress_json,
+    ]
+    assert rows[0]["ledger_genesis_kind"] == "legacy-import"
+    assert all(row["event_hash"] for row in rows)
+    assert verify_event_chain_structure(
+        rows,
+        expected_run_id="legacy-run",
+    ).valid is True
+    assert applied_migrations(migrated) == EXPECTED_MIGRATIONS
+
+
+def test_offline_import_still_refuses_redaction_deltas_in_legacy_runs(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    payload_json = '{"token":"sk-proj-not-a-real-key"}'
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 101, 'test', 'event_msg', ?)""",
+        (payload_json,),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="refusing to rewrite historical evidence",
+    ):
+        migrate_legacy_event_ledger_offline(db_path)
+
+    unchanged = sqlite3.connect(db_path)
+    assert unchanged.execute(
+        "SELECT payload_json FROM events"
+    ).fetchone()[0] == payload_json
+
+
+def test_offline_import_refuses_structural_delta_for_native_chains(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             event_sequence INTEGER,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL,
+             previous_event_hash TEXT,
+             event_hash TEXT,
+             canonical_payload_hash TEXT,
+             artifact_manifest_hash TEXT,
+             ledger_genesis_kind TEXT
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO events(
+             run_id, ts, source, kind, payload_json, ledger_genesis_kind)
+           VALUES('native-run', 101, 'dual_agent',
+                  'dual_agent_gate_result', ?, ?)""",
+        (
+            json.dumps({
+                "status": "accepted",
+                "task_id": "native-task",
+                "gate": "outcome_review",
+                "handoff_packet_path": "",
+            }),
+            NATIVE_GENESIS,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires redaction or trace normalization",
+    ):
+        migrate_legacy_event_ledger_offline(db_path)
+
+
 def test_ledger_migration_rejects_forged_prepopulated_hashes(tmp_path):
     conn = sqlite3.connect(tmp_path / "state.db")
     conn.row_factory = sqlite3.Row

@@ -15,6 +15,7 @@ from .evidence_ledger import (
     build_ledger_fields,
     event_hash_schema_transition_allowed,
     prepare_event_payload,
+    redact_event_payload,
     strict_json_object_loads,
     supported_event_hash_schema_versions,
 )
@@ -1082,7 +1083,17 @@ def _assert_prepopulated_event_ledger_metadata_matches(
             payload=payload,
             event_hash_schema_version=event_hash_schema_version,
         )
-        if normalized_payload != payload:
+        # Legacy-import chains commit hashes to the raw stored payload, so
+        # pre-ledger history may lack stamped envelopes or acceptance
+        # evidence; only an unredacted-secret delta blocks the import.
+        if normalized_payload != payload and not (
+            legacy_import_run
+            and redact_event_payload(
+                payload,
+                event_hash_schema_version=event_hash_schema_version,
+            )
+            == payload
+        ):
             raise RuntimeError(
                 "legacy event payload requires redaction or trace "
                 "normalization; refusing to rewrite historical evidence: "
@@ -1223,7 +1234,17 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
             payload=payload,
             event_hash_schema_version=event_hash_schema_version,
         )
-        if normalized_payload != payload:
+        # Legacy-import chains commit hashes to the raw stored payload, so
+        # pre-ledger history may lack stamped envelopes or acceptance
+        # evidence; only an unredacted-secret delta blocks the import.
+        if normalized_payload != payload and not (
+            first_genesis == LEGACY_IMPORT_GENESIS
+            and redact_event_payload(
+                payload,
+                event_hash_schema_version=event_hash_schema_version,
+            )
+            == payload
+        ):
             raise RuntimeError(
                 "legacy event payload requires redaction or trace "
                 "normalization; refusing to rewrite historical evidence: "
