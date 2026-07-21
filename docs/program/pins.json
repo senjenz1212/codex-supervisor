@@ -1,0 +1,15 @@
+{
+  "schema_version": "supervisor-program-pins/v1",
+  "pins": [
+    {
+      "artifact": "docs/program/NORTH-STAR.md",
+      "section": "destination_yaml_block",
+      "normalization": "lines strictly between the ```yaml fence and closing ``` fence, each right-stripped, joined with \\n, single trailing \\n, utf-8",
+      "sha256": "2d12985882f1e1f99b3c8b9ec6cf92e34f5471916e539bbe6c6794b126d191e9",
+      "pinned_at": "2026-07-21",
+      "pinned_by": "operator:sam.zhang",
+      "amendment_ref": null,
+      "notes": "Genesis pin. Changes require NORTH-STAR-amendment-<N>.json per the amendment protocol in NORTH-STAR.md."
+    }
+  ]
+}
