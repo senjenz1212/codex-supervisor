@@ -1196,24 +1196,32 @@ def _assert_prepopulated_event_ledger_metadata_matches(
                 f"{previous_event_hash_schema_version} -> "
                 f"{event_hash_schema_version}"
             )
-        normalized_payload = prepare_event_payload(
-            run_id=run_id,
-            source=_row_str(row, "source", 4),
-            kind=_row_str(row, "kind", 5),
-            payload=payload,
-            event_hash_schema_version=event_hash_schema_version,
-        )
         # Legacy-import chains commit hashes to the raw stored payload, so
         # pre-ledger history may lack stamped envelopes or acceptance
         # evidence; only an unredacted-secret delta blocks the import.
-        if normalized_payload != payload and not (
-            legacy_import_run
-            and redact_event_payload(
-                payload,
-                event_hash_schema_version=event_hash_schema_version,
+        # Checking redaction-stability alone for legacy rows is decision-
+        # equivalent (a redaction delta implies a normalization delta) and
+        # keeps acceptance-evidence workspace captures out of the import.
+        if legacy_import_run:
+            payload_requires_rewrite = (
+                redact_event_payload(
+                    payload,
+                    event_hash_schema_version=event_hash_schema_version,
+                )
+                != payload
             )
-            == payload
-        ):
+        else:
+            payload_requires_rewrite = (
+                prepare_event_payload(
+                    run_id=run_id,
+                    source=_row_str(row, "source", 4),
+                    kind=_row_str(row, "kind", 5),
+                    payload=payload,
+                    event_hash_schema_version=event_hash_schema_version,
+                )
+                != payload
+            )
+        if payload_requires_rewrite:
             raise RuntimeError(
                 "legacy event payload requires redaction or trace "
                 "normalization; refusing to rewrite historical evidence: "
@@ -1347,24 +1355,32 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
                 f"{previous_event_hash_schema_version} -> "
                 f"{event_hash_schema_version}"
             )
-        normalized_payload = prepare_event_payload(
-            run_id=run_id,
-            source=_row_str(row, "source", 3),
-            kind=_row_str(row, "kind", 4),
-            payload=payload,
-            event_hash_schema_version=event_hash_schema_version,
-        )
         # Legacy-import chains commit hashes to the raw stored payload, so
         # pre-ledger history may lack stamped envelopes or acceptance
         # evidence; only an unredacted-secret delta blocks the import.
-        if normalized_payload != payload and not (
-            first_genesis == LEGACY_IMPORT_GENESIS
-            and redact_event_payload(
-                payload,
-                event_hash_schema_version=event_hash_schema_version,
+        # Checking redaction-stability alone for legacy rows is decision-
+        # equivalent (a redaction delta implies a normalization delta) and
+        # keeps acceptance-evidence workspace captures out of the import.
+        if first_genesis == LEGACY_IMPORT_GENESIS:
+            payload_requires_rewrite = (
+                redact_event_payload(
+                    payload,
+                    event_hash_schema_version=event_hash_schema_version,
+                )
+                != payload
             )
-            == payload
-        ):
+        else:
+            payload_requires_rewrite = (
+                prepare_event_payload(
+                    run_id=run_id,
+                    source=_row_str(row, "source", 3),
+                    kind=_row_str(row, "kind", 4),
+                    payload=payload,
+                    event_hash_schema_version=event_hash_schema_version,
+                )
+                != payload
+            )
+        if payload_requires_rewrite:
             raise RuntimeError(
                 "legacy event payload requires redaction or trace "
                 "normalization; refusing to rewrite historical evidence: "
