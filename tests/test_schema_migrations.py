@@ -732,6 +732,49 @@ def test_offline_import_redacts_unstable_legacy_payloads_when_opted_in(
     assert applied_migrations(migrated) == EXPECTED_MIGRATIONS
 
 
+def test_offline_import_redaction_optin_catches_escaped_whitespace_matches(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    header_dump_json = json.dumps({
+        "response": "Www-Authenticate: Bearer\r\nX-Frame-Options: DENY",
+    })
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 101, 'rollout', 'response_item', ?)""",
+        (header_dump_json,),
+    )
+    conn.commit()
+    conn.close()
+
+    inventory = migrate_legacy_event_ledger_offline(
+        db_path,
+        redact_unstable_legacy_payloads=True,
+    )
+
+    assert [entry["event_id"] for entry in inventory] == [1]
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    [row] = migrated.execute(
+        "SELECT payload_json, event_hash, ledger_genesis_kind FROM events"
+    ).fetchall()
+    assert "[REDACTED_BEARER]" in row["payload_json"]
+    assert row["event_hash"]
+    assert row["ledger_genesis_kind"] == "legacy-import"
+
+
 def test_offline_import_redaction_optin_skips_native_chains(tmp_path):
     db_path = tmp_path / "state.db"
     conn = sqlite3.connect(db_path)

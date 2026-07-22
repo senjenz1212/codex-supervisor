@@ -116,26 +116,6 @@ def migrate_legacy_event_ledger_offline(
     return redacted_inventory
 
 
-# The SQL prefilter only narrows the rows worth re-parsing; a payload that
-# slips past it but still changes under the redactor is refused by the
-# import's stability check, so misses fail closed instead of importing.
-_REDACTION_CANDIDATE_PREDICATE = " OR ".join(
-    f"payload_json LIKE '%{fragment}%'"
-    for fragment in (
-        "-----BEGIN ",
-        "authorization",
-        "bearer ",
-        "ghp_", "gho_", "ghu_", "ghs_", "ghr_",
-        "crsr_",
-        "sk-",
-        "_key=", "_key:", "_key =", "_key :",
-        "_token=", "_token:", "_token =", "_token :",
-        "_secret=", "_secret:", "_secret =", "_secret :",
-        "password=", "password:", "password =", "password :",
-    )
-)
-
-
 def _redact_unstable_legacy_event_payloads(
     conn: sqlite3.Connection,
 ) -> list[dict[str, object]]:
@@ -174,10 +154,9 @@ def _redact_unstable_legacy_event_payloads(
     updates: list[tuple[str, int]] = []
     inventory: list[dict[str, object]] = []
     for row in conn.execute(
-        f"""SELECT event_id, run_id, ts, source, kind, payload_json
-              FROM events
-             WHERE event_hash IS NULL
-               AND ({_REDACTION_CANDIDATE_PREDICATE})"""
+        """SELECT event_id, run_id, ts, source, kind, payload_json
+             FROM events
+            WHERE event_hash IS NULL"""
     ):
         run_id = _row_str(row, "run_id", 1)
         if run_id not in legacy_runs:
