@@ -655,6 +655,128 @@ def test_offline_import_still_refuses_redaction_deltas_in_legacy_runs(
     ).fetchone()[0] == payload_json
 
 
+def test_offline_import_redacts_unstable_legacy_payloads_when_opted_in(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL
+           )"""
+    )
+    secret_json = '{"token":"sk-proj-not-a-real-key"}'
+    stable_json = '{"note":"nothing secret here"}'
+    accepted_gate_with_secret_json = json.dumps({
+        "status": "accepted",
+        "task_id": "legacy-task",
+        "gate": "outcome_review",
+        "handoff_packet_path": "",
+        "transcript": "here is a key: sk-proj-not-a-real-key-either",
+    })
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 101, 'test', 'event_msg', ?)""",
+        (secret_json,),
+    )
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 102, 'test', 'event_msg', ?)""",
+        (stable_json,),
+    )
+    conn.execute(
+        """INSERT INTO events(run_id, ts, source, kind, payload_json)
+           VALUES('legacy-run', 103, 'dual_agent',
+                  'dual_agent_gate_result', ?)""",
+        (accepted_gate_with_secret_json,),
+    )
+    conn.commit()
+    conn.close()
+
+    inventory = migrate_legacy_event_ledger_offline(
+        db_path,
+        redact_unstable_legacy_payloads=True,
+    )
+
+    assert [entry["event_id"] for entry in inventory] == [1, 3]
+    assert all(
+        entry["run_id"] == "legacy-run" and "payload" not in entry
+        for entry in inventory
+    )
+    migrated = sqlite3.connect(db_path)
+    migrated.row_factory = sqlite3.Row
+    rows = migrated.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events ORDER BY event_id"""
+    ).fetchall()
+    assert "sk-proj-" not in rows[0]["payload_json"]
+    assert "[REDACTED_API_KEY]" in rows[0]["payload_json"]
+    assert rows[1]["payload_json"] == stable_json
+    assert "sk-proj-" not in rows[2]["payload_json"]
+    assert "[REDACTED_API_KEY]" in rows[2]["payload_json"]
+    assert "acceptance_evidence" not in rows[2]["payload_json"]
+    assert rows[0]["ledger_genesis_kind"] == "legacy-import"
+    assert verify_event_chain_structure(
+        rows,
+        expected_run_id="legacy-run",
+    ).valid is True
+    assert applied_migrations(migrated) == EXPECTED_MIGRATIONS
+
+
+def test_offline_import_redaction_optin_skips_native_chains(tmp_path):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE events (
+             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             event_sequence INTEGER,
+             ts INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             payload_json TEXT NOT NULL,
+             previous_event_hash TEXT,
+             event_hash TEXT,
+             canonical_payload_hash TEXT,
+             artifact_manifest_hash TEXT,
+             ledger_genesis_kind TEXT
+           )"""
+    )
+    payload_json = '{"token":"sk-proj-not-a-real-key"}'
+    conn.execute(
+        """INSERT INTO events(
+             run_id, ts, source, kind, payload_json, ledger_genesis_kind)
+           VALUES('native-run', 101, 'test', 'event_msg', ?, ?)""",
+        (payload_json, NATIVE_GENESIS),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(
+        RuntimeError,
+        match="refusing to rewrite historical evidence",
+    ):
+        migrate_legacy_event_ledger_offline(
+            db_path,
+            redact_unstable_legacy_payloads=True,
+        )
+
+    unchanged = sqlite3.connect(db_path)
+    assert unchanged.execute(
+        "SELECT payload_json FROM events"
+    ).fetchone()[0] == payload_json
+
+
 def test_offline_import_refuses_structural_delta_for_native_chains(
     tmp_path,
 ):

@@ -77,19 +77,32 @@ def run_forward_migrations(conn: sqlite3.Connection) -> None:
     )
 
 
-def migrate_legacy_event_ledger_offline(db_path: str | Path) -> None:
+def migrate_legacy_event_ledger_offline(
+    db_path: str | Path,
+    *,
+    redact_unstable_legacy_payloads: bool = False,
+) -> list[dict[str, object]]:
     """Import legacy events exactly once while holding an exclusive DB lock.
 
     Stop every supervisor process that can access ``db_path`` before invoking
     this helper. Historical payload JSON is preserved; only ledger metadata is
     added, and each imported chain is marked with ``legacy-import`` genesis.
+
+    With ``redact_unstable_legacy_payloads=True``, payloads in legacy-import
+    runs that the schema's bound redactor would change are rewritten with
+    that redactor inside the same exclusive transaction, leaving visible
+    ``[REDACTED_*]`` markers, and each rewritten event is returned for
+    operator review. The default keeps the fail-closed refusal.
     """
     path = str(Path(db_path).expanduser())
     conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
+    redacted_inventory: list[dict[str, object]] = []
     try:
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("BEGIN EXCLUSIVE")
+        if redact_unstable_legacy_payloads:
+            redacted_inventory = _redact_unstable_legacy_event_payloads(conn)
         _run_forward_migrations(
             conn,
             allow_legacy_event_backfill=True,
@@ -100,6 +113,113 @@ def migrate_legacy_event_ledger_offline(db_path: str | Path) -> None:
         raise
     finally:
         conn.close()
+    return redacted_inventory
+
+
+# The SQL prefilter only narrows the rows worth re-parsing; a payload that
+# slips past it but still changes under the redactor is refused by the
+# import's stability check, so misses fail closed instead of importing.
+_REDACTION_CANDIDATE_PREDICATE = " OR ".join(
+    f"payload_json LIKE '%{fragment}%'"
+    for fragment in (
+        "-----BEGIN ",
+        "authorization",
+        "bearer ",
+        "ghp_", "gho_", "ghu_", "ghs_", "ghr_",
+        "crsr_",
+        "sk-",
+        "_key=", "_key:", "_key =", "_key :",
+        "_token=", "_token:", "_token =", "_token :",
+        "_secret=", "_secret:", "_secret =", "_secret :",
+        "password=", "password:", "password =", "password :",
+    )
+)
+
+
+def _redact_unstable_legacy_event_payloads(
+    conn: sqlite3.Connection,
+) -> list[dict[str, object]]:
+    """Rewrite legacy-import payloads the bound redactor would change."""
+    if not _table_exists(conn, "events"):
+        return []
+    _ensure_event_ledger_columns(conn)
+    genesis_by_run: dict[str, str | None] = {
+        _row_str(row, "run_id", 0): _row_optional_str(
+            row,
+            "ledger_genesis_kind",
+            1,
+        )
+        for row in conn.execute(
+            """SELECT e.run_id, e.ledger_genesis_kind
+                 FROM events AS e
+                 JOIN (
+                       SELECT run_id, MIN(event_id) AS first_event_id
+                         FROM events
+                        GROUP BY run_id
+                      ) AS f
+                   ON f.run_id = e.run_id
+                  AND f.first_event_id = e.event_id"""
+        )
+    }
+    legacy_runs = {
+        run_id
+        for run_id, observed in genesis_by_run.items()
+        if (
+            observed
+            if observed in GENESIS_KINDS
+            else LEGACY_IMPORT_GENESIS
+        )
+        == LEGACY_IMPORT_GENESIS
+    }
+    updates: list[tuple[str, int]] = []
+    inventory: list[dict[str, object]] = []
+    for row in conn.execute(
+        f"""SELECT event_id, run_id, ts, source, kind, payload_json
+              FROM events
+             WHERE event_hash IS NULL
+               AND ({_REDACTION_CANDIDATE_PREDICATE})"""
+    ):
+        run_id = _row_str(row, "run_id", 1)
+        if run_id not in legacy_runs:
+            continue
+        event_id = _row_int(row, "event_id", 0)
+        try:
+            payload = _load_legacy_event_payload(
+                _row_str(row, "payload_json", 5),
+                run_id=run_id,
+                event_id=event_id,
+            )
+        except Exception:
+            continue
+        redacted = redact_event_payload(
+            payload,
+            event_hash_schema_version=EVENT_HASH_SCHEMA_VERSION,
+        )
+        if redacted == payload:
+            continue
+        updates.append((
+            json.dumps(
+                redacted,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ),
+            event_id,
+        ))
+        inventory.append({
+            "event_id": event_id,
+            "run_id": run_id,
+            "ts": _row_int(row, "ts", 2),
+            "source": _row_str(row, "source", 3),
+            "kind": _row_str(row, "kind", 4),
+        })
+    if updates:
+        conn.execute("DROP TRIGGER IF EXISTS events_no_update")
+        conn.executemany(
+            "UPDATE events SET payload_json=? WHERE event_id=?",
+            updates,
+        )
+    return inventory
 
 
 def migrate_quality_projection_evidence_offline(
