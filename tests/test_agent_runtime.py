@@ -1922,6 +1922,54 @@ def test_pi_runtime_route_identity_manifest_is_complete(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pi_runtime_normalizes_documented_jsonl_stream(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    script = tmp_path / "captured-pi"
+    script.write_text(
+        "#!/bin/sh\n"
+        "cat <<'EOF'\n"
+        '{"type":"session","id":"pi-sess-1","version":"0.0.0"}\n'
+        '{"type":"agent_start"}\n'
+        '{"type":"turn_start"}\n'
+        '{"type":"tool_execution_start","toolName":"read"}\n'
+        '{"type":"tool_execution_end","toolName":"read","isError":false}\n'
+        '{"type":"message_end","message":{"role":"assistant",'
+        '"content":[{"type":"text","text":"OK done"}]}}\n'
+        '{"type":"turn_end"}\n'
+        '{"type":"agent_end"}\n'
+        "EOF\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    runtime = PiRuntime(binary=str(script))
+    handle = await runtime.start(
+        AgentTask(
+            task_id="pi-live-jsonl",
+            instruction="reply",
+            cwd=repo,
+            model="claude-fable-5",
+            timeout_s=30,
+        )
+    )
+    kinds = [event.kind async for event in runtime.stream(handle)]
+    assert "run.started" in kinds
+    assert "turn.started" in kinds
+    assert "tool.started" in kinds
+    assert "tool.completed" in kinds
+    assert "agent.message" in kinds
+    assert "turn.completed" in kinds
+    assert "run.completed" in kinds
+    result = await runtime.collect(handle)
+    assert result.status == "completed"
+    assert "OK done" in result.output
+    # Session id from pi's stream header must drive resume.
+    assert runtime._session_ids[handle.run_id] == "pi-sess-1"
+
+
+@pytest.mark.asyncio
 async def test_experiment_result_rejects_unresolved_transport_provenance(
     tmp_path: Path,
 ) -> None:

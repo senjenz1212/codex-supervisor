@@ -1907,18 +1907,33 @@ def normalize_runtime_event(raw: Mapping[str, Any]) -> RuntimeEvent:
         raw_kind = "tool.started"
     elif raw_kind == "result":
         raw_kind = "run.failed" if raw.get("is_error") else "run.completed"
+    elif raw_kind == "message_end":
+        message = (
+            raw.get("message")
+            if isinstance(raw.get("message"), Mapping)
+            else {}
+        )
+        if str(message.get("role") or "assistant") == "assistant":
+            raw_kind = "agent_message"
     aliases = {
         "thread.started": "run.started",
         "session_start": "run.started",
+        "session": "run.started",
+        "agent_start": "run.started",
+        "agent_end": "run.completed",
         "turn.started": "turn.started",
+        "turn_start": "turn.started",
         "tool_use": "tool.started",
         "tool.started": "tool.started",
+        "tool_execution_start": "tool.started",
         "tool_result": "tool.completed",
         "tool.completed": "tool.completed",
+        "tool_execution_end": "tool.completed",
         "assistant": "agent.message",
         "agent_message": "agent.message",
         "message": "agent.message",
         "turn.completed": "turn.completed",
+        "turn_end": "turn.completed",
         "turn.failed": "turn.failed",
         "task_complete": "turn.completed",
         "thread.completed": "run.completed",
@@ -1998,13 +2013,18 @@ def _parse_runtime_line(text: str) -> Mapping[str, Any]:
 
 def _session_id(raw: Mapping[str, Any]) -> str:
     nested = raw.get("payload") if isinstance(raw.get("payload"), Mapping) else {}
-    return str(
+    value = str(
         raw.get("session_id")
         or raw.get("thread_id")
         or nested.get("session_id")
         or nested.get("thread_id")
         or ""
     ).strip()
+    if value:
+        return value
+    if str(raw.get("type") or "") == "session":
+        return str(raw.get("id") or "").strip()
+    return ""
 
 
 def _event_ts_ms(raw: Mapping[str, Any]) -> int:
