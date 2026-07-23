@@ -169,7 +169,12 @@ from supervisor.dual_agent_lead import (
     PlanningArtifact,
     compute_file_sha256,
 )
-from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime, CodexRuntime
+from supervisor.agent_runtime import (
+    AgentTask,
+    ClaudeCodeRuntime,
+    CodexRuntime,
+    PiRuntime,
+)
 from supervisor.model_client import ModelClient
 from supervisor.provider_clients import OpenAICompatibleModelClient
 from supervisor.provider_routing import direct_anthropic_env
@@ -216,6 +221,8 @@ PolicyClaimAuthorityResolver = Callable[
 ]
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
+DEFAULT_PI_MODEL = "claude-fable-5"
+DEFAULT_PI_REASONING_EFFORT = "xhigh"
 STRICT_ARTIFACT_GATES = {"implementation_plan", "execution", "outcome_review"}
 HARNESS_V1_TRACE_TASK_RE = re.compile(
     r"^(?:"
@@ -497,6 +504,8 @@ class CodexSupervisorMcpAPI:
         codex_runner: Runner = subprocess.run,
         codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
         codex_runtime_runner: RuntimeTaskRunner | None = None,
+        executor_runtime_factory: Callable[[], Any] | None = None,
+        executor_runtime_runner: RuntimeTaskRunner | None = None,
         lead_runtime_runner: RuntimeTaskRunner | None = None,
         reviewer_adapters: (
             list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
@@ -534,6 +543,47 @@ class CodexSupervisorMcpAPI:
         self.codex_runtime_runner = (
             codex_runtime_runner
             or runtime_task_runner(self.codex_runtime_factory)
+        )
+        executor_cfg = getattr(cfg, "executor", None)
+        executor_kind = (
+            executor_cfg.kind if executor_cfg is not None else "pi"
+        )
+        pi_cli = (
+            executor_cfg.pi_cli_command
+            if executor_cfg is not None
+            else "pi"
+        )
+        # Injected codex fakes (tests, replay) keep the executor on codex.
+        codex_injected = (
+            codex_runtime_factory is not None
+            or codex_runtime_runner is not None
+        )
+        executor_is_codex = executor_runtime_factory is None and (
+            executor_kind == "codex" or codex_injected
+        )
+        if executor_runtime_factory is not None:
+            self.executor_runtime_factory = executor_runtime_factory
+        elif executor_is_codex:
+            self.executor_runtime_factory = self.codex_runtime_factory
+        else:
+            self.executor_runtime_factory = (
+                lambda: PiRuntime(binary=pi_cli)
+            )
+        if executor_runtime_runner is not None:
+            self.executor_runtime_runner = executor_runtime_runner
+        elif executor_is_codex:
+            self.executor_runtime_runner = self.codex_runtime_runner
+        else:
+            self.executor_runtime_runner = runtime_task_runner(
+                self.executor_runtime_factory
+            )
+        self.executor_default_model = (
+            DEFAULT_CODEX_MODEL if executor_is_codex else DEFAULT_PI_MODEL
+        )
+        self.executor_default_reasoning_effort = (
+            DEFAULT_CODEX_REASONING_EFFORT
+            if executor_is_codex
+            else DEFAULT_PI_REASONING_EFFORT
         )
         claude_cfg = (
             target_cfg.claude_code
@@ -4441,7 +4491,7 @@ class CodexSupervisorMcpAPI:
         prompt: str,
         cwd: str,
         model: str | None = None,
-        reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
+        reasoning_effort: str | None = None,
         execute: bool = False,
         timeout_s: int = 600,
         workflow_run_id: str | None = None,
@@ -4462,16 +4512,18 @@ class CodexSupervisorMcpAPI:
             task_id=f"codex-session-{uuid.uuid4()}",
             instruction=prompt,
             cwd=cwd_path,
-            model=model or DEFAULT_CODEX_MODEL,
+            model=model or self.executor_default_model,
             timeout_s=max(1, int(timeout_s)),
             metadata={
-                "reasoning_effort": reasoning_effort,
+                "reasoning_effort": (
+                    reasoning_effort or self.executor_default_reasoning_effort
+                ),
                 "result_metadata": {
                     "entrypoint": "codex_supervisor_mcp.start_codex_session",
                 },
             },
         )
-        preview_runtime = self.codex_runtime_factory()
+        preview_runtime = self.executor_runtime_factory()
         argv = list(preview_runtime.preview_start_argv(agent_task))
         if not execute:
             return {
@@ -4529,7 +4581,7 @@ class CodexSupervisorMcpAPI:
                 )
 
         try:
-            execution = self.codex_runtime_runner(agent_task)
+            execution = self.executor_runtime_runner(agent_task)
         except (subprocess.TimeoutExpired, TimeoutError):
             _release_receipt("codex_runtime_timeout")
             return {
@@ -6011,6 +6063,8 @@ def build_codex_supervisor_mcp_server(
     codex_runner: Runner = subprocess.run,
     codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
     codex_runtime_runner: RuntimeTaskRunner | None = None,
+    executor_runtime_factory: Callable[[], Any] | None = None,
+    executor_runtime_runner: RuntimeTaskRunner | None = None,
     lead_runtime_runner: RuntimeTaskRunner | None = None,
     reviewer_adapters: (
         list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
@@ -6037,6 +6091,8 @@ def build_codex_supervisor_mcp_server(
         codex_runner=codex_runner,
         codex_runtime_factory=codex_runtime_factory,
         codex_runtime_runner=codex_runtime_runner,
+        executor_runtime_factory=executor_runtime_factory,
+        executor_runtime_runner=executor_runtime_runner,
         lead_runtime_runner=lead_runtime_runner,
         reviewer_adapters=reviewer_adapters,
         reviewer_model_client=reviewer_model_client,
@@ -6609,7 +6665,7 @@ def build_codex_supervisor_mcp_server(
         prompt: str,
         cwd: str,
         model: str | None = None,
-        reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
+        reasoning_effort: str | None = None,
         execute: bool = False,
         timeout_s: int = 600,
         workflow_run_id: str | None = None,

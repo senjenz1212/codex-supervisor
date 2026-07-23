@@ -3176,6 +3176,47 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
     assert registration["runtime_result_hash"] == executed["result_hash"]
 
 
+def test_start_codex_session_dry_run_defaults_to_pi_fable_xhigh(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    dry_run = api.start_codex_session(
+        prompt="Implement the slice.",
+        cwd=str(tmp_path),
+        execute=False,
+    )
+
+    assert dry_run["status"] == "dry_run"
+    assert dry_run["runtime"] == "pi"
+    argv = dry_run["argv"]
+    assert argv[0] == "pi"
+    assert argv[argv.index("--model") + 1] == "anthropic/claude-fable-5"
+    assert argv[argv.index("--thinking") + 1] == "xhigh"
+
+
+def test_start_codex_session_honors_executor_kind_codex(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    cfg = _cfg(tmp_path)
+    cfg.executor.kind = "codex"
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(cfg, state)
+
+    dry_run = api.start_codex_session(
+        prompt="Implement the slice.",
+        cwd=str(tmp_path),
+        execute=False,
+    )
+
+    assert dry_run["runtime"] == "codex"
+    argv = dry_run["argv"]
+    assert argv[:2] == ["codex", "exec"]
+    assert argv[argv.index("-m") + 1] == "gpt-5.5"
+    assert 'model_reasoning_effort="xhigh"' in " ".join(argv)
+
+
 def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_timeout(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
     from supervisor.run_registry import (
