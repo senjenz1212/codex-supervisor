@@ -23,7 +23,7 @@ PROVIDER_EDGE_ALLOWLIST: dict[str, str] = {
     "scripts/swebench_pro_claude_code_runner.py": (
         "SWE-bench Claude Code runtime composition edge"
     ),
-    "supervisor/agent_runtime.py": "Claude Code and Codex runtime adapters",
+    "supervisor/agent_runtime.py": "Claude Code, Codex, and Pi runtime adapters",
     "supervisor/agentic_legacy_provider_edge.py": "legacy agentic subprocess edge",
     "supervisor/claude_sdk_runtime.py": "Claude Agent SDK transport edge",
     "supervisor/cursor_agent.py": "Cursor SDK and structured gateway edge",
@@ -60,12 +60,13 @@ PROVIDER_CLIENT_CONSTRUCTORS = frozenset({
     "OpenAI",
 })
 
-PROVIDER_EXECUTABLES = frozenset({"claude", "codex", "cursor"})
+PROVIDER_EXECUTABLES = frozenset({"claude", "codex", "cursor", "pi"})
 
 PROVIDER_RUNTIME_CONSTRUCTORS: dict[str, str] = {
     "ClaudeCodeRuntime": "claude",
     "CodexRuntime": "codex",
     "CursorRuntime": "cursor",
+    "PiRuntime": "pi",
 }
 
 PRODUCTION_PYTHON_ROOTS = (

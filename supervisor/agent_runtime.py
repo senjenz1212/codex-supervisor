@@ -129,6 +129,12 @@ _CODEX_ENV_KEYS = frozenset({
     "OPENAI_ORGANIZATION",
     "OPENAI_PROJECT_ID",
 })
+_PI_ENV_KEYS = frozenset({
+    *_PROCESS_ENV_KEYS,
+    *_SUPERVISOR_LAUNCH_ENV_KEYS,
+    *_ISOLATION_NAMESPACE_ENV_KEYS,
+    "ANTHROPIC_API_KEY",
+})
 @dataclass(frozen=True)
 class AgentTask:
     task_id: str
@@ -1054,6 +1060,132 @@ class CodexRuntime(CommandAgentRuntime):
         if task.metadata.get("read_only_review"):
             argv.extend(("--sandbox", "read-only"))
         argv.extend((session_id, instruction))
+        return tuple(argv)
+
+
+DEFAULT_PI_THINKING = "xhigh"
+_PI_READ_ONLY_TOOLS = "read,grep,find,ls"
+
+
+class PiRuntime(CommandAgentRuntime):
+    kind = "pi"
+    capabilities = {
+        "resume": True,
+        "cancel": True,
+        "stream": True,
+        "cost_reporting": False,
+        "subagents": False,
+        "images": True,
+    }
+
+    def __init__(
+        self,
+        *,
+        transport: RuntimeTransport | None = None,
+        binary: str = "pi",
+    ) -> None:
+        super().__init__(transport=transport, binary=binary)
+
+    def _route_identity_manifest(
+        self,
+        task: AgentTask,
+    ) -> Mapping[str, Any]:
+        route = task.metadata.get("provider_route")
+        if not isinstance(route, Mapping):
+            route = {}
+        provider = str(route.get("provider") or "anthropic").strip()
+        route_kind = str(route.get("route_kind") or "pi_cli").strip()
+        endpoint = str(
+            route.get("endpoint") or "pi-cli-configured-route"
+        ).strip()
+        return {
+            "provider": provider,
+            "route_kind": route_kind,
+            "endpoint": endpoint,
+            "model_request": task.model,
+            "sandbox_posture": self._sandbox_posture(task),
+            "configuration_sha256": str(
+                route.get("configuration_sha256") or ""
+            ).strip(),
+            "complete": bool(
+                provider
+                and route_kind
+                and endpoint
+                and str(task.model or "").strip()
+            ),
+        }
+
+    def _sandbox_posture(self, task: AgentTask) -> str:
+        """Pi has no OS sandbox flag; receipts must say what contained it."""
+        if task.metadata.get("read_only_review"):
+            return "tools-allowlist"
+        if _filesystem_isolation_policy(
+            task.metadata,
+            cwd=Path(task.cwd).resolve(),
+        ) is not None:
+            return "worktree-only"
+        return "none"
+
+    def _runtime_env(self, task: AgentTask) -> dict[str, str]:
+        return _allowlisted_environment(
+            super()._runtime_env(task),
+            allowed_keys=_PI_ENV_KEYS,
+        )
+
+    def _thinking_level(self, task: AgentTask) -> str:
+        level = _validated_reasoning_effort(task.metadata)
+        if level:
+            return level
+        fallback = str(task.metadata.get("effort") or "").strip()
+        if fallback:
+            if not _REASONING_EFFORT_PATTERN.fullmatch(fallback):
+                raise ValueError(
+                    "effort must match ^[A-Za-z0-9_-]+$: "
+                    f"{fallback!r}"
+                )
+            return fallback
+        return DEFAULT_PI_THINKING
+
+    def _model_flag(self, task: AgentTask) -> str:
+        model = str(task.model or "").strip()
+        return model if "/" in model else f"anthropic/{model}"
+
+    def _start_argv(self, task: AgentTask) -> tuple[str, ...]:
+        argv = [
+            self._binary,
+            "-p",
+            "--mode",
+            "json",
+            "--model",
+            self._model_flag(task),
+            "--thinking",
+            self._thinking_level(task),
+        ]
+        if task.metadata.get("read_only_review"):
+            argv.extend(("--tools", _PI_READ_ONLY_TOOLS))
+        argv.append(task.instruction)
+        return tuple(argv)
+
+    def _resume_argv(
+        self,
+        task: AgentTask,
+        *,
+        session_id: str,
+        instruction: str,
+    ) -> tuple[str, ...]:
+        argv = [
+            self._binary,
+            "--session",
+            session_id,
+            "-p",
+            "--mode",
+            "json",
+            "--thinking",
+            self._thinking_level(task),
+        ]
+        if task.metadata.get("read_only_review"):
+            argv.extend(("--tools", _PI_READ_ONLY_TOOLS))
+        argv.append(instruction)
         return tuple(argv)
 
 

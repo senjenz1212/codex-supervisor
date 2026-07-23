@@ -26,6 +26,7 @@ from supervisor.agent_runtime import (
     ClaudeCodeRuntime,
     CommandAgentRuntime,
     CodexRuntime,
+    PiRuntime,
     RuntimeCapabilityEvidence,
     RuntimeTransportResult,
     SubprocessRuntimeTransport,
@@ -1743,6 +1744,139 @@ async def test_codex_runtime_scrubs_anthropic_credentials_and_controls(
         for key in child_env
     )
     assert "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL" not in child_env
+
+
+def test_pi_runtime_start_argv_defaults_to_fable_xhigh(tmp_path: Path) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-argv",
+        instruction="implement the fix",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+    )
+    assert runtime.preview_start_argv(task) == (
+        "pi",
+        "-p",
+        "--mode",
+        "json",
+        "--model",
+        "anthropic/claude-fable-5",
+        "--thinking",
+        "xhigh",
+        "implement the fix",
+    )
+
+
+def test_pi_runtime_argv_honors_effort_metadata_and_provider_prefix(
+    tmp_path: Path,
+) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-argv-effort",
+        instruction="review",
+        cwd=tmp_path,
+        model="anthropic/claude-fable-5",
+        timeout_s=60,
+        metadata={"effort": "high"},
+    )
+    argv = runtime.preview_start_argv(task)
+    assert argv[argv.index("--model") + 1] == "anthropic/claude-fable-5"
+    assert argv[argv.index("--thinking") + 1] == "high"
+    task_reasoning = AgentTask(
+        task_id="pi-argv-reasoning",
+        instruction="review",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+        metadata={"reasoning_effort": "medium", "effort": "low"},
+    )
+    argv = runtime.preview_start_argv(task_reasoning)
+    assert argv[argv.index("--thinking") + 1] == "medium"
+
+
+def test_pi_runtime_read_only_review_restricts_tools(tmp_path: Path) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-read-only",
+        instruction="review only",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+        metadata={"read_only_review": True},
+    )
+    argv = runtime.preview_start_argv(task)
+    assert argv[argv.index("--tools") + 1] == "read,grep,find,ls"
+    resume = runtime._resume_argv(
+        task, session_id="sess-1", instruction="continue"
+    )
+    assert resume[resume.index("--tools") + 1] == "read,grep,find,ls"
+
+
+def test_pi_runtime_resume_argv_uses_session_flag(tmp_path: Path) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-resume",
+        instruction="start",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+    )
+    assert runtime._resume_argv(
+        task, session_id="sess-42", instruction="continue"
+    ) == (
+        "pi",
+        "--session",
+        "sess-42",
+        "-p",
+        "--mode",
+        "json",
+        "--thinking",
+        "xhigh",
+        "continue",
+    )
+
+
+def test_pi_runtime_env_forwards_only_anthropic_credentials(
+    tmp_path: Path,
+) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-env",
+        instruction="x",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+        env={
+            "ANTHROPIC_API_KEY": "anthropic-secret",
+            "OPENAI_API_KEY": "leaked-openai",
+            "CODEX_HOME": "/tmp/codex-home",
+            "CLAUDE_CODE_EXTRA_BODY": "{}",
+        },
+        inherit_env=False,
+    )
+    env = runtime._runtime_env(task)
+    assert env.get("ANTHROPIC_API_KEY") == "anthropic-secret"
+    assert "OPENAI_API_KEY" not in env
+    assert "CODEX_HOME" not in env
+    assert "CLAUDE_CODE_EXTRA_BODY" not in env
+
+
+def test_pi_runtime_route_identity_manifest_is_complete(tmp_path: Path) -> None:
+    runtime = PiRuntime(binary="pi")
+    task = AgentTask(
+        task_id="pi-route",
+        instruction="x",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+    )
+    manifest = runtime._route_identity_manifest(task)
+    assert manifest["provider"] == "anthropic"
+    assert manifest["route_kind"] == "pi_cli"
+    assert manifest["endpoint"] == "pi-cli-configured-route"
+    assert manifest["sandbox_posture"] == "none"
+    assert manifest["complete"] is True
 
 
 @pytest.mark.asyncio
