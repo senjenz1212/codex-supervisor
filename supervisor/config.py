@@ -109,6 +109,13 @@ class TargetCfg(BaseModel):
     codex: TargetCodexCfg | None = None
 
 
+class ExecutorCfg(BaseModel):
+    """Delegated implementor/executor runtime selection."""
+
+    kind: Literal["pi", "codex"] = "pi"
+    pi_cli_command: str = "pi"
+
+
 # ---- Legacy + remaining config sections ----
 
 class CodexCfg(BaseModel):
@@ -317,6 +324,7 @@ class Config(BaseModel):
 
     orchestrator: OrchestratorCfg
     supervisor: SupervisorCfg
+    executor: ExecutorCfg = Field(default_factory=ExecutorCfg)
     agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
     planning_rubric: PlanningRubricCfg = Field(default_factory=PlanningRubricCfg)
     durable_execution: DurableExecutionCfg = Field(default_factory=DurableExecutionCfg)
@@ -367,5 +375,9 @@ class Config(BaseModel):
         cfg.connectors.claude_desktop_config_path = (
             _expanduser(cfg.connectors.claude_desktop_config_path)
             or cfg.connectors.claude_desktop_config_path
+        )
+        cfg.executor.pi_cli_command = (
+            _expanduser(cfg.executor.pi_cli_command)
+            or cfg.executor.pi_cli_command
         )
         return cfg

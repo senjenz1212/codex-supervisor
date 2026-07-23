@@ -195,3 +195,23 @@ def test_yaml_bare_off_mode_is_normalized_to_string_off(tmp_path):
     cfg = Config.load(str(p))
     assert cfg.modes.desktop_status_sync == "off"
     assert cfg.modes.recovery_actions == "off"
+
+
+def test_executor_config_defaults_to_pi():
+    from supervisor.config import Config
+
+    cfg = Config.load(str(FIXTURE))
+    assert cfg.executor.kind == "pi"
+    assert cfg.executor.pi_cli_command == "pi"
+
+
+def test_executor_config_accepts_codex_kind_and_expands_cli_path(tmp_path):
+    from supervisor.config import Config
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        FIXTURE.read_text() + "\nexecutor:\n  kind: codex\n  pi_cli_command: ~/bin/pi\n"
+    )
+    cfg = Config.load(str(path))
+    assert cfg.executor.kind == "codex"
+    assert cfg.executor.pi_cli_command == str(Path("~/bin/pi").expanduser())
