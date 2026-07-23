@@ -345,6 +345,27 @@ def test_task_complete_is_turn_terminal_not_run_terminal() -> None:
     ).kind == "turn.completed"
 
 
+def test_message_end_role_gate_only_maps_assistant_messages() -> None:
+    assert normalize_runtime_event(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "user",
+                "content": [{"type": "text", "text": "hi"}],
+            },
+        }
+    ).kind == "message_end"
+    assert normalize_runtime_event(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "hi"}],
+            },
+        }
+    ).kind == "agent.message"
+
+
 class RecordingTransport:
     def __init__(self) -> None:
         self.started: list[dict[str, Any]] = []
