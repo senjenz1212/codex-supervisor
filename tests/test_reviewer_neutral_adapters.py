@@ -672,7 +672,7 @@ def test_configured_runtime_reviewer_keeps_codex_cli_parity_controls(
     assert task.metadata["read_only_review"] is True
 
     argv = CodexRuntime().preview_start_argv(task)
-    assert 'reasoning_effort="xhigh"' in argv
+    assert 'model_reasoning_effort="xhigh"' in argv
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "read-only"
 

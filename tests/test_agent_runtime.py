@@ -3303,7 +3303,7 @@ def test_codex_runtime_read_only_review_pins_read_only_sandbox(
 
     argv = runtime.preview_start_argv(task)
 
-    assert 'reasoning_effort="xhigh"' in argv
+    assert 'model_reasoning_effort="xhigh"' in argv
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "read-only"
     assert "workspace-write" not in argv

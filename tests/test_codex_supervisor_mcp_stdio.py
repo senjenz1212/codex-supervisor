@@ -3163,7 +3163,7 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
     assert dry_run["status"] == "dry_run"
     assert dry_run["argv"][:2] == ["codex", "exec"]
     assert dry_run["argv"][dry_run["argv"].index("-m") + 1] == "gpt-5.5"
-    assert 'reasoning_effort="xhigh"' in dry_run["argv"]
+    assert 'model_reasoning_effort="xhigh"' in dry_run["argv"]
     assert calls[0].model == "gpt-5.5"
     assert calls[0].metadata["reasoning_effort"] == "xhigh"
     assert executed["status"] == "completed"

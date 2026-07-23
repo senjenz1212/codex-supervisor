@@ -1025,7 +1025,7 @@ class CodexRuntime(CommandAgentRuntime):
         reasoning_effort = _validated_reasoning_effort(task.metadata)
         if reasoning_effort:
             argv.extend(
-                ("-c", f'reasoning_effort="{reasoning_effort}"')
+                ("-c", f'model_reasoning_effort="{reasoning_effort}"')
             )
         if task.metadata.get("read_only_review"):
             argv.extend(("--sandbox", "read-only"))
@@ -1055,7 +1055,7 @@ class CodexRuntime(CommandAgentRuntime):
         reasoning_effort = _validated_reasoning_effort(task.metadata)
         if reasoning_effort:
             argv.extend(
-                ("-c", f'reasoning_effort="{reasoning_effort}"')
+                ("-c", f'model_reasoning_effort="{reasoning_effort}"')
             )
         if task.metadata.get("read_only_review"):
             argv.extend(("--sandbox", "read-only"))
