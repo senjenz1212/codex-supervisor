@@ -3288,6 +3288,66 @@ def test_start_codex_session_executes_with_pi_executor_runner(tmp_path):
     assert calls[0].metadata["reasoning_effort"] == "xhigh"
 
 
+def test_internally_registered_workflow_joins_pi_launch(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    calls: list[AgentTask] = []
+
+    def fake_executor_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        calls.append(task)
+        handle = AgentRunHandle(
+            run_id="pi-runtime-run-internal",
+            task_id=task.task_id,
+            runtime="pi",
+            session_id="pi-runtime-session-internal",
+            capabilities={"cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output="done",
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=120,
+            cost_usd=0.0,
+            resolved_model="claude-fable-5",
+            result_hash=sha256(b"pi-result-internal").hexdigest(),
+            token_usage={"tokens_in": 3, "tokens_out": 1},
+            model_provenance="fake.model",
+            token_provenance="fake.usage",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        state,
+        executor_runtime_runner=fake_executor_runtime_runner,
+    )
+
+    api._ensure_workflow_run_registration(
+        run_id="workflow-run-internal",
+        task_id="task-internal",
+        task="Implement the slice.",
+        cwd=str(tmp_path),
+    )
+    executed = api.start_codex_session(
+        prompt="Implement the slice.",
+        cwd=str(tmp_path),
+        execute=True,
+        timeout_s=30,
+        workflow_run_id="workflow-run-internal",
+        task_id="task-internal",
+    )
+
+    assert executed["status"] == "completed"
+    assert executed["runtime"] == "pi"
+
+
 def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_timeout(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
     from supervisor.run_registry import (
