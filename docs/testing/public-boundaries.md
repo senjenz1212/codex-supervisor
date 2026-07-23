@@ -275,8 +275,10 @@ prefer AXI JSON (`codex-supervisor-axi --json submit`,
 `codex-supervisor-axi --json poll`, and
 `codex-supervisor-axi --json catch-up`) over the same durable ledger core; MCP
 submit, poll, and catch-up paths must remain non-blocking shims and must not execute workflow phases inline. `start_codex_session` must default to the strongest configured
-Codex model and high reasoning (`gpt-5.5` with
-`reasoning_effort="xhigh"`) unless the caller explicitly overrides it. In the
+model for the resolved executor kind — `claude-fable-5` at `--thinking xhigh`
+when `executor.kind: pi` (default), `gpt-5.5` with
+`model_reasoning_effort="xhigh"` when `executor.kind: codex` — unless the
+caller explicitly overrides `model`/`reasoning_effort`. In the
 Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must
 not wait on `poll_resume_signal` unless a Telegram callback exists.

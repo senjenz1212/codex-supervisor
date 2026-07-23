@@ -44,6 +44,19 @@ target:
 #     cli_command: claude
 #     transcripts_root: ~/.claude/projects
 
+# Delegated implementor/executor runtime for supervisor-launched worker
+# sessions (start_codex_session). The default is the pi coding agent running
+# claude-fable-5 at xhigh thinking; set kind: codex to restore the Codex CLI
+# executor. Pi needs `npm i -g @mariozechner/pi-coding-agent` and
+# ANTHROPIC_API_KEY. Pi has no OS sandbox flag: read-only work is restricted
+# via --tools, write work relies on worktree isolation, and receipts record
+# the sandbox posture. Dual-agent workflow registrations bind to the
+# configured executor kind: workflows registered before this setting changes
+# must finish under the old kind or be re-registered.
+executor:
+  kind: pi
+  pi_cli_command: pi
+
 orchestrator:
   run_registry_dir: ~/.codex-supervisor/runs
 

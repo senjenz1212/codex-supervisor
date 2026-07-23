@@ -500,8 +500,12 @@ Anthropic credentials and proxy selectors from its process environment.
 
 Supervisor defaults Claude work to `claude-fable-5`. Routine critique and
 conversation use medium effort; substantial planning, execution, recovery, and
-outcome review use high effort. Claude Code subprocesses scrub inherited
-Anthropic proxy and OAuth variables before launch.
+outcome review use high effort. The delegated executor defaults to the pi
+coding agent running `claude-fable-5` at `xhigh` thinking (`executor.kind:
+codex` restores the Codex CLI executor), and the dual-agent lead defaults to
+`xhigh` effort on high-effort gates (`effort` on `start_dual_agent_gate` /
+`poll_resume_signal` overrides per gate). Claude Code subprocesses scrub
+inherited Anthropic proxy and OAuth variables before launch.
 
 OpenAI and other OpenAI-compatible lanes continue through Unity LiteLLM. Set
 these in `~/.codex-supervisor/secrets.env`:
