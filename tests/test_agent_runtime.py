@@ -364,6 +364,26 @@ def test_message_end_role_gate_only_maps_assistant_messages() -> None:
             },
         }
     ).kind == "agent.message"
+    assert normalize_runtime_event(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "stopReason": "error",
+                "content": [],
+            },
+        }
+    ).kind == "run.failed"
+    assert normalize_runtime_event(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "stopReason": "aborted",
+                "content": [],
+            },
+        }
+    ).kind == "run.failed"
 
 
 class RecordingTransport:
@@ -1988,6 +2008,43 @@ async def test_pi_runtime_normalizes_documented_jsonl_stream(
     assert "OK done" in result.output
     # Session id from pi's stream header must drive resume.
     assert runtime._session_ids[handle.run_id] == "pi-sess-1"
+
+
+@pytest.mark.asyncio
+async def test_pi_runtime_reports_model_error_stop_reason_as_failed(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    script = tmp_path / "captured-pi"
+    script.write_text(
+        "#!/bin/sh\n"
+        "cat <<'EOF'\n"
+        '{"type":"session","id":"pi-sess-2","version":"0.0.0"}\n'
+        '{"type":"agent_start"}\n'
+        '{"type":"turn_start"}\n'
+        '{"type":"message_end","message":{"role":"assistant",'
+        '"stopReason":"error","content":[]}}\n'
+        '{"type":"turn_end"}\n'
+        '{"type":"agent_end"}\n'
+        "EOF\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    runtime = PiRuntime(binary=str(script))
+    handle = await runtime.start(
+        AgentTask(
+            task_id="pi-live-jsonl-error",
+            instruction="reply",
+            cwd=repo,
+            model="claude-fable-5",
+            timeout_s=30,
+        )
+    )
+    kinds = [event.kind async for event in runtime.stream(handle)]
+    assert "run.failed" in kinds
+    result = await runtime.collect(handle)
+    assert result.status == "failed"
 
 
 @pytest.mark.asyncio

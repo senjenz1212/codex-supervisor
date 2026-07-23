@@ -1913,7 +1913,10 @@ def normalize_runtime_event(raw: Mapping[str, Any]) -> RuntimeEvent:
             if isinstance(raw.get("message"), Mapping)
             else {}
         )
-        if str(message.get("role") or "assistant") == "assistant":
+        stop_reason = str(message.get("stopReason") or "")
+        if stop_reason in {"error", "aborted"}:
+            raw_kind = "run.failed"
+        elif str(message.get("role") or "assistant") == "assistant":
             raw_kind = "agent_message"
     aliases = {
         "thread.started": "run.started",

@@ -53,6 +53,11 @@ target:
 # the sandbox posture. Dual-agent workflow registrations bind to the
 # configured executor kind: workflows registered before this setting changes
 # must finish under the old kind or be re-registered.
+# claude-fable-5 is not in pi's built-in model catalog — add it via
+# ~/.pi/agent/models.json (merge into the anthropic provider with
+# "reasoning": true).
+# launchd does not inherit your shell PATH — prefer an absolute
+# pi_cli_command (e.g. ~/.npm-global/bin/pi, which the loader expands).
 executor:
   kind: pi
   pi_cli_command: pi

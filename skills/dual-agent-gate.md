@@ -151,9 +151,11 @@ For each major decision gate:
 - Use `quality="best"` for PRD, TDD, and outcome-review gates.
 - Use `quality="best"` for execution gates too unless the user explicitly asks
   to save cost. Cost is not the default constraint for this workflow.
-- When spawning Codex sessions through the supervisor, use
-  `model="gpt-5.5"` and `reasoning_effort="xhigh"` unless the user
-  explicitly chooses a cheaper tier.
+- When spawning sessions through the supervisor, omit `model` and
+  `reasoning_effort` so the session uses the resolved executor's defaults
+  (pi → `claude-fable-5` at `xhigh` thinking; codex → `gpt-5.5` at
+  `model_reasoning_effort` `xhigh`). Only pass explicit values when
+  deliberately overriding, and they must match the configured executor.
 - Keep `timeout_s` high enough for `/lead`; default to 600 seconds.
 - Use the same approved worktree for one task. Use separate worktrees for
   parallel tasks.
