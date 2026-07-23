@@ -698,17 +698,7 @@ class CodexSupervisorMcpAPI:
         )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
-        if effort is not None and effort not in (
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max",
-        ):
-            raise ValueError(
-                "effort must be one of low|medium|high|xhigh|max: "
-                f"{effort!r}"
-            )
+        effort = _validated_lead_effort(effort)
         agentic_policy = _agentic_lead_policy_config(
             self.cfg,
             agentic_lead_policy=agentic_lead_policy,
@@ -908,6 +898,7 @@ class CodexSupervisorMcpAPI:
         expected_objections: list[str] | None = None,
         quality: str = "best",
         model: str | None = None,
+        effort: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         execution_layer_mode: str = "lead_direct",
@@ -937,6 +928,7 @@ class CodexSupervisorMcpAPI:
         )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
+        effort = _validated_lead_effort(effort)
         agentic_policy = _agentic_lead_policy_config(
             self.cfg,
             agentic_lead_policy=agentic_lead_policy,
@@ -1007,6 +999,7 @@ class CodexSupervisorMcpAPI:
             expected_objections=expected_objections,
             quality=quality,
             model=model,
+            effort=effort,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
             execution_layer_mode=execution_layer_mode,  # type: ignore[arg-type]
@@ -5837,7 +5830,7 @@ class CodexSupervisorMcpAPI:
         expected_objections: list[str] | None,
         quality: str,
         model: str | None,
-        effort: str | None = None,
+        effort: str | None,
         budget_usd: float,
         timeout_s: int,
         execution_layer_mode: str,
@@ -6226,6 +6219,7 @@ def build_codex_supervisor_mcp_server(
         expected_objections: list[str] | None = None,
         quality: str = "best",
         model: str | None = None,
+        effort: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         execution_layer_mode: str = "lead_direct",
@@ -6255,6 +6249,7 @@ def build_codex_supervisor_mcp_server(
             expected_objections=expected_objections,
             quality=quality,
             model=model,
+            effort=effort,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
             execution_layer_mode=execution_layer_mode,
@@ -8644,6 +8639,21 @@ def _canonical_dynamic_workflow_task_class(value: str | None) -> str | None:
     if not text:
         return None
     return text.lower().replace("-", "_").replace(" ", "_")
+
+
+def _validated_lead_effort(effort: str | None) -> str | None:
+    if effort is not None and effort not in (
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ):
+        raise ValueError(
+            "effort must be one of low|medium|high|xhigh|max: "
+            f"{effort!r}"
+        )
+    return effort
 
 
 def _receipt_ids(receipts: list[dict[str, Any]]) -> list[str]:

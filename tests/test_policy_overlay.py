@@ -211,6 +211,7 @@ def test_explicit_gate_rubric_threshold_cannot_disable_planning_floor(tmp_path):
         expected_objections=[],
         quality="best",
         model=None,
+        effort=None,
         budget_usd=1.0,
         timeout_s=30,
         execution_layer_mode="lead_direct",

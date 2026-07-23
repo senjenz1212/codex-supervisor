@@ -139,6 +139,7 @@ def test_harness_v1_execution_gate_requires_pinned_trace_closure(tmp_path):
         expected_objections=None,
         quality="best",
         model=None,
+        effort=None,
         budget_usd=1.0,
         timeout_s=30,
         execution_layer_mode="lead_direct",
@@ -156,6 +157,95 @@ def test_harness_v1_execution_gate_requires_pinned_trace_closure(tmp_path):
     assert spec.trace_closure_required is True
     assert spec.trace_graph is None
     assert spec.trace_now is not None
+
+
+def test_validated_lead_effort_rejects_unknown_value_and_passes_through_known():
+    from mcp_tools.codex_supervisor_stdio import _validated_lead_effort
+
+    assert _validated_lead_effort(None) is None
+    assert _validated_lead_effort("xhigh") == "xhigh"
+    with pytest.raises(ValueError, match="effort must be one of"):
+        _validated_lead_effort("bogus")
+
+
+def test_gate_spec_carries_effort_when_provided_and_none_when_omitted(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        State(str(tmp_path / "state.db")),
+    )
+    common_kwargs = dict(
+        task_id="runtime-001-seams-20260711",
+        run_id="run-effort",
+        gate="execution",
+        instruction="Execute with an explicit effort.",
+        cwd=str(tmp_path),
+        expected_specialists=None,
+        expected_decisions=None,
+        expected_objections=None,
+        quality="best",
+        model=None,
+        budget_usd=1.0,
+        timeout_s=30,
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        agentic_policy={
+            "agentic_lead_policy": "off",
+            "min_subagents": 0,
+            "required_roles": (),
+            "solo_exception_for_artifact_only_gates": False,
+            "required_evidence_grade": "self_reported",
+        },
+        planning_artifacts=None,
+    )
+
+    spec_with_effort = api._gate_spec(effort="xhigh", **common_kwargs)
+    assert spec_with_effort.effort == "xhigh"
+
+    spec_without_effort = api._gate_spec(effort=None, **common_kwargs)
+    assert spec_without_effort.effort is None
+
+
+@pytest.mark.asyncio
+async def test_start_dual_agent_gate_rejects_invalid_effort_before_registration(
+    tmp_path,
+):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    with pytest.raises(ValueError, match="effort must be one of"):
+        await api.start_dual_agent_gate(
+            task_id="gate-bogus-effort",
+            run_id="run-bogus-effort",
+            gate="execution",
+            instruction="Run the gate.",
+            cwd=str(tmp_path),
+            effort="bogus",
+        )
+
+    assert state.get_run("run-bogus-effort") is None
+
+
+def test_poll_resume_signal_rejects_invalid_effort_before_registration(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    with pytest.raises(ValueError, match="effort must be one of"):
+        api.poll_resume_signal(
+            task_id="gate-bogus-effort-resume",
+            run_id="run-bogus-effort-resume",
+            gate="execution",
+            instruction="Resume the gate.",
+            cwd=str(tmp_path),
+            effort="bogus",
+        )
+
+    assert state.get_run("run-bogus-effort-resume") is None
 
 
 def test_harness_v1_workflow_rejects_explicit_trace_closure_downgrade(
@@ -889,6 +979,7 @@ def test_trace_graph_store_requires_sha256_pin(tmp_path):
             expected_objections=None,
             quality="best",
             model=None,
+            effort=None,
             budget_usd=1.0,
             timeout_s=30,
             execution_layer_mode="lead_direct",
