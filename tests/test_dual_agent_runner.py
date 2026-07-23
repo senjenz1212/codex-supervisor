@@ -1376,3 +1376,27 @@ async def test_paused_dual_agent_actions_send_one_stale_digest(tmp_path):
 
     assert second == []
     assert len(notifier.messages) == 1
+
+
+def test_gate_spec_threads_effort_to_lead_request():
+    from supervisor.dual_agent_runner import DualAgentGateSpec, _lead_request
+
+    spec = DualAgentGateSpec(
+        task_id="t-effort",
+        run_id="r-effort",
+        gate="execution",
+        instruction="do the work",
+        cwd="/tmp",
+        effort="xhigh",
+    )
+    request = _lead_request(spec)
+    assert request.effort == "xhigh"
+
+    default_spec = DualAgentGateSpec(
+        task_id="t-default",
+        run_id="r-default",
+        gate="execution",
+        instruction="do the work",
+        cwd="/tmp",
+    )
+    assert _lead_request(default_spec).effort is None

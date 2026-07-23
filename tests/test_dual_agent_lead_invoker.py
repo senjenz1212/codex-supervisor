@@ -163,7 +163,7 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert "--bare" not in argv
     assert argv[:2] == ["claude", "--no-session-persistence"]
     assert argv[argv.index("--model") + 1] == "claude-fable-5"
-    assert argv[argv.index("--effort") + 1] == "high"
+    assert argv[argv.index("--effort") + 1] == "xhigh"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("-p") + 1] == prompt
@@ -191,7 +191,7 @@ def test_lead_invocation_defaults_to_same_worktree_tool_access(tmp_path):
     assert isinstance(argv, list)
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
-    assert argv[argv.index("--effort") + 1] == "high"
+    assert argv[argv.index("--effort") + 1] == "xhigh"
     assert calls[0]["cwd"] == str(tmp_path)
     assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in calls[0]["env"]
     assert "CLAUDE_CODE_EXTRA_BODY" not in calls[0]["env"]
@@ -205,9 +205,13 @@ def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
     assert select_lead_model("prd_review", quality="cheap") == "haiku"
     assert select_lead_model("prd_review", quality="best", explicit_model="sonnet") == "sonnet"
     assert select_lead_effort("intent", quality="best") == "medium"
-    assert select_lead_effort("prd_review", quality="best") == "high"
-    assert select_lead_effort("execution", quality="balanced") == "high"
+    assert select_lead_effort("prd_review", quality="best") == "xhigh"
+    assert select_lead_effort("execution", quality="balanced") == "xhigh"
     assert select_lead_effort("prd_review", quality="cheap") == "low"
+    assert (
+        select_lead_effort("execution", quality="best", explicit_effort="max")
+        == "max"
+    )
 
 
 def test_runtime_lead_invocation_has_identical_schema_through_claude_and_codex(
@@ -1230,7 +1234,7 @@ def test_primary_fable_route_ignores_stale_opus_override(tmp_path, monkeypatch):
 
     argv = calls[0]["argv"]
     assert argv[argv.index("--model") + 1] == "claude-fable-5"
-    assert argv[argv.index("--effort") + 1] == "high"
+    assert argv[argv.index("--effort") + 1] == "xhigh"
     env = calls[0]["env"]
     assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in env
     assert "CLAUDE_CODE_EXTRA_BODY" not in env

@@ -41,8 +41,8 @@ from .dual_agent_legacy_claude import (
     uses_adaptive_opus_effort,
 )
 from .provider_routing import (
-    COMPLEX_ANTHROPIC_EFFORT,
     DEFAULT_ANTHROPIC_EFFORT,
+    XHIGH_ANTHROPIC_EFFORT,
 )
 from .runtime_execution import RuntimeTaskRunner
 
@@ -279,7 +279,7 @@ def select_lead_effort(
     if quality == "cheap":
         return "low"
     if gate in HIGH_EFFORT_GATES:
-        return COMPLEX_ANTHROPIC_EFFORT
+        return XHIGH_ANTHROPIC_EFFORT
     return DEFAULT_ANTHROPIC_EFFORT
 
 

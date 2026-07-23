@@ -38,6 +38,7 @@ from .agent_mailbox import (
     planning_artifact_refs,
 )
 from .dual_agent_lead import (
+    ClaudeEffort,
     DynamicWorkflowTaskClass,
     AgenticLeadPolicyMode,
     EvidenceGrade,
@@ -137,6 +138,7 @@ class DualAgentGateSpec:
     expected_objections: tuple[str, ...] = ()
     quality: ModelQuality = "best"
     model: str | None = None
+    effort: ClaudeEffort | None = None
     budget_usd: float = 5.0
     timeout_s: int = 600
     execution_layer_mode: ExecutionLayerMode = "lead_direct"
@@ -1958,6 +1960,7 @@ def _lead_request(
         expected_objections=spec.expected_objections,
         quality=spec.quality,
         model=spec.model,
+        effort=spec.effort,
         budget_usd=spec.budget_usd,
         timeout_s=spec.timeout_s,
         execution_layer_mode=spec.execution_layer_mode,

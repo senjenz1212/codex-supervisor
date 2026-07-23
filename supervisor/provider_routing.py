@@ -9,6 +9,7 @@ from typing import Literal
 DEFAULT_ANTHROPIC_MODEL = "claude-fable-5"
 DEFAULT_ANTHROPIC_EFFORT: Literal["medium"] = "medium"
 COMPLEX_ANTHROPIC_EFFORT: Literal["high"] = "high"
+XHIGH_ANTHROPIC_EFFORT: Literal["xhigh"] = "xhigh"
 DIRECT_ANTHROPIC_API_KEY_FD_ENV = "CODEX_SUPERVISOR_ANTHROPIC_API_KEY_FD"
 
 ANTHROPIC_PROXY_ENV_KEYS: tuple[str, ...] = (
