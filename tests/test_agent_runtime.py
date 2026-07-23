@@ -1811,6 +1811,36 @@ def test_pi_runtime_read_only_review_restricts_tools(tmp_path: Path) -> None:
         task, session_id="sess-1", instruction="continue"
     )
     assert resume[resume.index("--tools") + 1] == "read,grep,find,ls"
+    assert (
+        runtime._route_identity_manifest(task)["sandbox_posture"]
+        == "tools-allowlist"
+    )
+
+
+def test_pi_runtime_worktree_isolation_reports_sandbox_posture(
+    tmp_path: Path,
+) -> None:
+    runtime = PiRuntime(binary="pi")
+    hidden_root = tmp_path.parent / "hidden-verifier"
+    isolation = {
+        "mode": "workspace_only",
+        "workspace": str(tmp_path),
+        "deny_paths": [str(hidden_root)],
+        "network_policy": "disabled",
+        "required": True,
+    }
+    task = AgentTask(
+        task_id="pi-worktree-isolation",
+        instruction="x",
+        cwd=tmp_path,
+        model="claude-fable-5",
+        timeout_s=60,
+        metadata={"filesystem_isolation": isolation},
+    )
+    assert (
+        runtime._route_identity_manifest(task)["sandbox_posture"]
+        == "worktree-only"
+    )
 
 
 def test_pi_runtime_resume_argv_uses_session_flag(tmp_path: Path) -> None:
@@ -1837,29 +1867,41 @@ def test_pi_runtime_resume_argv_uses_session_flag(tmp_path: Path) -> None:
     )
 
 
-def test_pi_runtime_env_forwards_only_anthropic_credentials(
+@pytest.mark.asyncio
+async def test_pi_runtime_env_forwards_only_anthropic_credentials(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
-    runtime = PiRuntime(binary="pi")
-    task = AgentTask(
-        task_id="pi-env",
-        instruction="x",
-        cwd=tmp_path,
-        model="claude-fable-5",
-        timeout_s=60,
-        env={
-            "ANTHROPIC_API_KEY": "anthropic-secret",
-            "OPENAI_API_KEY": "leaked-openai",
-            "CODEX_HOME": "/tmp/codex-home",
-            "CLAUDE_CODE_EXTRA_BODY": "{}",
-        },
-        inherit_env=False,
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "leaked-openai")
+    monkeypatch.setenv("CODEX_HOME", "/tmp/codex-home")
+    monkeypatch.setenv("CLAUDE_CODE_EXTRA_BODY", "{}")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    transport = RecordingTransport()
+    runtime = PiRuntime(transport=transport)
+
+    await runtime.start(
+        AgentTask(
+            task_id="pi-hostile-ambient-env",
+            instruction="x",
+            cwd=tmp_path,
+            model="claude-fable-5",
+            timeout_s=60,
+            inherit_env=True,
+        )
     )
-    env = runtime._runtime_env(task)
-    assert env.get("ANTHROPIC_API_KEY") == "anthropic-secret"
-    assert "OPENAI_API_KEY" not in env
-    assert "CODEX_HOME" not in env
-    assert "CLAUDE_CODE_EXTRA_BODY" not in env
+
+    child_env = transport.started[0]["env"]
+    assert child_env["ANTHROPIC_API_KEY"] == "anthropic-secret"
+    for forbidden in (
+        "OPENAI_API_KEY",
+        "CODEX_HOME",
+        "CLAUDE_CODE_EXTRA_BODY",
+        "AWS_SECRET_ACCESS_KEY",
+        "GITHUB_TOKEN",
+    ):
+        assert forbidden not in child_env
 
 
 def test_pi_runtime_route_identity_manifest_is_complete(tmp_path: Path) -> None:
