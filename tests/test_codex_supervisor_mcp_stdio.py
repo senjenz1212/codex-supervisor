@@ -3217,6 +3217,77 @@ def test_start_codex_session_honors_executor_kind_codex(tmp_path):
     assert 'model_reasoning_effort="xhigh"' in " ".join(argv)
 
 
+def test_start_codex_session_executes_with_pi_executor_runner(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    calls: list[AgentTask] = []
+
+    def fake_executor_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        calls.append(task)
+        handle = AgentRunHandle(
+            run_id="pi-runtime-run",
+            task_id=task.task_id,
+            runtime="pi",
+            session_id="pi-runtime-session",
+            capabilities={"cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output="done",
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=120,
+            cost_usd=0.0,
+            resolved_model="claude-fable-5",
+            result_hash=sha256(b"pi-result").hexdigest(),
+            token_usage={"tokens_in": 3, "tokens_out": 1},
+            model_provenance="fake.model",
+            token_provenance="fake.usage",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        state,
+        executor_runtime_runner=fake_executor_runtime_runner,
+    )
+
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-run-pi",
+        target_session_id="",
+        task_id="task-1",
+        task="Implement the slice.",
+        target_kind="pi",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+    executed = api.start_codex_session(
+        prompt="Implement the slice.",
+        cwd=str(tmp_path),
+        execute=True,
+        timeout_s=30,
+        workflow_run_id="workflow-run-pi",
+        task_id="task-1",
+    )
+
+    assert executed["status"] == "completed"
+    assert executed["runtime"] == "pi"
+    assert calls[0].model == "claude-fable-5"
+    assert calls[0].metadata["reasoning_effort"] == "xhigh"
+
+
 def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_timeout(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
     from supervisor.run_registry import (

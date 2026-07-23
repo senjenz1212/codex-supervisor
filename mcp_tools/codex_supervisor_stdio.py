@@ -558,6 +558,8 @@ class CodexSupervisorMcpAPI:
             codex_runtime_factory is not None
             or codex_runtime_runner is not None
         )
+        # An injected executor_runtime_factory always gets pi-side defaults
+        # (claude-fable-5/xhigh) regardless of executor.kind.
         executor_is_codex = executor_runtime_factory is None and (
             executor_kind == "codex" or codex_injected
         )
@@ -585,6 +587,7 @@ class CodexSupervisorMcpAPI:
             if executor_is_codex
             else DEFAULT_PI_REASONING_EFFORT
         )
+        self.executor_kind = "codex" if executor_is_codex else "pi"
         claude_cfg = (
             target_cfg.claude_code
             if target_cfg and target_cfg.claude_code
@@ -3782,7 +3785,10 @@ class CodexSupervisorMcpAPI:
                     target_session_id=effective_target_session_id,
                     task_id=effective_task_id,
                     task=effective_intent,
-                    target_kind=self.cfg.target.kind,
+                    # The workflow registration promises which executor kind
+                    # will run the work; the launch-receipt tamper guard
+                    # checks it.
+                    target_kind=self.executor_kind,
                     cwd=effective_cwd,
                     session_id_source=effective_session_id_source,
                     completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
@@ -4505,7 +4511,7 @@ class CodexSupervisorMcpAPI:
             )
         if execute and not normalized_workflow_run_id:
             raise ValueError(
-                "executable Codex sessions require workflow_run_id and task_id"
+                "executable executor sessions require workflow_run_id and task_id"
             )
         cwd_path = Path(cwd).expanduser().resolve()
         agent_task = AgentTask(
@@ -4583,15 +4589,21 @@ class CodexSupervisorMcpAPI:
         try:
             execution = self.executor_runtime_runner(agent_task)
         except (subprocess.TimeoutExpired, TimeoutError):
-            _release_receipt("codex_runtime_timeout")
+            _release_receipt(f"{preview_runtime.kind}_runtime_timeout")
             return {
                 "status": "timeout",
                 "argv": _redacted_prompt_argv(argv),
                 "timeout_s": timeout_s,
             }
         except FileNotFoundError:
-            _release_receipt("codex_binary_not_found")
-            return {"status": "failed", "reason": "codex_binary_not_found", "argv": _redacted_prompt_argv(argv)}
+            binary_not_found_reason = f"{preview_runtime.kind}_binary_not_found"
+            _release_receipt(binary_not_found_reason)
+            return {
+                "status": "failed",
+                "reason": binary_not_found_reason,
+                "missing_binary": argv[0],
+                "argv": _redacted_prompt_argv(argv),
+            }
         result = execution.result
         discovered_session_id = str(result.session_id or "").strip()
         session_discovered = bool(
@@ -4600,12 +4612,12 @@ class CodexSupervisorMcpAPI:
         )
         if launch_receipt is None:
             raise RuntimeError(
-                "executable Codex session lacks launch-receipt authority"
+                "executable executor session lacks launch-receipt authority"
             )
         if not session_discovered:
             _release_receipt("missing_target_session_id")
             raise RuntimeError(
-                "Codex runtime did not report a distinct target session id"
+                "executor runtime did not report a distinct target session id"
             )
         runtime_run_id = str(result.run_id or "").strip()
         runtime_result_hash = str(result.result_hash or "").strip()
@@ -4615,7 +4627,7 @@ class CodexSupervisorMcpAPI:
         ):
             _release_receipt("missing_runtime_provenance")
             raise RuntimeError(
-                "Codex runtime lacks exact run/result-hash provenance"
+                "executor runtime lacks exact run/result-hash provenance"
             )
         binding = consume_launch_receipt(
             state=self.state,
@@ -5045,7 +5057,7 @@ class CodexSupervisorMcpAPI:
                 target_session_id="",
                 task_id=task_id,
                 task=task,
-                target_kind=self.cfg.target.kind,
+                target_kind=self.executor_kind,
                 cwd=cwd,
                 session_id_source=PENDING_SESSION_SOURCE,
                 completion_policy=WORKFLOW_AGGREGATE_COMPLETION_POLICY,
@@ -5066,7 +5078,7 @@ class CodexSupervisorMcpAPI:
             run_id=run_id,
             expected_workflow_run_id=run_id,
             expected_task_id=task_id,
-            expected_target_kind=self.cfg.target.kind,
+            expected_target_kind=self.executor_kind,
             expected_cwd=cwd,
             expected_completion_policy=(
                 WORKFLOW_AGGREGATE_COMPLETION_POLICY
